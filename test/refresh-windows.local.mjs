@@ -37,7 +37,7 @@ async function push(evs) {
 }
 
 try {
-  // 1) 写入计划（和线上一样 52 项：免费 22 + 自费 18 + 体检 12），再去掉窗口字段 = 旧版数据
+  // 1) 写入计划（免费 22 + 自费 1（v1.7.0 起 plan paid 只写 RSV，其他待定）；免费 20（已过的 2 剂和 HPV 不写）+ 体检 12），再去掉窗口字段 = 旧版数据
   const B = ['--birthday', '2026-09-17'];
   run('plan', 'vaccine', ...B); run('plan', 'paid', ...B); run('plan', 'checkup', ...B);
   run('add', '--title', '办医保', '--date', '2026-10-09', '--remind', 'none');
@@ -54,7 +54,7 @@ try {
   m = await pull();
   const withWin0 = [...m.values()].filter((x) => x.event.earliest).length;
   const N = [...m.values()].filter((x) => x.event.scheduleId).length;
-  ok(`旧版数据：${m.size} 项（计划事项 ${N}），带窗口 ${withWin0} 项`, N >= 48 && m.size === N + 1 && withWin0 === 0);
+  ok(`旧版数据：${m.size} 项（计划事项 ${N}），带窗口 ${withWin0} 项`, N === 33 && m.size === N + 1 && withWin0 === 0);
   const before = new Map([...m].map(([id, x]) => [id, { u: x.rec.updatedAt, e: x.event }]));
 
   // 2) 预演：不写入
@@ -88,7 +88,7 @@ try {
 
   // 4) 再运行一次：幂等
   const again = run('refresh-windows', 'all', ...B);
-  ok(`再运行：0 项（已是最新 ${N}）`, /已写入窗口 0 项/.test(again) && again.includes(`已是最新 ${N}`), again.trim().split('\n').at(-1));
+  ok(`再运行：0 项（已是最新 ${N - 1}，RSV 已有窗口按系列管理跳过）`, /已写入窗口 0 项/.test(again) && again.includes(`已是最新 ${N - 1}`) && again.includes('系列管理）1'), again.trim().split('\n').at(-1));
   // 5) plan 新生成的事项直接带窗口
   const list = JSON.parse(run('list', '--all', '--json'));
   ok('list --json 含窗口字段', list.filter((e) => e.earliest).length === N);

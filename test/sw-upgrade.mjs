@@ -1,5 +1,5 @@
 // 升级路径测试：旧版本 Service Worker（缓存里是旧 JS）→ 当前版本（site/js/views/settings.js 的 APP_BUILD），确认最多「关闭再打开」一次就是新界面。
-// v1.5.0 起另测 v1.4.1 → 当前版本（需 /tmp/swtest/v141/site：git archive 6e75a3a site | tar -x -C /tmp/swtest/v141）；v1.6.0 起再测 v1.5.0（/tmp/swtest/v150/site：git archive 8d54508 site | tar -x -C /tmp/swtest/v150）。
+// v1.5.0 起另测 v1.4.1 → 当前版本（需 /tmp/swtest/v141/site：git archive 6e75a3a site | tar -x -C /tmp/swtest/v141）；v1.6.0 起再测 v1.5.0（/tmp/swtest/v150/site：git archive 8d54508 site | tar -x -C /tmp/swtest/v150）；v1.7.0 起再测 v1.6.0（/tmp/swtest/v160/site：git archive fb0a0b3 site | tar -x -C /tmp/swtest/v160）。
 // 准备：mkdir -p /tmp/swtest/v120 /tmp/swtest/v140 && git archive 0c01f7d site | tar -x -C /tmp/swtest/v120 && git archive 304e87b site | tar -x -C /tmp/swtest/v140
 //       echo '/tmp/swtest/v120/site|0|600' > /tmp/swtest/mode && python3 test/sw-upgrade-server.py &   （:8091，可切换目录 + 模拟 GitHub Pages 的 max-age=600）
 import { chromium } from 'playwright';
@@ -79,7 +79,7 @@ for (const [variant, html] of [['页面已过期', 0], ['页面仍在HTTP缓存(
 }
 
 // 2b) v1.4.1 / v1.5.0（手机上的上一版）→ 当前版本（v1.5.0 快照：cp -a <v1.5.0 的 site> /tmp/swtest/v150/）
-for (const [tag, ver, wasOk] of [['v141', '1.4.1', (st) => !st.paid], ['v150', '1.5.0', (st) => st.paid]]) {
+for (const [tag, ver, wasOk] of [['v141', '1.4.1', (st) => !st.paid], ['v150', '1.5.0', (st) => st.paid], ['v160', '1.6.0', (st) => st.paid]]) {
   if (!fs.existsSync(`/tmp/swtest/${tag}/site`)) continue;
   for (const [variant, html] of [[`v${ver}→页面已过期`, 0], [`v${ver}→页面仍在HTTP缓存`, 600]]) {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'zh-CN', timezoneId: 'Asia/Shanghai' });
