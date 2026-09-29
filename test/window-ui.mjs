@@ -1,4 +1,4 @@
-// 端到端（iPhone 尺寸）：v1.6.0 本月全部事项列表 + 接种窗口 + 计划日（改计划日），截图 18~22。BASE=... 可指定地址
+// 端到端（iPhone 尺寸）：v1.6.0 起 本月全部事项列表 + 接种窗口 + 计划日（改计划日），截图 18~22。BASE=... 可指定地址
 import { chromium } from 'playwright';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:8080/';
@@ -22,14 +22,20 @@ const bySid = async (sid) => (await events()).find((e) => e.scheduleId === sid);
 const hideToast = () => page.evaluate(() => { document.activeElement?.blur(); const t = document.getElementById('toast'); if (t) t.hidden = true; });
 const selectDate = (d) => page.evaluate((d) => window.dispatchEvent(new CustomEvent('select-date', { detail: d })), d);
 
-// 生成三种计划（免费疫苗 / 自费疫苗 / 体检）
+// 生成免费疫苗 / 体检计划；自费疫苗（v1.7.0 起默认待定）从「💰 自费疫苗（待定）」加入：RSV 10-17，13价、五价轮状第1剂 11-17
 await page.click('#vaxGo'); await page.waitForSelector('.vp-item'); await page.click('#vp-ok'); await page.waitForTimeout(500);
-for (const btn of ['#btnPaid', '#btnChk']) {
+await page.goto(BASE + '#/settings'); await page.waitForTimeout(400);
+await page.click('#btnChk'); await page.waitForSelector('.vp-item'); await page.click('#vp-ok'); await page.waitForTimeout(500);
+for (const [fam, date] of [['rsv', '2026-10-17'], ['pcv13', '2026-11-17'], ['rota5', '2026-11-17']]) {
   await page.goto(BASE + '#/settings'); await page.waitForTimeout(400);
-  await page.click(btn); await page.waitForSelector('.vp-item'); await page.click('#vp-ok'); await page.waitForTimeout(500);
+  await page.click('#btnPaid'); await page.waitForSelector('#sheet .pc-item');
+  await page.evaluate((f) => { document.querySelector(`#sheet .pc-item[data-fam="${f}"]`).open = true; }, fam);
+  await page.click(`#sheet [data-add="${fam}"]`); await page.waitForSelector('#sp-list li');
+  await page.fill('#sp-date', date); await page.waitForTimeout(150);
+  await page.click('#sp-ok'); await page.waitForTimeout(500);
 }
 await page.goto(BASE + '#/settings'); await page.waitForTimeout(400);
-ok('设置页版本 v1.6.0', (await page.textContent('#appVer')).includes('宝宝记录 v1.6.0'));
+ok('设置页版本 v1.7.0', (await page.textContent('#appVer')).includes('宝宝记录 v1.7.0'));
 
 // 生成的事项带窗口字段；计划日（date）不变
 const hb2 = await bySid('nip:hepb-2'), hb3 = await bySid('nip:hepb-3'), rsv = await bySid('paid:rsv'), m1 = await bySid('chk:m1');
