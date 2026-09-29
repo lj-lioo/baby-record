@@ -64,3 +64,50 @@
   sw-upgrade 20/20（含 v1.5.0→v1.6.0）；线上 BASE：vaccine-ui 22/22、checkup-ui 15/15、paidvax-ui 32/32、window-ui 54/54。
   新截图 18–22（window-ui 生成）。老 UI 测试会覆盖截图 01–17，测完从备份恢复。
 - 非 site 文件（sync/add-item.js、sync/README.md、README.md、本文件、.gitignore、test/ 下 v1.5.0/v1.6.0 的测试）本次推送到仓库（v1.6.0 part 3a–3d）；不推 test/results*.json、backup.json、out-*、截图。
+
+## v1.7.0（2026-09-29 23:33 CST 线上 35 个文件逐字节一致）自费疫苗「待定」目录 + 按系列加入计划 + 顺延
+- 需求：自费疫苗默认不排进日程（用户还没决定打不打五联等）；决定后「➕ 加入计划」，按说明书间隔自动排好全部剂次。
+- 提交顺序（每一步线上都可用）：
+  959d7cc 23:26:01（paidvax.js 只新增导出 SERIES/seriesPlan/reflowSeries/replacementHints…，新模块 views/paidcat.js 暂无引用）
+  → 21cd29e 23:27:29（store.upsertEvents/deleteEvents、app.css 追加 v1.7.0 样式）
+  → b422500 23:28:34（home.js：月列表下方「💰 自费疫苗（待定）」折叠卡片、免费剂次「可不打此剂」提示、系列剂次「已完成」可填实际接种日）
+  → d1cf41e 23:29:21（planned.js、editor.js：改日期后「后续剂次一起顺延」）
+  → 5c67135 23:30:36（vaxplan.js 去掉自费一键生成，旧设置按钮 openPaidPlan 打开待定目录；help.js 新增 #h-paid）
+  → daf1bf4 23:32:00（settings.js「💰 自费疫苗（待定）」按钮 + APP_BUILD、config.js、sw.js 版本 1.7.0，sw ASSETS 加 paidcat.js）。
+  中间状态在本地测过：:8093（线上 v1.6.0 + 第 1 批）旧 v1.6.0 测试 vaccine-ui 22、checkup-ui 15、paidvax-ui 32、window-ui 54、e2e 29；
+  :8094（+ 视图）smoke 6/6（旧设置按钮打开新目录、加入/顺延可用、无 JS 错误）+ vaccine-ui 22、checkup-ui 15、e2e 29。
+- 数据模型不变：系列剂次仍是普通事项，scheduleId `paid:<疫苗>-<n>`（RSV 为 `paid:rsv`，与 v1.5/1.6 相同），带 earliest/latest/windowNote。
+  计划日＝max(推荐月龄日, 上一剂计划日＋推荐间隔)；最早＝max(最小月龄日, 上一剂＋最短间隔)；最迟＝min(按年龄最迟, 上一剂＋最长间隔)。
+  顺延只改未完成的后续剂次（已完成的只作为下一剂起点）；顺延的剂次若设过闹钟，签名变化 → 自动显示「需重设闹钟」。
+  「保持原计划」也会按实际上一剂日期更新后续剂次的最早/最迟。移出计划 = 删除未完成剂次（云同步删除标记），回到待定。
+- 间隔表（宝宝 2026-09-17，从最早日开始）：
+  | 疫苗 | 剂次 | 规则 | 例 |
+  |---|---|---|---|
+  | 五联 | 3+1 | 第1剂≥2月龄；第2/3剂最短28天、推荐+1个月；第4剂 max(18月龄, 第3剂+6个月) | 11-17、12-17（最早12-15）、2027-01-17、2028-03-17 |
+  | 13价 | 3+1 | 第1剂≥6周（<7月龄）；第2/3剂最短28天、推荐+2个月，第3剂<12月龄（参考）；第4剂 max(12月龄, 第3剂+8周)，<16月龄 | 10-29、12-29、2027-02-28、2027-09-17 |
+  | 五价轮状 | 3 | 第1剂6–12周；第2/3剂最短28天、推荐+1个月、最长+10周；第3剂≤32周 | 10-29、11-29、12-29 |
+  | EV71 | 2 | ≥6月龄（<72月龄）；+1个月 | |
+  | 流感（首次） | 2 | ≥6月龄，默认流感季 2027-09-20；+28天 | |
+  | 水痘 | 2 | ≥12月龄；第2剂 max(4周岁, 第1剂+3个月)，最早第1剂+3个月 | |
+  | Hib | 3+1 | 同五联（已计划五联时提示不要再打） | |
+  | 流脑结合 | 1 | ≥3月龄，只排第1剂（各产品剂次不同） | |
+  | 甲肝灭活 | 2 | 18月龄（<24月龄）；第2剂 max(24月龄, +6个月)（<36月龄） | |
+  | 乙脑灭活 | 4 | 8月龄；+7天（最长+10天，<12月龄）；max(2周岁, +1个月)（<3岁）；max(6周岁, +3年)（<7岁） | |
+  | RSV单抗 | 1 | 出生起，最迟 2027-03-31（参考） | |
+  来源：沛儿13 说明书（首剂6周龄，间隔1～2个月/最少28天，12～15月龄加强）；潘太欣说明书（2、3、4 或 3、4、5 月龄 + 18 月龄，间隔≥28天，加强距第3剂≥6个月）；
+  乐儿德 RotaTeq 说明书（6–12周起，间隔4–10周，≤32周）；EV71 灭活疫苗说明书；《中国流感疫苗预防接种技术指南》；《水痘疫苗预防接种专家共识》（中国疾控中心 2023：2剂，间隔≥3个月）；
+  《国家免疫规划疫苗儿童免疫程序及说明（2026年版）》（乙脑灭活 7–10天/1–12个月/≥3年、甲肝灭活、百白破≥28天）；尼塞韦单抗说明书。
+- 替代提示：计划了五联 → 免费 百白破第1–4剂、脊灰第1–4剂卡片显示「💡 已计划五联，可不打此剂（以门诊为准）」，不自动删除；
+  流脑结合 → 流脑A 第1–2剂；甲肝灭活 → 甲肝减毒；乙脑灭活 → 乙脑减毒第1–2剂。
+- 云端迁移（23:32:25 CST，`env -u BABY_SYNC_ENV node sync/add-item.js prune-undecided`，先 --dry-run）：
+  迁移前 52 项（vaccine 22、paidvax 18、checkup 12）；18 个自费项都不是已完成、没有设闹钟、日期/时间/标题/备注/提醒都是旧 `plan paid` 原样。
+  保留 paid:rsv（用户选定，2026-10-17 09:00，最早 09-17、最迟 2027-03-31，updatedAt 1790689304257，前后 JSON 完全一致）；
+  删除其余 17 个（pcv13-1..4、penta-1..4、rota5-1..3、ev71-1/2、flu-1/2、var-1/2），写入 17 个删除标记（updatedAt = max(现在, 原+1)），
+  备份到本机 backups/paid-undecided-20260929.json（600 权限，不进仓库）。迁移后 35 项（vaccine 22、paidvax 1、checkup 12），非自费项完全不变。
+  Worker 本来就支持删除标记（deleted: true，worker.test 覆盖），手机同步后这 17 项也会消失（v1.6.0 的 applyRemote 同样处理删除）。
+- CLI：`plan paid` 只写 RSV（其余「待定」不写入）；新增 `paid-series <疫苗> --start YYYY-MM-DD [--time] [--dry-run]`、
+  `paid-remove <疫苗> [--dry-run]`、`prune-undecided [--dry-run] [--backup file]`；`refresh-windows` 跳过系列管理的自费项。
+- 测试（本地）：vaccines 7、checkups 6、paidvax 19、windows 8、e2e 29/29、vaccine-ui 22/22、checkup-ui 15/15、window-ui 54/54、sync-ui 31/31、
+  paidvax-ui 60/60、worker 15/15、refresh-windows.local 11/11、paid-cli.local 20/20、sw-upgrade 24/24（含 v1.6.0→v1.7.0）。
+  线上 BASE：paidvax-ui 60/60、window-ui 54/54、vaccine-ui 22/22、checkup-ui 15/15、e2e 29/29（sync-ui 线上需 https 的测试 Worker，未跑，避免在正式 Worker 留测试数据）。
+  新截图 23–26（paidvax-ui 生成）：23-paid-catalog、24-paid-add-picker、25-month-list-penta、26-cascade-prompt。
