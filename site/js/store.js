@@ -1,5 +1,6 @@
 // 数据层：所有数据保存在本机 localStorage，无需登录。
 // 结构可扩展：以后可加入 growth（生长记录）、feeding（喂养记录）等集合。
+import { fillWindow } from './windows.js';
 const KEY = 'babyrecord.v1';
 const SCHEMA_VERSION = 1;
 export const CATEGORY_KEYS = ['vaccine', 'paidvax', 'checkup', 'other'];
@@ -39,7 +40,9 @@ function load() {
 function migrate(data) {
   const d = defaults();
   const out = { ...d, ...data, settings: { ...d.settings, ...(data.settings || {}) } };
-  out.events = (out.events || []).map(normalizeEvent);
+  // 注意：这里在模块加载时（state 还没赋值）就会运行，只能用传进来的 data，不能访问 state
+  const bday = out.settings.babyBirthday;
+  out.events = (out.events || []).map((e) => normalizeEvent(fillWindow(e, bday)));
   out.version = SCHEMA_VERSION;
   return out;
 }
@@ -65,10 +68,17 @@ export function normalizeEvent(e) {
     alarmAdded: !!e.alarmAdded,     // 是否已通过快捷指令设为 iPhone 闹钟提醒（避免重复添加）
     alarmSig: e.alarmSig || '',     // 设置时的提醒时间签名；之后改了时间会提示重新设置
     scheduleId: e.scheduleId || '', // 由「一键生成疫苗计划」生成的剂次编号（如 nip:hepb-2），用于去重
+    // v1.6.0：接种/体检窗口（YYYY-MM-DD，可为空）。date/time 是「计划日期/时间」，提醒和闹钟都按它。
+    earliest: validYmd(e.earliest),
+    latest: validYmd(e.latest),
+    windowNote: e.windowNote || '',
     createdAt: e.createdAt || Date.now(),
     updatedAt: e.updatedAt || Date.now(),
   };
 }
+
+function validYmd(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s || '') ? s : ''; }
+function bdayNow() { try { return state?.settings?.babyBirthday || ''; } catch (e) { return ''; } } // 加载期间 state 尚未赋值时也安全
 
 function save() {
   localStorage.setItem(KEY, JSON.stringify(state));
@@ -89,7 +99,7 @@ export const store = {
   },
   getEvent(id) { return state.events.find((e) => e.id === id); },
   upsertEvent(ev) {
-    const e = normalizeEvent({ ...ev, updatedAt: Date.now() });
+    const e = normalizeEvent(fillWindow({ ...ev, updatedAt: Date.now() }, bdayNow()));
     const i = state.events.findIndex((x) => x.id === e.id);
     if (i >= 0) state.events[i] = e; else state.events.push(e);
     save();
@@ -101,7 +111,7 @@ export const store = {
     const added = [];
     for (const ev of list) {
       if (ev.scheduleId && have.has(ev.scheduleId)) continue;
-      const e = normalizeEvent({ ...ev, createdAt: Date.now(), updatedAt: Date.now() });
+      const e = normalizeEvent(fillWindow({ ...ev, createdAt: Date.now(), updatedAt: Date.now() }, bdayNow()));
       state.events.push(e); added.push(e);
       if (e.scheduleId) have.add(e.scheduleId);
     }
@@ -142,8 +152,9 @@ export const store = {
     const del = new Set(deletes);
     state.events = state.events.filter((e) => !del.has(e.id));
     state.snoozes = state.snoozes.filter((x) => !del.has(x.eventId));
+    const bday = profile?.babyBirthday || bdayNow();
     for (const ev of upserts) {
-      const e = normalizeEvent(ev);
+      const e = normalizeEvent(fillWindow(ev, bday)); // 旧版本同步来的事项没有窗口字段：本机按 scheduleId 补上（不改 updatedAt）
       const i = state.events.findIndex((x) => x.id === e.id);
       if (i >= 0) state.events[i] = e; else state.events.push(e);
     }
