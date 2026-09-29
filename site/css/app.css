@@ -9,6 +9,8 @@
   --peach: #FFE3D6;
   --vaccine: #7B61FF;
   --vaccine-soft: #EEEAFF;
+  --paidvax: #1F8FE5;
+  --paidvax-soft: #E3F0FD;
   --checkup: #20A98B;
   --checkup-soft: #DDF5EE;
   --other: #F2A516;
@@ -90,19 +92,24 @@ a { color: var(--primary-dark); }
 .day .dots { display: flex; gap: 3px; margin-top: 3px; height: 8px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; }
 .dot.cat-vaccine { background: var(--vaccine); }
+.dot.cat-paidvax { background: var(--paidvax); }
 .dot.cat-checkup { background: var(--checkup); }
 .dot.cat-other { background: var(--other); }
 .dot.done { opacity: 0.35; }
 .day .vbadge { position: absolute; top: 1px; right: 1px; font-size: 11px; line-height: 1; background: var(--vaccine); color: #fff; border-radius: 8px; padding: 2px 3px; }
 .day.has-vaccine .num { box-shadow: 0 0 0 2px var(--vaccine); }
 .day.today.has-vaccine .num { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--vaccine); }
-.legend { display: flex; gap: 14px; justify-content: center; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.day .vbadge.paid { background: var(--paidvax); }
+.day.has-paidvax .num { box-shadow: 0 0 0 2px var(--paidvax); }
+.day.today.has-paidvax .num { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--paidvax); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: center; font-size: 12px; color: var(--muted); margin-top: 8px; }
 .legend span { display: inline-flex; align-items: center; gap: 4px; }
 
 /* 某日列表 */
 .day-panel-head { display: flex; align-items: center; justify-content: space-between; }
 .item { border-radius: 16px; padding: 12px; margin-top: 10px; border-left: 6px solid var(--other); background: #FFFBF5; }
 .item.cat-vaccine { border-left-color: var(--vaccine); background: var(--vaccine-soft); }
+.item.cat-paidvax { border-left-color: var(--paidvax); background: var(--paidvax-soft); }
 .item.cat-checkup { border-left-color: var(--checkup); background: var(--checkup-soft); }
 .item.cat-other { border-left-color: var(--other); background: var(--other-soft); }
 .item.is-done { opacity: 0.7; }
@@ -111,6 +118,7 @@ a { color: var(--primary-dark); }
 .item .ititle { font-weight: 800; font-size: 17px; flex: 1; }
 .tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; color: #fff; background: var(--other); white-space: nowrap; }
 .tag.cat-vaccine { background: var(--vaccine); }
+.tag.cat-paidvax { background: var(--paidvax); }
 .tag.cat-checkup { background: var(--checkup); }
 .tag.done { background: #9A9A9A; }
 .item .imeta { font-size: 14px; color: #6E6070; margin-top: 4px; white-space: pre-wrap; }
@@ -152,7 +160,10 @@ textarea.input { min-height: 70px; resize: vertical; }
 .row2 > * { flex: 1; min-width: 0; }
 .seg { display: flex; gap: 8px; }
 .seg button { flex: 1; border: 1.5px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 4px; font-weight: 700; font-size: 14px; }
+#f-cat { flex-wrap: wrap; }
+#f-cat button { flex: 1 1 40%; }
 .seg button.on.cat-vaccine { background: var(--vaccine); border-color: var(--vaccine); color: #fff; }
+.seg button.on.cat-paidvax { background: var(--paidvax); border-color: var(--paidvax); color: #fff; }
 .seg button.on.cat-checkup { background: var(--checkup); border-color: var(--checkup); color: #fff; }
 .seg button.on.cat-other { background: var(--other); border-color: var(--other); color: #fff; }
 .quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -188,6 +199,8 @@ summary { font-weight: 700; cursor: pointer; }
 .alarm.cat-vaccine { background: radial-gradient(circle at 50% 18%, #FFFFFF 0%, #EEE8FF 35%, #C9BCFF 100%); }
 .alarm .a-top { font-size: 15px; font-weight: 800; letter-spacing: 2px; color: var(--primary-dark); background: rgba(255,255,255,0.7); padding: 4px 14px; border-radius: 999px; }
 .alarm.cat-vaccine .a-top { color: var(--vaccine); }
+.alarm.cat-paidvax { background: radial-gradient(circle at 50% 18%, #FFFFFF 0%, #E3F0FD 35%, #A9D2F7 100%); }
+.alarm.cat-paidvax .a-top { color: var(--paidvax); }
 .alarm .bell { font-size: 88px; margin: 22px 0 6px; animation: ring 1.2s ease-in-out infinite; transform-origin: 50% 10%; }
 @keyframes ring { 0%,100% { transform: rotate(0); } 10% { transform: rotate(16deg); } 20% { transform: rotate(-14deg); } 30% { transform: rotate(10deg); } 40% { transform: rotate(-8deg); } 50% { transform: rotate(0); } }
 .alarm .a-clock { font-size: 54px; font-weight: 800; letter-spacing: 1px; line-height: 1.1; }
