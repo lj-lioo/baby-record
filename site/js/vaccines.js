@@ -1,5 +1,5 @@
 // 国家免疫规划疫苗儿童免疫程序（2026年版，国疾控卫免发〔2026〕16号；含2025年1月1日起的百白破程序调整）
-// 只含免费的国家免疫规划（一类）疫苗，6周岁及以下。纯函数，不依赖 localStorage，便于测试。
+// 只含免费的国家免疫规划（一类）疫苗，6周岁及以下；另附 13 周岁女孩的双价HPV疫苗（2026年版新纳入，可选、默认不勾选）。纯函数，不依赖 localStorage，便于测试。
 import { parseYmd, ymd } from './dates.js';
 
 // 剂次编号与官方免疫程序表一致（脊灰 1–4、流脑 1–4：A群为第1、2剂，A群C群为第3、4剂）。
@@ -28,6 +28,9 @@ export const NIP_SCHEDULE = [
   { id: 'polio-4', m: 48, name: '脊灰疫苗',   dose: '第4剂', extra: '减毒活疫苗bOPV，口服' },
   { id: 'dtap-5',  m: 72, name: '百白破疫苗', dose: '第5剂' },
   { id: 'mpsvac-2', m: 72, name: 'A群C群流脑多糖疫苗', dose: '第4剂', extra: '流脑疫苗共4剂，A群C群的第2剂' },
+  // 2026年版新增：双价HPV疫苗，13周岁女孩，2剂间隔6个月（男孩不需要）。可选，默认不添加。
+  { id: 'hpv-1', m: 156, name: '双价HPV疫苗', dose: '第1剂', extra: '仅女孩，共2剂', optional: true, hint: '仅女孩需要（13周岁），默认不添加' },
+  { id: 'hpv-2', m: 162, name: '双价HPV疫苗', dose: '第2剂', extra: '仅女孩，与第1剂间隔6个月', optional: true, hint: '仅女孩需要，默认不添加' },
 ];
 
 export const NIP_SOURCE = '国家免疫规划疫苗儿童免疫程序及说明（2026年版）';
@@ -43,7 +46,7 @@ export function addMonths(dateStr, n) {
 export function ageLabel(m) {
   if (m === 0) return '出生时';
   if (m < 24) return `满${m}月龄`;
-  return `满${m / 12}周岁`;
+  return m % 12 ? `满${Math.floor(m / 12)}周岁${m % 12}个月` : `满${m / 12}周岁`;
 }
 
 export function doseTitle(d) { return d.dose ? `${d.name} ${d.dose}` : d.name; }

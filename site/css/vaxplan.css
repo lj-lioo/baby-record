@@ -15,3 +15,7 @@
 .cta-btns .btn { padding: 7px 12px; font-size: 14px; flex: none; }
 [data-kind="checkup"] .vp-item input { accent-color: var(--checkup); }
 [data-kind="checkup"] #vp-ok { background: var(--checkup); }
+[data-kind="paid"] .vp-item input { accent-color: var(--paidvax); }
+[data-kind="paid"] #vp-ok { background: var(--paidvax); }
+.vp-item.is-req .vp-title::after { content: "已安排"; margin-left: 6px; font-size: 11px; font-weight: 700; color: #fff; background: var(--paidvax); border-radius: 999px; padding: 1px 6px; vertical-align: 1px; }
+.vp-group { margin: 10px 0 2px; font-size: 13px; font-weight: 800; color: var(--paidvax); }
