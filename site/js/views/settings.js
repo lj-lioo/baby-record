@@ -9,6 +9,8 @@ import { testAlarmUrl } from '../shortcuts.js';
 import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../sync.js';
 import { extractSyncKey } from '../sync-core.js';
+// 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
+export const APP_BUILD = '1.4.1';
 
 export function renderSettings(root) {
   const st = store.state.settings;
@@ -71,7 +73,7 @@ export function renderSettings(root) {
         <div class="small muted">当前使用：${esc(apiBase() || '未配置')}</div></div>
       </details>
       <button class="btn danger block" id="btnReset" style="margin-top:12px">清空所有数据</button>
-      <p class="small muted" style="text-align:center">宝宝记录 v${esc(window.BABY_CONFIG?.appVersion || '1.0.0')}</p>
+      <p class="small muted" style="text-align:center" id="appVer">宝宝记录 v${esc(APP_BUILD)}${(window.BABY_CONFIG?.appVersion || APP_BUILD) !== APP_BUILD ? ` · 正在更新到 v${esc(window.BABY_CONFIG.appVersion)}，请关闭后重新打开` : ''}</p>
     </section>`;
 
   const q = (s) => root.querySelector(s);

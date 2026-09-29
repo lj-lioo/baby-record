@@ -17,6 +17,32 @@
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/vaxplan.css">
   <script src="config.js"></script>
+  <script>
+  // 新版本 Service Worker 接管后自动刷新一次，避免新旧文件混用（仅当页面原本已由旧版本控制；30 秒内最多一次，防循环）
+  (function () {
+    if (!('serviceWorker' in navigator)) return;
+    var sw = navigator.serviceWorker, had = !!sw.controller, done = false;
+    function safe() { var s = document.getElementById('sheet'), a = document.getElementById('alarm'); return (!s || s.hidden) && (!a || a.hidden); }
+    function reload() {
+      if (done) return;
+      var last = 0; try { last = +sessionStorage.getItem('br-sw-reload') || 0; } catch (e) {}
+      if (Date.now() - last < 30000) return;
+      done = true; try { sessionStorage.setItem('br-sw-reload', String(Date.now())); } catch (e) {}
+      location.reload();
+    }
+    sw.addEventListener('controllerchange', function () {
+      if (!had) { had = true; return; }   // 第一次安装：页面本来就是最新的
+      if (safe()) { reload(); return; }
+      document.addEventListener('visibilitychange', function f() {
+        if (!document.hidden && safe()) { document.removeEventListener('visibilitychange', f); reload(); }
+      });
+    });
+    // 从后台切回时检查有没有新版本（iOS 主屏幕 App 常常只是恢复而不是重新打开）
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && sw.getRegistration) sw.getRegistration().then(function (r) { if (r) r.update(); }).catch(function () {});
+    });
+  })();
+  </script>
 </head>
 <body>
   <div id="app">

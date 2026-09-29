@@ -55,7 +55,7 @@ let lastDay = new Date().getDate();
 setInterval(() => { if (new Date().getDate() !== lastDay) { lastDay = new Date().getDate(); render(); } }, 60000);
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').then(() => refreshOnLaunch()).catch((e) => console.warn('SW 注册失败', e));
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(() => refreshOnLaunch()).catch((e) => console.warn('SW 注册失败', e));
   navigator.serviceWorker.addEventListener('message', (e) => {
     const d = e.data || {};
     if (d.type === 'alarm' && d.rid && d.eventId && !store.isFired(d.rid) && !alarmShowing()) showAlarm({ rid: d.rid, eventId: d.eventId });
