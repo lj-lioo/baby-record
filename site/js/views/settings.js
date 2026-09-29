@@ -1,12 +1,14 @@
 // 设置：推送提醒、快捷指令名称、数据备份（导出/导入 JSON）
 import { store, uid } from '../store.js';
-import { esc, toast, confirmSheet } from '../ui.js';
+import { esc, toast, confirmSheet, openSheet, closeSheet } from '../ui.js';
 import { pushStatus, enablePush, disablePush, sendTestPush, isIOS, isStandalone, apiBase } from '../push.js';
 import { showAlarm } from './alarm.js';
 import { unlockAudio } from '../sound.js';
 import { todayStr, cnDate } from '../dates.js';
 import { testAlarmUrl } from '../shortcuts.js';
 import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
+import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../sync.js';
+import { extractSyncKey } from '../sync-core.js';
 
 export function renderSettings(root) {
   const st = store.state.settings;
@@ -51,9 +53,11 @@ export function renderSettings(root) {
       <p class="note small">「1分钟后测试」：点完后回到主屏幕或锁屏，1分钟内应收到通知。若收不到，请检查 iPhone「设置 → 通知 → 宝宝记录」是否允许通知，以及专注模式是否屏蔽了通知。</p>
     </section>
 
+    ${syncAvailable() ? syncCardHtml() : ''}
+
     <section class="card">
       <h2>💾 数据备份</h2>
-      <p class="small muted" style="margin-top:0">数据只保存在这台手机的本App里（无需登录）。建议定期导出备份，换手机或清理Safari数据前一定要导出。</p>
+      <p class="small muted" style="margin-top:0">${syncStatus().enabled ? '已开启云同步：数据保存在本机，并加密同步到云端。' : '数据只保存在这台手机的本App里（无需登录）。'}建议定期导出备份，换手机或清理Safari数据前一定要导出。</p>
       <div class="btn-row"><button class="btn secondary" id="btnExport">导出备份</button><button class="btn secondary" id="btnImport">导入备份</button></div>
       <input type="file" id="fileImport" accept="application/json,.json,text/plain" hidden>
       <p class="small muted">当前共有 <b>${store.events().length}</b> 个事项。</p>
@@ -101,6 +105,8 @@ export function renderSettings(root) {
   q('#soundOn').onchange = (e) => store.updateSettings({ sound: e.target.checked });
   q('#pushApi').onchange = (e) => { store.updateSettings({ pushApi: e.target.value.trim() }); toast('已保存'); refreshStatus(q('#pushStatus')); };
 
+  if (syncAvailable()) bindSyncCard(root);
+
   q('#btnExport').onclick = () => exportBackup();
   q('#btnImport').onclick = () => q('#fileImport').click();
   q('#fileImport').onchange = async (e) => {
@@ -116,6 +122,103 @@ export function renderSettings(root) {
     if (ok) { store.resetAll(); toast('已清空'); }
   };
 }
+
+// ===== 云同步 =====
+function fmtTime(t) {
+  if (!t) return '还没有同步过';
+  const d = new Date(t), p = (n) => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+function syncStateHtml(s = syncStatus()) {
+  if (!s.enabled) return '<span class="muted">未开启</span>';
+  if (s.running) return '同步中…';
+  if (s.lastError) return `<span class="bad">同步失败：${esc(s.lastError)}</span>`;
+  return `<span class="ok">已开启</span> · 上次同步 ${esc(fmtTime(s.lastSyncAt))}`;
+}
+function syncCardHtml() {
+  const s = syncStatus();
+  return `<section class="card" id="syncCard">
+      <h2>☁️ 云同步</h2>
+      <p class="small muted" style="margin-top:0">在多台手机之间同步事项；助手也能帮你把购物清单、记录直接加进来。数据在本机<b>加密</b>后上传，只有持有同步密钥的设备能看到内容。</p>
+      <div class="kv"><span>状态</span><span id="syncState">${syncStateHtml(s)}</span></div>
+      ${s.enabled ? `
+      <div class="field" style="margin-top:8px"><label>同步密钥（在另一台设备上粘贴它即可同步同一份数据）</label>
+        <input id="syncKey" class="input" readonly value="${esc(s.key.slice(0, 9) + '••••••••••••' + s.key.slice(-4))}" data-full="${esc(s.key)}"></div>
+      <div class="btn-row"><button class="btn secondary" id="btnSyncShow">显示</button><button class="btn secondary" id="btnSyncCopy">复制密钥</button></div>
+      <div class="btn-row" style="margin-top:10px"><button class="btn" id="btnSyncNow">立即同步</button><button class="btn ghost" id="btnSyncOff">关闭同步</button></div>
+      <p class="note small">⚠️ 密钥就是这份数据的钥匙：拿到它的人可以读写你的宝宝记录。只在自己的设备之间传递，不要发到群里；丢了密钥无法找回（本机数据不受影响）。</p>` : `
+      <div class="field" style="margin-top:8px"><label for="syncPaste">同步密钥（从助手或另一台设备得到的，以 brs1_ 开头）</label>
+        <textarea id="syncPaste" class="input" rows="2" placeholder="粘贴同步密钥"></textarea></div>
+      <div class="btn-row"><button class="btn secondary" id="btnSyncClip">从剪贴板粘贴</button><button class="btn" id="btnSyncJoin">连接并同步</button></div>
+      <p class="small muted">本机已有的事项（包括已生成的疫苗、体检计划）会上传并和云端合并，不会被清空。</p>
+      <details style="margin-top:6px"><summary class="small">没有密钥？在这台设备上生成新密钥</summary>
+        <p class="small muted">只在第一台设备上这样做；其他设备都要粘贴同一个密钥，才能看到同一份数据。</p>
+        <button class="btn secondary block" id="btnSyncOn">生成新密钥并开启</button>
+      </details>`}
+    </section>`;
+}
+function bindSyncCard(root) {
+  const q = (s) => root.querySelector(s);
+  const run = async (btn, fn, okMsg) => {
+    btn.disabled = true;
+    try { await fn(); if (okMsg) toast(okMsg); } catch (e) { toast(e.message, 4000); }
+    btn.disabled = false;
+    renderSettings(root);
+  };
+  q('#btnSyncOn') && (q('#btnSyncOn').onclick = () => run(q('#btnSyncOn'), () => enableSync(), '云同步已开启 ☁️'));
+  q('#btnSyncJoin') && (q('#btnSyncJoin').onclick = () => run(q('#btnSyncJoin'), () => enableSync(q('#syncPaste').value), '已连接，数据已合并 ☁️'));
+  q('#btnSyncClip') && (q('#btnSyncClip').onclick = async () => {
+    try {
+      const t = await navigator.clipboard.readText();
+      const k = extractSyncKey(t);
+      if (!k) { toast('剪贴板里没有同步密钥（应以 brs1_ 开头）', 3500); return; }
+      q('#syncPaste').value = k; toast('已粘贴，点「连接并同步」');
+    } catch { toast('无法读取剪贴板：请长按输入框选择「粘贴」', 3500); q('#syncPaste').focus(); }
+  });
+  q('#btnSyncNow') && (q('#btnSyncNow').onclick = () => run(q('#btnSyncNow'), async () => { await syncNow('manual'); if (syncStatus().lastError) throw new Error('同步失败：' + syncStatus().lastError); }, '已同步'));
+  q('#btnSyncOff') && (q('#btnSyncOff').onclick = async () => {
+    const ok = await confirmSheet('关闭后这台设备不再同步（本机数据保留，密钥也保留，随时可以再开启）。', '关闭同步');
+    if (ok) { disableSync(); renderSettings(root); }
+  });
+  q('#btnSyncShow') && (q('#btnSyncShow').onclick = () => { const i = q('#syncKey'); i.value = i.dataset.full; i.select(); });
+  q('#btnSyncCopy') && (q('#btnSyncCopy').onclick = async () => {
+    const i = q('#syncKey');
+    try { await navigator.clipboard.writeText(i.dataset.full); toast('已复制同步密钥'); } catch { i.value = i.dataset.full; i.select(); toast('请长按选择并复制'); }
+  });
+}
+// 打开配对链接（#pair=密钥）后：主屏幕 App 里直接连接；在 Safari 里则提示复制到 App（iOS 上两者数据分开）
+export function openPairSheet(key) {
+  const inApp = isStandalone();
+  const fp = `${key.slice(0, 9)}…${key.slice(-4)}`;
+  openSheet(`
+    <h3>☁️ 连接云同步</h3>
+    ${inApp || !isIOS() ? `<p>用这个同步密钥（${esc(fp)}）和其他设备、助手共享同一份数据。</p>
+      <p class="small muted">本机已有的事项会上传并和云端合并，不会被清空。</p>
+      <div class="btn-row"><button class="btn ghost" id="pairCancel">取消</button><button class="btn" id="pairJoin">连接并同步</button></div>
+      ${inApp ? '' : '<button class="btn secondary block" id="pairCopy" style="margin-top:10px">复制同步密钥</button>'}`
+    : `<p>你现在是在 <b>Safari</b> 里打开的。主屏幕上的「宝宝记录」App 和 Safari 的数据是分开的，请把密钥带到 App 里：</p>
+      <ol class="small" style="padding-left:20px;line-height:1.8">
+        <li>点下面的「复制同步密钥」</li>
+        <li>回到主屏幕，打开「宝宝记录」App</li>
+        <li>设置 → ☁️ 云同步 → 「从剪贴板粘贴」 → 「连接并同步」</li>
+      </ol>
+      <button class="btn block" id="pairCopy">复制同步密钥</button>
+      <div class="btn-row" style="margin-top:10px"><button class="btn ghost" id="pairCancel">关闭</button><button class="btn secondary" id="pairJoin">就在 Safari 里使用</button></div>`}
+  `, (sh) => {
+    sh.querySelector('#pairCancel').onclick = closeSheet;
+    const copy = sh.querySelector('#pairCopy');
+    if (copy) copy.onclick = async () => {
+      try { await navigator.clipboard.writeText(key); toast('已复制，去主屏幕打开「宝宝记录」App 粘贴', 3500); } catch { toast('复制失败，请重新扫码', 3500); }
+    };
+    sh.querySelector('#pairJoin').onclick = async () => {
+      closeSheet();
+      try { await enableSync(key); toast('已连接，数据已合并 ☁️'); } catch (e) { toast(e.message, 4000); }
+      if (location.hash.startsWith('#/settings')) window.dispatchEvent(new CustomEvent('hashchange'));
+    };
+  });
+}
+
+window.addEventListener('sync-status', (e) => { const el = document.getElementById('syncState'); if (el) el.innerHTML = syncStateHtml(e.detail); });
 
 async function refreshStatus(el) {
   const s = await pushStatus();

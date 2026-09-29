@@ -1,10 +1,10 @@
 // Service Worker：离线缓存 + Web Push + 通知点击 + 生成 .ics（真实 URL，text/calendar）
-const VERSION = 'v1.3.0';
+const VERSION = 'v1.4.0';
 const CACHE = `baby-record-${VERSION}`;
 const ASSETS = [
   './', './index.html', './manifest.json', './config.js', './css/app.css', './css/vaxplan.css',
   './js/app.js', './js/store.js', './js/dates.js', './js/categories.js', './js/reminders.js', './js/ics.js',
-  './js/push.js', './js/shortcuts.js', './js/ui.js', './js/sound.js', './js/vaccines.js', './js/checkups.js',
+  './js/push.js', './js/shortcuts.js', './js/ui.js', './js/sound.js', './js/vaccines.js', './js/checkups.js', './js/sync-core.js', './js/sync.js',
   './js/views/home.js', './js/views/editor.js', './js/views/actions.js', './js/views/alarm.js', './js/views/settings.js', './js/views/help.js', './js/views/vaxplan.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/badge-72.png',
 ];

@@ -15,6 +15,7 @@ function defaults() {
       shortcutName: '宝宝闹钟',
       pushApi: '',       // 为空时使用 config.js 中的默认推送服务地址
       sound: true,
+      profileUpdatedAt: 0, // 宝宝资料的修改时间（云同步用）
     },
     // growth: [], feeding: []   // 预留：以后的功能
   };
@@ -121,7 +122,25 @@ export const store = {
     save();
   },
   isFired(rid) { return !!state.fired[rid]; },
-  updateSettings(patch) { state.settings = { ...state.settings, ...patch }; save(); },
+  updateSettings(patch) {
+    // 宝宝资料（姓名/生日）变化时记录修改时间，供云同步合并
+    if (('babyName' in patch || 'babyBirthday' in patch) && !('profileUpdatedAt' in patch)) patch = { ...patch, profileUpdatedAt: Date.now() };
+    state.settings = { ...state.settings, ...patch }; save();
+  },
+  // 云同步：应用其他设备的修改（保留对方的 updatedAt，只保存一次）
+  applyRemote({ upserts = [], deletes = [], profile = null } = {}) {
+    if (!upserts.length && !deletes.length && !profile) return;
+    const del = new Set(deletes);
+    state.events = state.events.filter((e) => !del.has(e.id));
+    state.snoozes = state.snoozes.filter((x) => !del.has(x.eventId));
+    for (const ev of upserts) {
+      const e = normalizeEvent(ev);
+      const i = state.events.findIndex((x) => x.id === e.id);
+      if (i >= 0) state.events[i] = e; else state.events.push(e);
+    }
+    if (profile) state.settings = { ...state.settings, babyName: profile.babyName || '', babyBirthday: profile.babyBirthday || '', profileUpdatedAt: profile.updatedAt };
+    save();
+  },
   exportJSON() {
     return JSON.stringify({ app: 'baby-record', exportedAt: new Date().toISOString(), data: state }, null, 2);
   },

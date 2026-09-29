@@ -7,6 +7,8 @@ import { renderHelp } from './views/help.js';
 import { showAlarm, checkDueAlarms, alarmShowing } from './views/alarm.js';
 import { syncReminders, refreshOnLaunch } from './push.js';
 import { unlockAudio } from './sound.js';
+import { initSync, syncAvailable, takePendingPairKey } from './sync.js';
+import { openPairSheet } from './views/settings.js';
 
 const view = document.getElementById('view');
 const routes = { home: renderHome, settings: renderSettings, help: renderHelp };
@@ -68,3 +70,6 @@ if ('serviceWorker' in navigator) {
 
 render();
 setTimeout(checkDueAlarms, 800);
+initSync(); // 仅当 config.js 配置了 syncApi 时启用
+const pairKey = takePendingPairKey();
+if (pairKey && syncAvailable()) openPairSheet(pairKey);
