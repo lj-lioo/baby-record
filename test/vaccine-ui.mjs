@@ -21,7 +21,7 @@ await page.reload(); await page.waitForTimeout(800);
 ok('首页显示「一键生成疫苗计划」提示', await page.locator('#vaxGo').isVisible());
 await page.click('#vaxGo');
 await page.waitForSelector('#vp-bday');
-ok('未设置生日时不预填、添加按钮禁用', (await page.inputValue('#vp-bday')) === '' && await page.isDisabled('#vp-ok'));
+ok('未设置生日时默认填 2026-09-17', (await page.inputValue('#vp-bday')) === '2026-09-17');
 await page.fill('#vp-bday', '2026-09-17'); await page.dispatchEvent('#vp-bday', 'change');
 await page.waitForSelector('.vp-item');
 const items = page.locator('.vp-item');
@@ -54,7 +54,7 @@ ok('乙肝第1剂作为已完成历史记录，无提醒', hb1 && hb1.done && hb
 ok('卡介苗未添加（未勾选）', !nip.some((e) => e.scheduleId === 'nip:bcg-1'));
 const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('babyrecord.v1')).settings.babyBirthday);
 ok('生日已保存到设置', saved === '2026-09-17');
-ok('首页提示已消失', (await page.locator('#vaxGo').count()) === 0);
+ok('首页疫苗提示已消失（只剩体检提示）', (await page.locator('#vaxGo').count()) === 0 && (await page.locator('#chkGo').count()) === 1);
 const dayTxt = await page.locator('#dayCard').innerText();
 ok('首页选中下一针日期（10月17日 乙肝第2剂）', dayTxt.includes('10月17日') && dayTxt.includes('乙肝疫苗 第2剂'), dayTxt.split('\n')[0]);
 ok('日历 10月17日 有 💉 标记', (await page.locator('.day[data-date="2026-10-17"] .vbadge').count()) === 1);
