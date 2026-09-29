@@ -5,3 +5,4 @@ server/tunnel-url.txt
 test/out-*
 test/backup.json
 test/results.json
+test/results-vaccine.json

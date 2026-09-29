@@ -9,6 +9,7 @@
 - 首页顶部醒目的「近期提醒」卡片（今天 / 明天 / 还有N天 / 已过N天），可标记已完成
 - 每个事项可设置多个提醒：前一天 20:00、当天 08:00、提前1天/2小时/1小时/30分钟、准时、自定义时间
 - **⏰ 设为闹钟提醒**：通过 iOS 快捷指令「宝宝闹钟」在「提醒事项」的「宝宝」列表中为每个提醒时间创建 **紧急** 提醒（iOS 26.2+，到点像闹钟一样全屏响铃）
+- **💉 一键生成疫苗计划**：输入宝宝生日，按《国家免疫规划疫苗儿童免疫程序及说明（2026年版）》生成到 6 周岁的免费疫苗日程（已过的剂次可选作为历史记录；按剂次 scheduleId 去重，重复生成不会重复添加）
 - 📅 导出 .ics 到苹果日历（多个 VALARM，按所选提醒时间）
 - App 打开时到点弹出全屏提醒页（铃声、知道了、稍后提醒10分钟）
 - 可选：Web Push 推送（需要 `server/` 推送服务在线）
@@ -22,12 +23,13 @@ site/            静态网站（直接部署到 GitHub Pages）
   js/store.js       数据层（localStorage，可扩展：生长记录、喂养记录…）
   js/reminders.js   提醒规则（App 内闹钟 / 推送 / ics / 快捷指令共用）
   js/shortcuts.js   快捷指令 URL 与传入文本格式
+  js/vaccines.js    国家免疫规划疫苗程序与日期推算（纯函数）
   js/ics.js         RFC 5545 .ics 生成
   js/push.js        Web Push 客户端
   js/views/*.js     页面：home / editor / actions / alarm / settings / help
   icons/src/*.svg   图标源文件（build-icons.sh 生成 PNG）
 server/          可选的推送服务（Node + web-push，JSON 文件存储）
-test/            Playwright 端到端测试、ics 校验
+test/            Playwright 端到端测试、ics 校验、疫苗计划测试（node test/vaccines.test.mjs；node test/vaccine-ui.mjs）
 ```
 
 ## 快捷指令传入格式
