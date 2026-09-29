@@ -12,6 +12,14 @@
 //                        [--earliest 日期] [--latest 日期]（接种窗口，可不填；--date 是计划日期）
 //   node add-item.js plan paid|vaccine|checkup [--dry-run] [--birthday 2026-09-17] [--include-optional]
 //                        按 App 同一个生成器写入云端（09:00，提醒前一天20:00+当天08:00；跳过已过的和云端已有同 scheduleId 的）；plan-paid 同 plan paid
+//                        v1.7.0：plan paid 只写入已选定的 RSV单抗；其他自费疫苗默认「待定」不写入，用 paid-series 按需加入
+//   node add-item.js paid-series <疫苗> --start YYYY-MM-DD [--time 09:00] [--dry-run] [--birthday …]
+//                        把一种自费疫苗整个系列加入计划：第1剂 --start（不能早于最早日期），后续剂次按说明书最短间隔和月龄自动排
+//                        疫苗：rsv pcv13 penta rota5 ev71 flu var hib mcv hepai jei（云端已有该疫苗的剂次时不重复添加）
+//   node add-item.js paid-remove <疫苗> [--dry-run]   把一种自费疫苗移出计划（删除未完成的剂次，写删除标记；已完成的保留）
+//   node add-item.js prune-undecided [--dry-run] [--backup 文件.json]
+//                        v1.7.0 迁移：删除云端由旧版 plan paid 生成、用户没动过的「待定」自费疫苗（写删除标记，手机同步后也消失）；
+//                        RSV 保留；已完成 / 设过闹钟 / 日期·时间·标题·备注·提醒被改过的保留并列出；删除前先把要删的事项备份成 JSON
 //   node add-item.js refresh-notes checkup|vaccine|paid [--dry-run] [--birthday …]
 //                        用最新生成器的备注原地更新云端已有的计划事项（按 scheduleId 匹配；只改备注和 updatedAt，
 //                        id/日期/时间/提醒/已完成/已设闹钟都保留；备注被手动改过（不是生成器格式）的跳过；不新增事项）
@@ -40,11 +48,14 @@ const quietImport = async (file) => {
   process.emitWarning = (w, ...a) => { if (/MODULE_TYPELESS|Reparsing as ES module/.test(String(w?.message || w) + JSON.stringify(a))) return; return ew.call(process, w, ...a); };
   try { return await import(pathToFileURL(path.join(here, '../site/js', file)).href); } finally { process.emitWarning = ew; }
 };
+async function loadPaid() {
+  const src = fs.readFileSync(path.join(here, '../site/js/paidvax.js'), 'utf8');
+  return import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
+}
 async function loadPlanner(kind) {
   if (kind === 'paid') {
-    const src = fs.readFileSync(path.join(here, '../site/js/paidvax.js'), 'utf8');
-    const m = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
-    return { category: 'paidvax', prefix: 'paid:', plan: m.planPaid };
+    const m = await loadPaid();
+    return { category: 'paidvax', prefix: 'paid:', plan: m.planPaid, m };
   }
   if (kind === 'vaccine') return { category: 'vaccine', prefix: 'nip:', plan: (await quietImport('vaccines.js')).planVaccines };
   if (kind === 'checkup') return { category: 'checkup', prefix: 'chk:', plan: (await quietImport('checkups.js')).planCheckups };
@@ -268,12 +279,15 @@ async function main() {
     const bday = typeof opt.birthday === 'string' ? opt.birthday : (profile?.babyBirthday || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(bday)) throw new Error('云端没有宝宝生日：加 --birthday YYYY-MM-DD');
     const plan = P.plan(bday, today(), all);
-    const pick = plan.filter((d) => !d.existing && !d.past && (opt['include-optional'] || !d.optional));
-    const skipped = { existing: plan.filter((d) => d.existing).length, past: plan.filter((d) => !d.existing && d.past).length, optional: plan.filter((d) => !d.existing && !d.past && d.optional && !opt['include-optional']).length };
+    // v1.7.0：自费疫苗默认「待定」，plan paid 只写入已选定的（required：RSV单抗）；其他用 paid-series 按需加入
+    const undecided = (d) => kind === 'paid' && !d.required;
+    const pick = plan.filter((d) => !d.existing && !d.past && !undecided(d) && (opt['include-optional'] || !d.optional));
+    const skipped = { existing: plan.filter((d) => d.existing).length, past: plan.filter((d) => !d.existing && d.past).length, undecided: plan.filter((d) => !d.existing && !d.past && undecided(d)).length,
+      optional: plan.filter((d) => !d.existing && !d.past && !undecided(d) && d.optional && !opt['include-optional']).length };
     const list = pick.map((d) => makeEvent({ title: d.title, date: d.date, time: '09:00', category: P.category, note: d.note, remind: 'eve20,morning8', scheduleId: d.scheduleId,
       earliest: d.earliest || '', latest: d.latest || '', windowNote: d.windowNote || '' }));
     list.forEach((e) => console.log(`${opt['dry-run'] ? '（预演）' : '＋'} ${fmt(e).replace(/  — .*  \[/, '  [')}  ${e.scheduleId}`));
-    console.log(`生日 ${bday}：计划 ${plan.length} 项；${opt['dry-run'] ? '将' : '已'}写入 ${list.length} 项；跳过 云端已有 ${skipped.existing}、已过 ${skipped.past}、备选/可选 ${skipped.optional}`);
+    console.log(`生日 ${bday}：计划 ${plan.length} 项；${opt['dry-run'] ? '将' : '已'}写入 ${list.length} 项；跳过 云端已有 ${skipped.existing}、已过 ${skipped.past}、备选/可选 ${skipped.optional}${kind === 'paid' ? `、自费待定 ${skipped.undecided}（不写入；要打哪种用 paid-series <疫苗> --start 日期 加入）` : ''}`);
     if (!opt['dry-run'] && list.length) await pushEvents(cfg, keys, list.map((event) => ({ event })));
     return;
   }
@@ -286,10 +300,14 @@ async function main() {
     const out = [], stat = { same: 0, manual: 0, unknown: 0 };
     for (const { rec, event } of events.values()) {
       if (!String(event.scheduleId || '').startsWith(P.prefix)) continue;
-      const d = byId.get(event.scheduleId);
+      let d = byId.get(event.scheduleId);
+      // v1.7.0：按系列加入计划的自费剂次（备注以「自费」开头）用系列备注，旧版默认方案的用旧备注
+      const ser = P.m && P.m.seriesOfSid(event.scheduleId);
+      if (ser && /^自费/.test(event.note || '')) d = { note: P.m.seriesNote(ser.family, ser.n) };
       if (!d) { stat.unknown++; continue; }
       if (event.note === d.note) { stat.same++; continue; }
       if (event.note && GEN && !event.note.startsWith(GEN)) { stat.manual++; console.log(`跳过（备注被手动改过）：${event.title}`); continue; }
+      if (P.m && event.note && !/^(可选·自费|备选方案|自费) · |^自费·共/.test(event.note) && event.scheduleId !== 'paid:rsv') { stat.manual++; console.log(`跳过（备注被手动改过）：${event.title}`); continue; }
       out.push({ event: { ...event, note: d.note, updatedAt: Math.max(Date.now(), rec.updatedAt + 1) } });
       console.log(`${opt['dry-run'] ? '（预演）' : '✎'} ${event.date} ${event.title}  ${event.scheduleId}`);
     }
@@ -309,6 +327,8 @@ async function main() {
       if (!hit) { stat.other++; continue; }
       const d = hit.byId.get(event.scheduleId);
       if (!d || !d.earliest) { stat.unknown++; continue; }
+      // v1.7.0：自费疫苗按系列加入计划时已按上一剂日期算好最早/最迟，不用旧的默认方案覆盖（只给没有窗口的补上）
+      if (hit.P.prefix === 'paid:' && event.earliest) { stat.series = (stat.series || 0) + 1; continue; }
       const w = { earliest: d.earliest, latest: d.latest || '', windowNote: d.windowNote || '' };
       if (event.earliest === w.earliest && (event.latest || '') === w.latest && (event.windowNote || '') === w.windowNote) { stat.same++; continue; }
       const isNew = !event.earliest;
@@ -317,8 +337,77 @@ async function main() {
       const warn = event.date < w.earliest ? '  ⚠️计划日早于最早' : (w.latest && event.date > w.latest ? '  ⚠️计划日晚于最迟' : '');
       console.log(`${opt['dry-run'] ? '（预演）' : '✎'} ${isNew ? '补' : '改'} ${event.scheduleId.padEnd(16)} 计划 ${event.date}  最早 ${w.earliest}  最迟 ${w.latest || '—'}  ${event.title}${warn}`);
     }
-    console.log(`生日 ${bday}：${opt['dry-run'] ? '将' : '已'}写入窗口 ${out.length} 项（新补 ${stat.add}、更新 ${stat.change}）；已是最新 ${stat.same}、生成器里没有 ${stat.unknown}、非计划事项 ${stat.other}`);
+    console.log(`生日 ${bday}：${opt['dry-run'] ? '将' : '已'}写入窗口 ${out.length} 项（新补 ${stat.add}、更新 ${stat.change}）；已是最新 ${stat.same}、生成器里没有 ${stat.unknown}、非计划事项 ${stat.other}${stat.series ? `、自费已有窗口（系列管理）${stat.series}` : ''}`);
     if (!opt['dry-run'] && out.length) await pushEvents(cfg, keys, out);
+    return;
+  }
+  if (cmd === 'paid-series' || cmd === 'paid-remove') {
+    const m = await loadPaid();
+    const fam = pos[0];
+    if (!m.SERIES[fam]) throw new Error(`用法：${cmd} <疫苗>${cmd === 'paid-series' ? ' --start YYYY-MM-DD' : ''}；疫苗：${m.SERIES_ORDER.join(' ')}`);
+    const S = m.SERIES[fam];
+    const have = [...events.values()].filter(({ event }) => { const s = m.seriesOfSid(event.scheduleId); return s && s.family === fam; });
+    if (cmd === 'paid-remove') {
+      const del = have.filter(({ event }) => !event.done);
+      del.forEach(({ event }) => console.log(`${opt['dry-run'] ? '（预演）' : '🗑'} ${fmt(event).replace(/  — .*  \[/, '  [')}  ${event.scheduleId}`));
+      console.log(`${S.title}：${opt['dry-run'] ? '将' : '已'}移出计划 ${del.length} 剂（写删除标记）；已完成保留 ${have.length - del.length} 剂`);
+      if (!opt['dry-run'] && del.length) await pushEvents(cfg, keys, del.map(({ rec, event }) => ({ event: { ...event, updatedAt: Math.max(Date.now(), rec.updatedAt + 1) }, deleted: true })));
+      return;
+    }
+    const bday = typeof opt.birthday === 'string' ? opt.birthday : (profile?.babyBirthday || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(bday)) throw new Error('云端没有宝宝生日：加 --birthday YYYY-MM-DD');
+    const start = opt.start;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start || '')) throw new Error('缺少 --start YYYY-MM-DD（第1剂计划日期）');
+    const time = typeof opt.time === 'string' ? opt.time : '09:00';
+    const info = m.seriesStartInfo(fam, bday, today());
+    if (start < info.earliest) throw new Error(`第1剂不能早于最早日期 ${info.earliest}`);
+    if (have.length) { have.forEach(({ event }) => console.log(`  已有：${fmt(event).replace(/  — .*  \[/, '  [')}`)); throw new Error(`云端已有 ${S.title} 的 ${have.length} 剂，未重复添加（先 paid-remove ${fam}）`); }
+    if (info.latest && start > info.latest) console.log(`⚠️ 第1剂晚于最迟日期 ${info.latest}（${info.latestNote || ''}），请先咨询接种门诊`);
+    const plan = m.seriesPlan(fam, bday, start);
+    const list = plan.map((d) => makeEvent({ title: d.title, date: d.date, time, category: 'paidvax', note: d.note, remind: 'eve20,morning8', scheduleId: d.scheduleId,
+      earliest: d.earliest, latest: d.latest || '', windowNote: d.windowNote || '' }));
+    list.forEach((e) => console.log(`${opt['dry-run'] ? '（预演）' : '＋'} ${e.date} ${e.time}  ${e.title}  〔最早 ${e.earliest}${e.latest ? ` · 最迟 ${e.latest}` : ''}〕${e.latest && e.date > e.latest ? '  ⚠️晚于最迟' : ''}  ${e.scheduleId}`));
+    console.log(`${S.title}：${opt['dry-run'] ? '将' : '已'}加入计划 ${list.length} 剂（生日 ${bday}，第1剂最早 ${info.earliest}${info.latest ? `、最迟 ${info.latest}` : ''}）`);
+    if (!opt['dry-run']) await pushEvents(cfg, keys, list.map((event) => ({ event })));
+    return;
+  }
+  if (cmd === 'prune-undecided') {
+    const m = await loadPaid();
+    const bday = typeof opt.birthday === 'string' ? opt.birthday : (profile?.babyBirthday || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(bday)) throw new Error('云端没有宝宝生日：加 --birthday YYYY-MM-DD');
+    const legacy = new Map(m.planPaid(bday, today(), []).map((d) => [d.scheduleId, d]));
+    const del = [], keep = [];
+    for (const { rec, event } of events.values()) {
+      const sid = String(event.scheduleId || '');
+      if (!sid.startsWith('paid:')) continue;
+      if (sid === 'paid:rsv') { keep.push({ event, why: 'RSV单抗：用户已选定，保留' }); continue; }
+      const d = legacy.get(sid);
+      const why = [];
+      if (!d) why.push('不是旧版默认方案的剂次');
+      else {
+        if (event.done) why.push('已完成');
+        if (event.alarmAdded) why.push('设过闹钟');
+        if (event.date !== d.date) why.push(`计划日改过（${d.date} → ${event.date}）`);
+        if ((event.time || '') !== '09:00') why.push(`时间改过（${event.time || '全天'}）`);
+        if (event.title !== d.title) why.push('标题改过');
+        if (event.note !== d.note) why.push('备注改过');
+        if ((event.reminders || []).map((r) => r.kind === 'preset' ? r.preset : 'abs').join(',') !== 'eve20,morning8') why.push('提醒改过');
+        if (event.category !== 'paidvax') why.push(`类别是 ${event.category}`);
+      }
+      if (why.length) keep.push({ event, why: why.join('、') }); else del.push({ rec, event });
+    }
+    del.sort((a, b) => a.event.scheduleId.localeCompare(b.event.scheduleId, 'en', { numeric: true }));
+    for (const { event, why } of keep) console.log(`保留 ${String(event.scheduleId).padEnd(16)} ${event.date}  ${event.title}  —— ${why}`);
+    for (const { event } of del) console.log(`${opt['dry-run'] ? '（预演）删除' : '🗑 删除'} ${event.scheduleId.padEnd(16)} ${event.date}  ${event.title}`);
+    console.log(`自费事项：${del.length + keep.length} 个；${opt['dry-run'] ? '将' : '已'}删除（待定、未改动）${del.length} 个；保留 ${keep.length} 个`);
+    if (opt['dry-run'] || !del.length) return;
+    const file = typeof opt.backup === 'string' ? opt.backup : path.join(here, `../backups/paid-undecided-${today()}-${Date.now()}.json`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ app: 'baby-record', kind: 'paid-undecided-backup', createdAt: new Date().toISOString(), birthday: bday,
+      items: del.map(({ rec, event }) => ({ updatedAt: rec.updatedAt, event })) }, null, 2), { mode: 0o600 });
+    console.log(`已备份 ${del.length} 个事项到 ${file}`);
+    await pushEvents(cfg, keys, del.map(({ rec, event }) => ({ event: { ...event, updatedAt: Math.max(Date.now(), rec.updatedAt + 1) }, deleted: true })));
+    console.log(`已写入 ${del.length} 个删除标记（手机同步后这些事项也会消失）`);
     return;
   }
   if (cmd === 'list') {
