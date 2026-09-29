@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>宝宝记录</title>
+  <meta name="description" content="宝宝疫苗、体检和重要事项的日历与提醒">
+  <meta name="theme-color" content="#FFF4EC">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="宝宝记录">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/vaxplan.css">
+  <script src="config.js"></script>
+  <script>
+  // 新版本 Service Worker 接管后自动刷新一次，避免新旧文件混用（仅当页面原本已由旧版本控制；30 秒内最多一次，防循环）
+  (function () {
+    if (!('serviceWorker' in navigator)) return;
+    var sw = navigator.serviceWorker, had = !!sw.controller, done = false;
+    function safe() { var s = document.getElementById('sheet'), a = document.getElementById('alarm'); return (!s || s.hidden) && (!a || a.hidden); }
+    function reload() {
+      if (done) return;
+      var last = 0; try { last = +sessionStorage.getItem('br-sw-reload') || 0; } catch (e) {}
+      if (Date.now() - last < 30000) return;
+      done = true; try { sessionStorage.setItem('br-sw-reload', String(Date.now())); } catch (e) {}
+      location.reload();
+    }
+    sw.addEventListener('controllerchange', function () {
+      if (!had) { had = true; return; }   // 第一次安装：页面本来就是最新的
+      if (safe()) { reload(); return; }
+      document.addEventListener('visibilitychange', function f() {
+        if (!document.hidden && safe()) { document.removeEventListener('visibilitychange', f); reload(); }
+      });
+    });
+    // 从后台切回时检查有没有新版本（iOS 主屏幕 App 常常只是恢复而不是重新打开）
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && sw.getRegistration) sw.getRegistration().then(function (r) { if (r) r.update(); }).catch(function () {});
+    });
+  })();
+  </script>
+</head>
+<body>
+  <div id="app">
+    <main id="view" aria-live="polite"></main>
+    <nav class="tabbar" id="tabbar">
+      <a href="#/" data-tab="home"><span class="ti">🗓️</span><span>日程</span></a>
+      <a href="#/settings" data-tab="settings"><span class="ti">⚙️</span><span>设置</span></a>
+      <a href="#/help" data-tab="help"><span class="ti">📖</span><span>使用帮助</span></a>
+    </nav>
+  </div>
+
+  <!-- 底部弹出面板（添加/编辑等） -->
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+  <section class="sheet" id="sheet" role="dialog" aria-modal="true" hidden></section>
+
+  <!-- 全屏闹钟页 -->
+  <section class="alarm" id="alarm" role="alertdialog" aria-modal="true" hidden></section>
+
+  <div class="toast" id="toast" hidden></div>
+  <noscript>请开启 JavaScript 后使用。</noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
