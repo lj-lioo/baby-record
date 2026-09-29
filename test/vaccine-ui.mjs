@@ -25,7 +25,7 @@ ok('未设置生日时默认填 2026-09-17', (await page.inputValue('#vp-bday'))
 await page.fill('#vp-bday', '2026-09-17'); await page.dispatchEvent('#vp-bday', 'change');
 await page.waitForSelector('.vp-item');
 const items = page.locator('.vp-item');
-ok('预览 22 剂', (await items.count()) === 22, `count=${await items.count()}`);
+ok('预览 24 剂（含可选HPV 2剂）', (await items.count()) === 24, `count=${await items.count()}`);
 const checked = await page.locator('.vp-item input:checked').count();
 ok('默认勾选 20 个未来剂次', checked === 20, `checked=${checked}`);
 const pastTxt = await page.locator('.vp-item.is-past').allInnerTexts();

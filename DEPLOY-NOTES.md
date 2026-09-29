@@ -63,4 +63,4 @@
 - 测试：windows.test 8/8、vaccines 7/7、checkups 6/6、paidvax 8/8、e2e 29/29、sync-ui 31/31、worker 15/15、refresh-windows.local 11/11、
   sw-upgrade 20/20（含 v1.5.0→v1.6.0）；线上 BASE：vaccine-ui 22/22、checkup-ui 15/15、paidvax-ui 32/32、window-ui 54/54。
   新截图 18–22（window-ui 生成）。老 UI 测试会覆盖截图 01–17，测完从备份恢复。
-- 非 site 文件（sync/add-item.js、sync/README.md、README.md、本文件、.gitignore、test/ 下 v1.5.0/v1.6.0 的测试）本次推送到仓库（v1.6.0 part 3a/3b/3c）；不推 test/results*.json、backup.json、out-*、截图。
+- 非 site 文件（sync/add-item.js、sync/README.md、README.md、本文件、.gitignore、test/ 下 v1.5.0/v1.6.0 的测试）本次推送到仓库（v1.6.0 part 3a–3d）；不推 test/results*.json、backup.json、out-*、截图。

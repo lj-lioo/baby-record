@@ -38,10 +38,12 @@ const EXPECTED = [
   ['2030-09-17', '脊灰疫苗 第4剂', false],
   ['2032-09-17', '百白破疫苗 第5剂', false],
   ['2032-09-17', 'A群C群流脑多糖疫苗 第4剂', false],
+  ['2039-09-17', '双价HPV疫苗 第1剂', false],
+  ['2040-03-17', '双价HPV疫苗 第2剂', false],
 ];
 
 const plan = planVaccines('2026-09-17', '2026-09-29');
-t('生日 2026-09-17 生成 22 剂，日期/名称/是否已过 全部正确', () => {
+t('生日 2026-09-17 生成 24 剂（含可选HPV 2剂），日期/名称/是否已过 全部正确', () => {
   assert.deepEqual(plan.map((d) => [d.date, d.title, d.past]), EXPECTED);
 });
 t('备注含剂次月龄与免责声明', () => {
@@ -52,6 +54,12 @@ t('备注含剂次月龄与免责声明', () => {
 t('百白破为 2、4、6、18月龄和6周岁（2025年起的新程序），不再有白破', () => {
   assert.deepEqual(NIP_SCHEDULE.filter((d) => d.id.startsWith('dtap')).map((d) => d.m), [2, 4, 6, 18, 72]);
   assert.ok(!NIP_SCHEDULE.some((d) => d.name.includes('白破') && !d.name.includes('百白破')));
+});
+t('2026年版新增双价HPV：仅女孩、13周岁、间隔6个月，可选默认不勾选；其余 22 剂都不是可选', () => {
+  const hpv = plan.filter((d) => d.id.startsWith('hpv'));
+  assert.deepEqual(hpv.map((d) => [d.m, d.optional, d.age]), [[156, true, '满13周岁'], [162, true, '满13周岁6个月']]);
+  assert.ok(hpv.every((d) => /仅女孩/.test(d.note) && /仅女孩/.test(d.hint)));
+  assert.equal(plan.filter((d) => !d.optional).length, 22);
 });
 t('scheduleId 唯一', () => {
   assert.equal(new Set(plan.map((d) => d.scheduleId)).size, plan.length);

@@ -16,6 +16,7 @@ const t = (name, fn) => { fn(); pass++; console.log('✅', name); };
 
 const EXPECTED = [
   ['2026-09-24', '新生儿家庭访视', true, false],
+  ['2026-10-08', '新生儿疾病筛查（足跟血）结果查询', false, true],
   ['2026-10-17', '满月体检', false, false],
   ['2026-10-29', '新生儿听力复筛', false, true],
   ['2026-12-17', '3月龄儿保体检', false, false],
@@ -31,7 +32,7 @@ const EXPECTED = [
   ['2032-09-17', '6岁儿保体检', false, false],
 ];
 const plan = planCheckups('2026-09-17', '2026-09-29');
-t('生日 2026-09-17 生成 14 项，日期/名称/已过/可选 全部正确', () => {
+t('生日 2026-09-17 生成 15 项，日期/名称/已过/可选 全部正确', () => {
   assert.deepEqual(plan.map((d) => [d.date, d.title, d.past, !!d.optional]), EXPECTED);
 });
 t('日期按先后排列', () => {
@@ -47,6 +48,16 @@ t('备注：检查内容 + 以社区卫生服务中心预约为准', () => {
   for (const id of ['m12', 'm24', 'm36']) assert.match(plan.find((d) => d.id === id).note, /听力筛查/);
   for (const id of ['y4', 'y5', 'y6']) assert.match(plan.find((d) => d.id === id).note, /血常规.*视力/);
   assert.match(plan.find((d) => d.id === 'hearing-rescreen').note, /初筛未通过/);
+});
+t('审核补充：孤独症初筛11次、髋关节、中医药6次、出牙龋齿、涂氟、足跟血结果', () => {
+  const n = (id) => plan.find((d) => d.id === id).note;
+  for (const id of ['m3', 'm6', 'm8', 'm12', 'm18', 'm24', 'm30', 'm36', 'y4', 'y5', 'y6']) assert.match(n(id), /孤独症初筛/, id);
+  for (const id of ['home-visit', 'm1', 'm3', 'm6']) assert.match(n(id), /髋关节/, id);
+  for (const id of ['m6', 'm12', 'm18', 'm24', 'm30', 'm36']) assert.match(n(id), /中医药健康管理/, id);
+  assert.match(n('m6'), /摩腹和捏脊/); assert.match(n('m18'), /迎香穴、足三里穴/); assert.match(n('m36'), /四神聪穴/);
+  for (const id of ['m12', 'm18', 'm24', 'm30', 'm36']) assert.match(n(id), /出牙和龋齿检查/, id);
+  for (const id of ['m36', 'y4', 'y5', 'y6']) assert.match(n(id), /涂氟/, id);
+  assert.match(n('nbs-result'), /足跟血.*阳性/);
 });
 t('scheduleId 唯一且以 chk: 开头', () => {
   assert.equal(new Set(plan.map((d) => d.scheduleId)).size, plan.length);
