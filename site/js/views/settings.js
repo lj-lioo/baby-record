@@ -6,11 +6,12 @@ import { showAlarm } from './alarm.js';
 import { unlockAudio } from '../sound.js';
 import { todayStr, cnDate } from '../dates.js';
 import { testAlarmUrl } from '../shortcuts.js';
-import { openVaxPlan, openCheckupPlan, openPaidPlan, planCounts } from './vaxplan.js';
+import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
+import { openPaidCatalog, catalogCounts } from './paidcat.js';
 import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../sync.js';
 import { extractSyncKey } from '../sync-core.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.6.0';
+export const APP_BUILD = '1.7.0';
 
 export function renderSettings(root) {
   const st = store.state.settings;
@@ -29,16 +30,16 @@ export function renderSettings(root) {
 
     <section class="card" id="vaxCard">
       <h2>📋 一键生成日程</h2>
-      <p class="small muted" style="margin-top:0">输入宝宝生日，按国家规范自动添加到 6 周岁的免费疫苗（国家免疫规划 2026年版）和儿保体检（0～6岁儿童健康管理）日程；也可按需添加自费疫苗（含RSV单抗）。重复生成不会重复添加。</p>
+      <p class="small muted" style="margin-top:0">输入宝宝生日，按国家规范自动添加到 6 周岁的免费疫苗（国家免疫规划 2026年版）和儿保体检（0～6岁儿童健康管理）日程；重复生成不会重复添加。自费疫苗默认「待定」，在「💰 自费疫苗（待定）」里按需加入计划。</p>
       <div class="kv"><span>宝宝生日</span><span>${st.babyBirthday ? esc(cnDate(st.babyBirthday, true)) : '<span class="muted">未设置</span>'}</span></div>
       <div class="kv"><span>💉 已生成的疫苗事项</span><span>${planCounts('vaccine')} 个</span></div>
-      <div class="kv"><span>💰 已生成的自费疫苗事项</span><span>${planCounts('paid')} 个</span></div>
+      <div class="kv"><span>💰 已加入计划的自费疫苗</span><span>${(() => { const c = catalogCounts(); return `${c.planned} 种（${c.doses} 剂未完成）`; })()}</span></div>
       <div class="kv"><span>🩺 已生成的体检事项</span><span>${planCounts('checkup')} 个</span></div>
       <div class="btn-row" style="margin-top:10px">
         <button class="btn" id="btnVax" style="background:var(--vaccine)">💉 疫苗计划</button>
         <button class="btn" id="btnChk" style="background:var(--checkup)">🩺 体检计划</button>
       </div>
-      <button class="btn block" id="btnPaid" style="background:var(--paidvax);margin-top:10px">💰自费疫苗(可选)</button>
+      <button class="btn block" id="btnPaid" style="background:var(--paidvax);margin-top:10px">💰 自费疫苗（待定）</button>
     </section>
 
     <section class="card">
@@ -96,7 +97,7 @@ export function renderSettings(root) {
   };
   q('#btnVax').onclick = () => openVaxPlan();
   q('#btnChk').onclick = () => openCheckupPlan();
-  q('#btnPaid').onclick = () => openPaidPlan();
+  q('#btnPaid').onclick = () => openPaidCatalog();
   q('#btnTestAlarm').onclick = () => { location.href = testAlarmUrl(); };
   q('#btnPreview').onclick = () => {
     unlockAudio();

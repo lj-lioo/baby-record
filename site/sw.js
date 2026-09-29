@@ -4,13 +4,13 @@
 //   任何一个失败则安装失败、继续用旧版本，避免新旧文件混在一个缓存里；
 // - 页面、JS、CSS、config.js、manifest：网络优先（cache:'no-cache' 让浏览器向服务器确认），断网或 4 秒无响应时用缓存；
 // - 图标等其他静态文件：缓存优先。
-const VERSION = 'v1.6.0';
+const VERSION = 'v1.7.0';
 const CACHE = `baby-record-${VERSION}`;
 const ASSETS = [
   './', './index.html', './manifest.json', './config.js', './css/app.css', './css/vaxplan.css',
   './js/app.js', './js/store.js', './js/dates.js', './js/categories.js', './js/reminders.js', './js/ics.js',
   './js/push.js', './js/shortcuts.js', './js/ui.js', './js/sound.js', './js/vaccines.js', './js/checkups.js', './js/paidvax.js', './js/windows.js', './js/sync-core.js', './js/sync.js',
-  './js/views/home.js', './js/views/editor.js', './js/views/actions.js', './js/views/alarm.js', './js/views/settings.js', './js/views/help.js', './js/views/vaxplan.js', './js/views/planned.js',
+  './js/views/home.js', './js/views/editor.js', './js/views/actions.js', './js/views/alarm.js', './js/views/settings.js', './js/views/help.js', './js/views/vaxplan.js', './js/views/planned.js', './js/views/paidcat.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/badge-72.png',
 ];
 const NETWORK_TIMEOUT = 4000;
