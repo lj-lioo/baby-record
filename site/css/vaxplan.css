@@ -10,3 +10,8 @@
 .vp-st.ok { color: var(--checkup); }
 .vp-hint { font-size: 12px; color: #B0A2A6; }
 .vp-item.is-past .vp-title, .vp-item.is-have .vp-title { color: #9A8C90; }
+.vp-item.is-opt .vp-title { color: #7A6A6F; }
+.cta-btns { display: flex; gap: 8px; margin-top: 8px; }
+.cta-btns .btn { padding: 7px 12px; font-size: 14px; flex: none; }
+[data-kind="checkup"] .vp-item input { accent-color: var(--checkup); }
+[data-kind="checkup"] #vp-ok { background: var(--checkup); }
