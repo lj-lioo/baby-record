@@ -14,7 +14,7 @@ export function renderSettings(root) {
 
     <section class="card">
       <h2>⏰ iPhone 闹钟提醒（推荐）</h2>
-      <p class="small muted" style="margin-top:0">通过「快捷指令」在「提醒事项」的「宝宝」列表中创建<b>紧急</b>提醒：到点全屏响铃，静音也会响。需要 iOS 26.4+，并按 <a href="#/help">帮助页</a> 创建一次快捷指令。</p>
+      <p class="small muted" style="margin-top:0">通过「快捷指令」在「提醒事项」的「宝宝」列表中创建<b>紧急</b>提醒：到点全屏响铃，静音也会响。需要 iOS 26.2+，并按 <a href="#/help">帮助页</a> 创建一次快捷指令。</p>
       <div class="field"><label for="scName">快捷指令名称（需与「快捷指令」App 里的名称完全一致）</label>
         <input id="scName" class="input" value="${esc(st.shortcutName)}"></div>
       <button class="btn block" id="btnTestAlarm">测试闹钟（2分钟后响）</button>

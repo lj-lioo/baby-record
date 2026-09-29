@@ -1,5 +1,5 @@
 // Service Worker：离线缓存 + Web Push + 通知点击 + 生成 .ics（真实 URL，text/calendar）
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.1.1';
 const CACHE = `baby-record-${VERSION}`;
 const ASSETS = [
   './', './index.html', './manifest.json', './config.js', './css/app.css',

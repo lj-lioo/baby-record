@@ -21,7 +21,7 @@ export function openAlarmSheet(ev) {
       <a class="btn block" id="al-go" style="text-decoration:none" href="${esc(alarmUrl(ev))}">打开快捷指令，创建 ${list.length} 个闹钟提醒</a>`
       : '<p class="note">这个事项没有未来的提醒时间。请先点「编辑」设置提醒时间。</p>'}
     <label class="kv" style="margin-top:12px"><span>已设为闹钟（避免重复添加）</span><input type="checkbox" id="al-added" ${ev.alarmAdded ? 'checked' : ''}></label>
-    <p class="small muted">第一次使用？需要 iOS 26.4 以上，并先按 <a href="#/help" id="al-help">帮助页的步骤</a> 创建一次快捷指令。旧版 iOS 可改用「📅 添加到苹果日历」。</p>
+    <p class="small muted">第一次使用？需要 iOS 26.2 以上，并先按 <a href="#/help" id="al-help">帮助页的步骤</a> 创建一次快捷指令。旧版 iOS 可改用「📅 添加到苹果日历」。</p>
     <button class="btn ghost block" id="al-close">关闭</button>`, (s) => {
     const go = s.querySelector('#al-go');
     if (go) go.addEventListener('click', () => {
