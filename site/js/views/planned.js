@@ -3,6 +3,7 @@ import { store } from '../store.js';
 import { esc, openSheet, closeSheet, toast } from '../ui.js';
 import { todayStr, cnDate, weekday, addDays, parseYmd } from '../dates.js';
 import { windowOf, planOutside } from '../windows.js';
+import { maybeCascade } from './paidcat.js';
 
 const fmt = (d) => `${cnDate(d, d.slice(0, 4) !== todayStr().slice(0, 4))} ${weekday(d)}`;
 
@@ -62,6 +63,7 @@ export function openPlannedSheet(ev) {
       closeSheet();
       toast(`计划日已改为 ${cnDate(date)} ${weekday(date)}${time ? ' ' + time : ''}${cur.alarmAdded ? '，请重设闹钟' : ''}`, 3000);
       window.dispatchEvent(new CustomEvent('select-date', { detail: date }));
+      if (cur.date !== date) maybeCascade(cur.id); // v1.7.0：自费疫苗系列：提示后续剂次一起顺延
     };
     check();
   });

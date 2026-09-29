@@ -8,6 +8,7 @@ import { openICS } from '../ics.js';
 import { openAlarmSheet } from './actions.js';
 import { alarmSig } from '../shortcuts.js';
 import { windowOf } from '../windows.js';
+import { maybeCascade } from './paidcat.js';
 
 const QUICK = {
   vaccine: ['打疫苗', '乙肝疫苗', '卡介苗', '脊灰疫苗', '百白破疫苗', '麻腮风疫苗', '流感疫苗'],
@@ -143,6 +144,7 @@ export function openEditor({ id = null, date = null } = {}) {
       closeSheet();
       toast(existing ? '已保存修改' : `已添加到 ${cnDate(ev.date)}${weekday(ev.date)}`);
       window.dispatchEvent(new CustomEvent('select-date', { detail: ev.date }));
+      if (existing && existing.date !== ev.date) maybeCascade(ev.id); // v1.7.0：自费疫苗系列：后续剂次一起顺延
     };
     if (existing) {
       q('#f-del').onclick = async () => {
