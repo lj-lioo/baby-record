@@ -26,7 +26,9 @@ cd ../.. && node test/sync-ui.mjs               # 两台手机 + 命令行 端�
 1. `cd /workspace/baby-app/sync/worker && PATH=~/.local/node22/bin:$PATH npx wrangler login`（在盒子浏览器里登录/注册 Cloudflare 并点 Allow）
 2. `bash /workspace/baby-app/sync/deploy.sh`（建 D1、写 database_id、执行迁移、部署、`add-item.js init --url …`）
 3. 把 `site/config.js` 的 `syncApi` 设为 Worker 地址，推送 App v1.4.0。
-4. 手机配对（密钥不经过聊天）：`node add-item.js pair --qr ~/.config/baby-record/pair.png` 生成二维码（内容是 `https://lj-lioo.github.io/baby-record/#pair=<密钥>`），在盒子屏幕上打开；
+4. 只有手机时：手机上 设置 → ☁️ 云同步 →「没有密钥？在这台设备上生成新密钥」→「生成新密钥并开启」→「复制密钥」，把密钥通过安全输入交给盒子（环境变量 `BABY_SYNC_KEY`），
+   盒子上新开 shell 运行 `node add-item.js use-key`（写入 `~/.config/baby-record/sync.env`，只显示指纹；旧配置备份为 `sync.env.bak`）。
+5. 或者由盒子出密钥给手机（密钥不经过聊天）：`node add-item.js pair --qr ~/.config/baby-record/pair.png` 生成二维码（内容是 `https://lj-lioo.github.io/baby-record/#pair=<密钥>`），在盒子屏幕上打开；
    iPhone 相机扫码 → Safari 打开 → 「复制同步密钥」→ 回主屏幕打开 App → 设置 → ☁️ 云同步 →「从剪贴板粘贴」→「连接并同步」。扫完删除 PNG。
 
 注：新账号第一次 `wrangler deploy` 会交互式询问 workers.dev 子域名（非交互环境会直接失败）；本次用 pty 自动回答完成。

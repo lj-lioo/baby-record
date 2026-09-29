@@ -3,6 +3,7 @@
 // 密钥与服务地址保存在 ~/.config/baby-record/sync.env（权限 600，不在仓库里）。
 //
 //   node add-item.js init [--url https://…]      生成同步密钥（已有则保留）并保存
+//   node add-item.js use-key                      采用环境变量 $BABY_SYNC_KEY 里的密钥（例如手机生成的）写入配置文件（同 init --key-from-env）
 //   node add-item.js set-url https://…            设置 Worker 地址
 //   node add-item.js status                       查看配置和云端事项数
 //   node add-item.js pair [--qr 文件.png] [--text] 给手机的配对二维码：默认内容是 App 配对链接 …/#pair=<密钥>（--text 只放密钥）；不加 --qr 则打印
@@ -24,6 +25,16 @@ const ENV_FILE = process.env.BABY_SYNC_ENV || path.join(os.homedir(), '.config/b
 const PRESETS = ['eve20', 'morning8', 'd1', 'h2', 'h1', 'm30', 'm0'];
 const CAT = { vaccine: '💉疫苗', checkup: '🩺体检', other: '📌其他' };
 
+function readFile() {
+  const out = {};
+  if (fs.existsSync(ENV_FILE)) {
+    for (const line of fs.readFileSync(ENV_FILE, 'utf8').split('\n')) {
+      const m = /^\s*([A-Z_]+)\s*=\s*(.*)\s*$/.exec(line);
+      if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  }
+  return { url: out.BABY_SYNC_URL || '', key: out.BABY_SYNC_KEY || '' };
+}
 function readEnv() {
   const out = {};
   if (fs.existsSync(ENV_FILE)) {
@@ -127,6 +138,30 @@ async function main() {
   const { pos, opt } = parseArgs(rest);
   const cfg = readEnv();
 
+  if (cmd === 'use-key' || (cmd === 'init' && opt['key-from-env'])) {
+    const raw = process.env.BABY_SYNC_KEY || '';
+    const key = core.extractSyncKey(raw);
+    if (!raw) throw new Error('环境变量 BABY_SYNC_KEY 是空的（需要在新开的 shell 里运行）');
+    if (!key) throw new Error('BABY_SYNC_KEY 不是有效的同步密钥（应为 brs1_ 开头、共 48 位）');
+    const file = readFile();
+    const url = typeof opt.url === 'string' ? opt.url.replace(/\/+$/, '') : (file.url || cfg.url);
+    if (file.key === key) {
+      console.log(`配置文件里已经是这个密钥（${fingerprint(key)}）`);
+    } else {
+      if (file.key) {
+        fs.copyFileSync(ENV_FILE, ENV_FILE + '.bak');
+        fs.chmodSync(ENV_FILE + '.bak', 0o600);
+      }
+      writeEnv({ url, key });
+      console.log(`已采用新的同步密钥（${fingerprint(key)}），保存在 ${ENV_FILE}${file.key ? `；旧密钥（${fingerprint(file.key)}）备份在 ${ENV_FILE}.bak` : ''}`);
+    }
+    if (url) {
+      const keys = await core.deriveKeys(key);
+      const { events, profile } = await pullAll({ url, key }, keys);
+      console.log(`云端事项：${events.size} 个；宝宝生日：${profile?.babyBirthday || '未设置'}`);
+    }
+    return;
+  }
   if (cmd === 'init') {
     const next = { url: typeof opt.url === 'string' ? opt.url.replace(/\/+$/, '') : cfg.url, key: cfg.key || core.newSyncKey() };
     writeEnv(next);
@@ -158,7 +193,8 @@ async function main() {
   if (cmd === 'status') {
     console.log(`配置文件：${ENV_FILE}${fs.existsSync(ENV_FILE) ? '' : '（不存在）'}`);
     console.log(`Worker 地址：${cfg.url || '（未设置）'}`);
-    console.log(`同步密钥：${cfg.key ? fingerprint(cfg.key) : '（未生成）'}`);
+    const fk = readFile().key;
+    console.log(`同步密钥：${cfg.key ? fingerprint(cfg.key) : '（未生成）'}${process.env.BABY_SYNC_KEY ? (fk === cfg.key ? '（环境变量与配置文件一致）' : '（来自环境变量 BABY_SYNC_KEY，与配置文件不同：运行 use-key 写入）') : ''}`);
     if (cfg.url && cfg.key) {
       const keys = await core.deriveKeys(cfg.key);
       const { events, profile, cursor } = await pullAll(cfg, keys);
@@ -206,7 +242,7 @@ async function main() {
     console.log(`已更新：${fmt(ev)}`);
     return;
   }
-  console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 14).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
+  console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 15).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
 }
 
 main().catch((e) => { console.error('❌', e.message); process.exit(1); });
