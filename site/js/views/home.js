@@ -8,6 +8,7 @@ import { openEditor } from './editor.js';
 import { openAlarmSheet, alarmState } from './actions.js';
 import { openICS } from '../ics.js';
 import { isStandalone, isIOS } from '../push.js';
+import { openVaxPlan } from './vaxplan.js';
 
 const ui = { month: null, selected: null };
 
@@ -21,6 +22,7 @@ export function renderHome(root) {
       <div class="logo"><img src="icons/icon-192.png" alt=""><div><h1>宝宝记录</h1><div class="sub">${cnDate(today, true)} ${weekday(today)}</div></div></div>
     </header>
     <div id="pushBanner"></div>
+    <div id="vaxCta"></div>
     <section class="card remind-card" id="remindCard"></section>
     <section class="card" id="calCard"></section>
     <section class="card" id="dayCard"></section>
@@ -30,6 +32,7 @@ export function renderHome(root) {
   renderCalendar(root.querySelector('#calCard'));
   renderDay(root.querySelector('#dayCard'));
   renderPushBanner(root.querySelector('#pushBanner'));
+  renderVaxCta(root.querySelector('#vaxCta'));
   root.querySelector('#fab').onclick = () => openEditor({ date: ui.selected });
 }
 
@@ -193,5 +196,15 @@ async function renderPushBanner(el) {
     <a class="btn" style="padding:8px 12px;font-size:14px;text-decoration:none" href="#/help">看步骤</a>
     <button class="x-btn" style="width:30px;height:30px;font-size:14px;background:transparent" aria-label="关闭">✕</button></div>`;
   el.querySelector('.x-btn').onclick = () => { localStorage.setItem('babyrecord.hideBanner', '1'); el.innerHTML = ''; };
+}
+// 还没有生成疫苗计划时，在首页提示「一键生成疫苗计划」
+function renderVaxCta(el) {
+  const has = store.events().some((e) => (e.scheduleId || '').startsWith('nip:'));
+  if (has || localStorage.getItem('babyrecord.hideVaxCta') === '1') { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="banner" style="border-color:#C9BDFF"><span style="font-size:28px">💉</span><div class="bt"><b>一键生成疫苗计划</b>输入宝宝生日，按国家免疫程序自动添加全部免费疫苗日程</div>
+    <button class="btn" id="vaxGo" style="padding:8px 12px;font-size:14px;background:var(--vaccine)">生成</button>
+    <button class="x-btn" style="width:30px;height:30px;font-size:14px;background:transparent" aria-label="关闭">✕</button></div>`;
+  el.querySelector('#vaxGo').onclick = () => openVaxPlan();
+  el.querySelector('.x-btn').onclick = () => { localStorage.setItem('babyrecord.hideVaxCta', '1'); el.innerHTML = ''; toast('可在「设置 → 疫苗计划」里生成'); };
 }
 export { parseYmd };

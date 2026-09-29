@@ -11,6 +11,7 @@ function defaults() {
     fired: {},           // 已响铃/已确认的提醒 id -> 时间戳
     settings: {
       babyName: '',
+      babyBirthday: '', // 宝宝生日 YYYY-MM-DD（用于一键生成疫苗计划）
       shortcutName: '宝宝闹钟',
       pushApi: '',       // 为空时使用 config.js 中的默认推送服务地址
       sound: true,
@@ -53,6 +54,7 @@ export function normalizeEvent(e) {
     reminders: Array.isArray(e.reminders) ? e.reminders : [],
     alarmAdded: !!e.alarmAdded,     // 是否已通过快捷指令设为 iPhone 闹钟提醒（避免重复添加）
     alarmSig: e.alarmSig || '',     // 设置时的提醒时间签名；之后改了时间会提示重新设置
+    scheduleId: e.scheduleId || '', // 由「一键生成疫苗计划」生成的剂次编号（如 nip:hepb-2），用于去重
     createdAt: e.createdAt || Date.now(),
     updatedAt: e.updatedAt || Date.now(),
   };
@@ -82,6 +84,19 @@ export const store = {
     if (i >= 0) state.events[i] = e; else state.events.push(e);
     save();
     return e;
+  },
+  // 批量添加（只保存/刷新一次）；已存在相同 scheduleId 的跳过，返回实际添加的事项
+  addEvents(list) {
+    const have = new Set(state.events.map((e) => e.scheduleId).filter(Boolean));
+    const added = [];
+    for (const ev of list) {
+      if (ev.scheduleId && have.has(ev.scheduleId)) continue;
+      const e = normalizeEvent({ ...ev, createdAt: Date.now(), updatedAt: Date.now() });
+      state.events.push(e); added.push(e);
+      if (e.scheduleId) have.add(e.scheduleId);
+    }
+    if (added.length) save();
+    return added;
   },
   deleteEvent(id) {
     state.events = state.events.filter((e) => e.id !== id);

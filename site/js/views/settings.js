@@ -4,8 +4,9 @@ import { esc, toast, confirmSheet } from '../ui.js';
 import { pushStatus, enablePush, disablePush, sendTestPush, isIOS, isStandalone, apiBase } from '../push.js';
 import { showAlarm } from './alarm.js';
 import { unlockAudio } from '../sound.js';
-import { todayStr } from '../dates.js';
+import { todayStr, cnDate } from '../dates.js';
 import { testAlarmUrl } from '../shortcuts.js';
+import { openVaxPlan } from './vaxplan.js';
 
 export function renderSettings(root) {
   const st = store.state.settings;
@@ -20,6 +21,14 @@ export function renderSettings(root) {
       <button class="btn block" id="btnTestAlarm">测试闹钟（2分钟后响）</button>
       <p class="small muted">会在「宝宝」列表新建一条「【宝宝】测试闹钟」紧急提醒，2 分钟后响铃。测试后可在「提醒事项」里删除它。</p>
       <button class="btn secondary block" id="btnPreview">预览App内全屏提醒页（含铃声）</button>
+    </section>
+
+    <section class="card" id="vaxCard">
+      <h2>💉 疫苗计划</h2>
+      <p class="small muted" style="margin-top:0">输入宝宝生日，按国家免疫规划（2026年版）自动添加到 6 周岁的全部免费疫苗日程。重复生成不会重复添加。</p>
+      <div class="kv"><span>宝宝生日</span><span>${st.babyBirthday ? esc(cnDate(st.babyBirthday, true)) : '<span class="muted">未设置</span>'}</span></div>
+      <div class="kv"><span>已生成的疫苗事项</span><span>${store.events().filter((e) => (e.scheduleId || '').startsWith('nip:')).length} 个</span></div>
+      <button class="btn block" id="btnVax" style="margin-top:10px">一键生成疫苗计划</button>
     </section>
 
     <section class="card">
@@ -73,6 +82,7 @@ export function renderSettings(root) {
   q('#btnTest60').onclick = async () => {
     try { await sendTestPush(60); toast('1分钟后会收到测试通知，现在可以回到主屏幕或锁屏'); } catch (e) { toast('设置失败：' + e.message, 4000); }
   };
+  q('#btnVax').onclick = () => openVaxPlan();
   q('#btnTestAlarm').onclick = () => { location.href = testAlarmUrl(); };
   q('#btnPreview').onclick = () => {
     unlockAudio();

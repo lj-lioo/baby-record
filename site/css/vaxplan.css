@@ -1,0 +1,12 @@
+/* 一键生成疫苗计划 */
+.vp-list { list-style: none; margin: 0 0 8px; padding: 0; border-top: 1px solid var(--line); }
+.vp-item { border-bottom: 1px solid var(--line); }
+.vp-item label { display: flex; gap: 10px; align-items: flex-start; padding: 9px 2px; }
+.vp-item input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--vaccine); }
+.vp-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vp-title { font-weight: 700; font-size: 15px; }
+.vp-meta { font-size: 13px; color: #6E6070; }
+.vp-st { font-size: 12px; font-weight: 700; color: #9A8C90; }
+.vp-st.ok { color: var(--checkup); }
+.vp-hint { font-size: 12px; color: #B0A2A6; }
+.vp-item.is-past .vp-title, .vp-item.is-have .vp-title { color: #9A8C90; }
