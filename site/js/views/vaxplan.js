@@ -93,7 +93,7 @@ export function openPlan(kind) {
             <label>
               <input type="checkbox" data-sid="${esc(d.scheduleId)}" ${picked.has(d.scheduleId) ? 'checked' : ''} ${d.existing ? 'disabled' : ''}>
               <span class="vp-main"><span class="vp-title">${esc(d.title)}</span>
-                <span class="vp-meta">${[`${cnDate(d.date, true)} ${weekday(d.date)}`, ...K.meta(d)].filter(Boolean).map(esc).join(' · ')}</span>
+                <span class="vp-meta">${[`${cnDate(d.date, true)} ${weekday(d.date)}`, ...K.meta(d), d.latest ? `最迟 ${cnDate(d.latest, true)}` : ''].filter(Boolean).map(esc).join(' · ')}</span>
                 ${status}${hint ? `<span class="vp-hint">${esc(hint)}</span>` : ''}</span>
             </label></li>`;
         }).join('')}</ul>`;
@@ -111,6 +111,7 @@ export function openPlan(kind) {
         done: d.past, // 已过的作为「已完成」的历史记录，不再提醒
         reminders: d.past ? [] : defaultReminders(false),
         scheduleId: d.scheduleId,
+        earliest: d.earliest || '', latest: d.latest || '', windowNote: d.windowNote || '',
       }));
       if (bday !== store.state.settings.babyBirthday) store.updateSettings({ babyBirthday: bday });
       const added = store.addEvents(list);

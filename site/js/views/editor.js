@@ -7,6 +7,7 @@ import { esc, openSheet, closeSheet, toast, confirmSheet } from '../ui.js';
 import { openICS } from '../ics.js';
 import { openAlarmSheet } from './actions.js';
 import { alarmSig } from '../shortcuts.js';
+import { windowOf } from '../windows.js';
 
 const QUICK = {
   vaccine: ['打疫苗', '乙肝疫苗', '卡介苗', '脊灰疫苗', '百白破疫苗', '麻腮风疫苗', '流感疫苗'],
@@ -22,6 +23,7 @@ export function openEditor({ id = null, date = null } = {}) {
   };
   let touchedReminders = !!existing;
 
+  const win = existing ? windowOf(ev, store.state.settings.babyBirthday) : null;
   const html = `
     <h3>${existing ? '编辑事项' : '添加事项'}</h3>
     <div class="field">
@@ -36,9 +38,10 @@ export function openEditor({ id = null, date = null } = {}) {
       </div>
     </div>
     <div class="row2">
-      <div class="field"><label for="f-date">日期</label><input id="f-date" type="date" class="input" value="${esc(ev.date)}"></div>
+      <div class="field"><label for="f-date">${win ? '计划日期' : '日期'}</label><input id="f-date" type="date" class="input" value="${esc(ev.date)}"></div>
       <div class="field"><label for="f-time">时间（可不填）</label><input id="f-time" type="time" class="input" value="${esc(ev.time)}"></div>
     </div>
+    ${win ? `<p class="small muted" style="margin:-8px 0 12px">🪟 窗口${win.ref ? '（参考）' : ''}：最早 ${cnDate(win.earliest, true)}${win.latest ? ` – 最迟 ${cnDate(win.latest, true)}` : ' 起（未规定最迟）'}</p>` : ''}
     <div class="field">
       <label for="f-note">备注（可不填）</label>
       <textarea id="f-note" class="input" maxlength="500" placeholder="例如：带上疫苗本和医保卡">${esc(ev.note)}</textarea>
