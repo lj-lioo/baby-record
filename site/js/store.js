@@ -118,6 +118,22 @@ export const store = {
     if (added.length) save();
     return added;
   },
+  // v1.7.0：批量修改（顺延后续剂次等），只保存/刷新一次
+  upsertEvents(list) {
+    for (const ev of list) {
+      const e = normalizeEvent(fillWindow({ ...ev, updatedAt: Date.now() }, bdayNow()));
+      const i = state.events.findIndex((x) => x.id === e.id);
+      if (i >= 0) state.events[i] = e; else state.events.push(e);
+    }
+    if (list.length) save();
+  },
+  // v1.7.0：批量删除（把自费疫苗系列移出计划），云同步会发删除标记
+  deleteEvents(ids) {
+    const del = new Set(ids);
+    state.events = state.events.filter((e) => !del.has(e.id));
+    state.snoozes = state.snoozes.filter((s) => !del.has(s.eventId));
+    if (del.size) save();
+  },
   deleteEvent(id) {
     state.events = state.events.filter((e) => e.id !== id);
     state.snoozes = state.snoozes.filter((s) => s.eventId !== id);

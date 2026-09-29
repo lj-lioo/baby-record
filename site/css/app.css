@@ -285,3 +285,44 @@ summary { font-weight: 700; cursor: pointer; }
 .pd-warn { font-size: 14px; font-weight: 700; color: #B85E00; background: #FFF0DC; border-radius: 10px; padding: 8px 10px; margin: 0 0 8px; }
 .quick button.on { background: var(--primary); color: #fff; }
 .btn:disabled { opacity: 0.45; box-shadow: none; }
+
+/* v1.7.0 自费疫苗（待定）目录 / 加入计划 / 顺延 */
+.paid-card { padding-top: 10px; padding-bottom: 10px; }
+.pc-toggle { width: 100%; display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 6px 0; font: inherit; color: inherit; text-align: left; }
+.pc-toggle .pc-t { font-size: 17px; font-weight: 800; white-space: nowrap; }
+.pc-toggle .pc-count { flex: 1; white-space: nowrap; font-size: 12px; color: var(--muted); font-weight: 600; text-align: right; }
+.pc-toggle .pc-chev { font-size: 16px; color: var(--paidvax); }
+.pc-group { font-size: 13px; font-weight: 800; color: #6E6070; margin: 12px 0 6px; }
+.pc-item { margin: 0 0 8px; border-radius: 14px; background: #F7FAFE; border: 1px solid #DCEBFA; }
+.pc-item.in { background: var(--paidvax-soft); border-color: #B9DAF7; }
+.pc-item > summary { list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 10px 12px; }
+.pc-item > summary::-webkit-details-marker { display: none; }
+.pc-item > summary::after { content: '▾'; margin-left: auto; color: var(--paidvax); order: 2; }
+.pc-item[open] > summary::after { content: '▴'; }
+.pc-name { font-size: 16px; font-weight: 800; order: 0; }
+.pc-st { order: 1; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 8px; background: #EEE7EF; color: #6E6070; }
+.pc-st.in { background: var(--paidvax); color: #fff; }
+.pc-st.done { background: var(--ok-soft, #DDF5E6); color: #1E7A45; }
+.pc-sub { order: 3; flex-basis: 100%; font-size: 13px; color: var(--muted); font-weight: 600; }
+.pc-body { padding: 0 12px 12px; }
+.pc-row { display: flex; gap: 8px; font-size: 14px; line-height: 1.45; margin: 4px 0; }
+.pc-k { flex: 0 0 auto; width: 4.6em; color: #6E6070; font-weight: 700; font-size: 13px; padding-top: 1px; }
+.pc-more { font-size: 13px; color: #6E6070; margin: 6px 0; }
+.pc-more summary { font-size: 13px; color: var(--paidvax); }
+.pc-more p { margin: 4px 0 0; line-height: 1.5; }
+.pc-disc { font-size: 12.5px; color: #8A5A00; background: #FFF6D8; border-radius: 8px; padding: 5px 8px; margin: 6px 0 8px; }
+.pc-add { width: 100%; background: var(--paidvax); }
+.pc-rm { width: 100%; margin-top: 8px; }
+.pc-doses { margin: 6px 0 0; padding-left: 22px; font-size: 14px; line-height: 1.7; }
+.pc-doses li.done { color: var(--muted); }
+.sp-list, .cc-list { margin: 4px 0 8px; padding-left: 22px; font-size: 14.5px; line-height: 1.5; }
+.cc-list { list-style: none; padding-left: 0; }
+.sp-list li, .cc-list li { margin: 0 0 6px; }
+.cc-list li { background: var(--paidvax-soft); border-radius: 10px; padding: 7px 10px; }
+.sp-meta { display: block; font-size: 12.5px; color: var(--muted); }
+.sp-late { display: inline-block; font-size: 12.5px; font-weight: 700; color: var(--danger); }
+.sp-dose.is-late { color: var(--danger); }
+.cc-old { color: var(--muted); text-decoration: line-through; }
+.cc-new { color: var(--paidvax); }
+.cc-alarm { display: inline-block; margin-left: 6px; font-size: 12.5px; font-weight: 700; color: #B85E00; }
+.item .irep { font-size: 13px; font-weight: 700; color: #1E6FB0; background: #E3F0FD; border-radius: 8px; padding: 4px 8px; margin-top: 6px; }
