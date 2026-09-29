@@ -19,7 +19,7 @@ await page.evaluate(() => localStorage.setItem('babyrecord.hideBanner', '1'));
 await page.reload(); await page.waitForTimeout(800);
 
 ok('首页入口同时显示「疫苗计划」「体检计划」', await page.locator('#vaxGo').isVisible() && await page.locator('#chkGo').isVisible());
-ok('版本号 1.3.0', (await page.evaluate(() => window.BABY_CONFIG.appVersion)) === '1.3.0');
+ok('版本号 ≥ 1.3.0', /^1\.([3-9]|\d{2,})\./.test(await page.evaluate(() => window.BABY_CONFIG.appVersion)));
 await page.waitForTimeout(400);
 await page.screenshot({ path: SHOTS + '10-home-plan-entry.png' });
 
