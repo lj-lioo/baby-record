@@ -2,6 +2,7 @@
 // 结构可扩展：以后可加入 growth（生长记录）、feeding（喂养记录）等集合。
 const KEY = 'babyrecord.v1';
 const SCHEMA_VERSION = 1;
+export const CATEGORY_KEYS = ['vaccine', 'paidvax', 'checkup', 'other'];
 
 function defaults() {
   return {
@@ -43,13 +44,21 @@ function migrate(data) {
   return out;
 }
 
+// 旧版本（v1.4.x 及更早）不认识「自费疫苗」，会把云端同步来的 paidvax 事项存成 other；
+// 这里按 scheduleId（paid: 开头）自动改回来。（CATEGORY_KEYS 定义在文件开头：load() 在模块加载时就会用到）
+export function normCategory(e) {
+  const c = CATEGORY_KEYS.includes(e.category) ? e.category : 'other';
+  if (c === 'other' && String(e.scheduleId || '').startsWith('paid:')) return 'paidvax';
+  return c;
+}
+
 export function normalizeEvent(e) {
   return {
     id: e.id || uid(),
     date: e.date,
     time: e.time || '',
     title: (e.title || '').trim() || '未命名事项',
-    category: ['vaccine', 'checkup', 'other'].includes(e.category) ? e.category : 'other',
+    category: normCategory(e),
     note: e.note || '',
     done: !!e.done,
     reminders: Array.isArray(e.reminders) ? e.reminders : [],

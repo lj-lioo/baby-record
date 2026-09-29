@@ -23,7 +23,7 @@ export function showAlarm({ rid, eventId, fireAt, label, ev: evOverride }) {
   el.className = `alarm ${c.cls}`;
   el.innerHTML = `
     <div class="a-top">宝宝提醒 · ${c.icon} ${c.label}</div>
-    <div class="bell">${ev.category === 'vaccine' ? '💉' : ev.category === 'checkup' ? '🩺' : '⏰'}</div>
+    <div class="bell">${ev.category === 'vaccine' ? '💉' : ev.category === 'paidvax' ? '💰' : ev.category === 'checkup' ? '🩺' : '⏰'}</div>
     <div class="a-clock" id="aClock"></div>
     <div class="a-title">${esc(ev.title)}</div>
     <div class="a-when">📅 ${esc(eventWhenText(ev))}</div>

@@ -108,10 +108,11 @@ function renderCalendar(el) {
     const ds = ymd(d);
     const evs = byDate[ds] || [];
     const hasV = evs.some((e) => e.category === 'vaccine' && !e.done);
-    const cls = ['day', d.getMonth() !== m - 1 ? 'other-month' : '', ds === today ? 'today' : '', ds === ui.selected ? 'selected' : '', hasV ? 'has-vaccine' : ''].join(' ');
+    const hasP = !hasV && evs.some((e) => e.category === 'paidvax' && !e.done);
+    const cls = ['day', d.getMonth() !== m - 1 ? 'other-month' : '', ds === today ? 'today' : '', ds === ui.selected ? 'selected' : '', hasV ? 'has-vaccine' : '', hasP ? 'has-paidvax' : ''].join(' ');
     const dots = evs.slice(0, 4).map((e) => `<i class="dot ${CATEGORIES[e.category].cls} ${e.done ? 'done' : ''}"></i>`).join('');
     cells += `<button class="${cls}" data-date="${ds}" aria-label="${cnDate(ds)}${evs.length ? `，${evs.length}个事项` : ''}">
-      ${hasV ? '<span class="vbadge">💉</span>' : ''}<span class="num">${d.getDate()}</span><span class="dots">${dots}</span></button>`;
+      ${hasV ? '<span class="vbadge">💉</span>' : hasP ? '<span class="vbadge paid">💰</span>' : ''}<span class="num">${d.getDate()}</span><span class="dots">${dots}</span></button>`;
   }
   el.innerHTML = `
     <div class="cal-head">
@@ -121,7 +122,7 @@ function renderCalendar(el) {
     </div>
     <div class="weekdays">${['日', '一', '二', '三', '四', '五', '六'].map((w) => `<div>${w}</div>`).join('')}</div>
     <div class="days">${cells}</div>
-    <div class="legend"><span><i class="dot cat-vaccine"></i>疫苗</span><span><i class="dot cat-checkup"></i>体检</span><span><i class="dot cat-other"></i>其他</span></div>`;
+    <div class="legend"><span><i class="dot cat-vaccine"></i>疫苗</span><span><i class="dot cat-paidvax"></i>自费疫苗</span><span><i class="dot cat-checkup"></i>体检</span><span><i class="dot cat-other"></i>其他</span></div>`;
   el.querySelector('#prevM').onclick = () => shiftMonth(-1);
   el.querySelector('#nextM').onclick = () => shiftMonth(1);
   const tt = el.querySelector('#toToday');
