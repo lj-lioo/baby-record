@@ -34,3 +34,24 @@ cd ../.. && node test/sync-ui.mjs               # 两台手机 + 命令行 端�
 注：新账号第一次 `wrangler deploy` 会交互式询问 workers.dev 子域名（非交互环境会直接失败）；本次用 pty 自动回答完成。
 
 ⚠️ `*.workers.dev` 在中国大陆被屏蔽：手机不开 VPN 时需要给 Worker 绑定托管在 Cloudflare 上的自定义域名（wrangler.toml 里的 routes）。
+
+## 一键计划写入云端（v1.5.0）
+
+`node add-item.js plan paid|vaccine|checkup [--dry-run] [--birthday YYYY-MM-DD] [--include-optional]`（`plan-paid` 同 `plan paid`）：
+用 App 同一个生成器（`site/js/paidvax.js` 通过 data: URL 加载；疫苗/体检从 `site/js` 导入）生成事项，09:00、提醒前一天20:00+当天08:00，
+scheduleId 与 App 完全一致；跳过已过的、云端已有同 scheduleId 的和备选/可选项。生日默认取云端宝宝资料。
+
+`add` 也支持 `--category paidvax` 和 `--schedule-id paid:xxx`（同 scheduleId 已在云端则不重复添加）。
+
+### 刷新已有计划事项的备注
+`node add-item.js refresh-notes checkup|vaccine|paid [--dry-run]`：生成器的备注更新后（如体检补充了孤独症初筛、髋关节等），
+按 scheduleId 原地更新云端已有事项的备注。只改 note 和 updatedAt，id、日期、时间、提醒、已完成、已设闹钟都保留；
+备注被手动改过（不是生成器格式）的会跳过；不会新增事项。备注不参与闹钟签名，所以「已设闹钟」不会变成「需重设」。
+
+### 补充接种窗口（v1.6.0）
+`node add-item.js refresh-windows [all|vaccine|paid|checkup] [--dry-run] [--birthday YYYY-MM-DD]`：给云端已有的计划事项补上/更新
+`earliest`（最早）、`latest`（最迟，可空）、`windowNote`（说明），按 scheduleId 匹配生成器。只改这三个字段和 updatedAt
+（= max(现在, 原 updatedAt+1)），计划日期/时间、备注、提醒、已完成、已设闹钟都不动；不新增事项；重复运行是幂等的（已是最新的跳过）。
+`date`/`time` 仍是计划日期/时间，所以闹钟签名不变，不会误标「需重设闹钟」。`plan` 新写入的事项直接带窗口；`add` 可加 `--earliest/--latest`。
+v1.5.0 及更早的 App 不认识这三个字段（编辑后会丢掉），v1.6.0 会按 scheduleId + 生日重新推算显示，不影响使用。
+测试：`node test/refresh-windows.local.mjs`（本地 Worker，临时密钥）。

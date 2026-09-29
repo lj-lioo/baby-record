@@ -7,15 +7,24 @@
 //   node add-item.js set-url https://…            设置 Worker 地址
 //   node add-item.js status                       查看配置和云端事项数
 //   node add-item.js pair [--qr 文件.png] [--text] 给手机的配对二维码：默认内容是 App 配对链接 …/#pair=<密钥>（--text 只放密钥）；不加 --qr 则打印
-//   node add-item.js add --title 标题 --date 2026-10-01 [--time 10:00] [--category vaccine|checkup|other]
-//                        [--note 备注] [--remind eve20,morning8,h1|none]
+//   node add-item.js add --title 标题 --date 2026-10-01 [--time 10:00] [--category vaccine|paidvax|checkup|other]
+//                        [--note 备注] [--remind eve20,morning8,h1|none] [--schedule-id paid:xxx]（同 scheduleId 已存在则不重复添加）
+//                        [--earliest 日期] [--latest 日期]（接种窗口，可不填；--date 是计划日期）
+//   node add-item.js plan paid|vaccine|checkup [--dry-run] [--birthday 2026-09-17] [--include-optional]
+//                        按 App 同一个生成器写入云端（09:00，提醒前一天20:00+当天08:00；跳过已过的和云端已有同 scheduleId 的）；plan-paid 同 plan paid
+//   node add-item.js refresh-notes checkup|vaccine|paid [--dry-run] [--birthday …]
+//                        用最新生成器的备注原地更新云端已有的计划事项（按 scheduleId 匹配；只改备注和 updatedAt，
+//                        id/日期/时间/提醒/已完成/已设闹钟都保留；备注被手动改过（不是生成器格式）的跳过；不新增事项）
+//   node add-item.js refresh-windows [all|vaccine|paid|checkup] [--dry-run] [--birthday …]
+//                        v1.6.0：给云端已有的计划事项补上/更新接种窗口（最早 earliest、最迟 latest、说明 windowNote），按 scheduleId 匹配；
+//                        只改这三个字段和 updatedAt，计划日期/时间/备注/提醒/已完成/已设闹钟都不动；不新增事项
 //   node add-item.js shop 尿不湿NB码 湿巾 [--date 2026-10-01] [--time 10:00]   添加一条「🛒 购物清单」事项
 //   node add-item.js list [--from 日期] [--to 日期] [--all] [--json]
 //   node add-item.js done <id>     |  undone <id>  |  delete <id>
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const coreSrc = fs.readFileSync(path.join(here, '../site/js/sync-core.js'), 'utf8');
@@ -23,7 +32,24 @@ const core = await import('data:text/javascript;base64,' + Buffer.from(coreSrc).
 
 const ENV_FILE = process.env.BABY_SYNC_ENV || path.join(os.homedir(), '.config/baby-record/sync.env');
 const PRESETS = ['eve20', 'morning8', 'd1', 'h2', 'h1', 'm30', 'm0'];
-const CAT = { vaccine: '💉疫苗', checkup: '🩺体检', other: '📌其他' };
+const CAT = { vaccine: '💉疫苗', paidvax: '💰自费疫苗', checkup: '🩺体检', other: '📌其他' };
+
+// App 的计划生成器：paidvax.js 不依赖其他模块，和 sync-core 一样用 data: URL 加载；疫苗/体检计划从 site/js 按文件导入。
+const quietImport = async (file) => {
+  const ew = process.emitWarning;
+  process.emitWarning = (w, ...a) => { if (/MODULE_TYPELESS|Reparsing as ES module/.test(String(w?.message || w) + JSON.stringify(a))) return; return ew.call(process, w, ...a); };
+  try { return await import(pathToFileURL(path.join(here, '../site/js', file)).href); } finally { process.emitWarning = ew; }
+};
+async function loadPlanner(kind) {
+  if (kind === 'paid') {
+    const src = fs.readFileSync(path.join(here, '../site/js/paidvax.js'), 'utf8');
+    const m = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
+    return { category: 'paidvax', prefix: 'paid:', plan: m.planPaid };
+  }
+  if (kind === 'vaccine') return { category: 'vaccine', prefix: 'nip:', plan: (await quietImport('vaccines.js')).planVaccines };
+  if (kind === 'checkup') return { category: 'checkup', prefix: 'chk:', plan: (await quietImport('checkups.js')).planCheckups };
+  throw new Error('用法：plan paid|vaccine|checkup [--dry-run]');
+}
 
 function readFile() {
   const out = {};
@@ -111,11 +137,15 @@ async function pushEvents(cfg, keys, list) {
   return res;
 }
 
-function makeEvent({ title, date, time = '', category = 'other', note = '', remind }) {
+function makeEvent({ title, date, time = '', category = 'other', note = '', remind, scheduleId = '', earliest = '', latest = '', windowNote = '' }) {
   if (!title) throw new Error('缺少 --title');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) throw new Error('日期格式应为 YYYY-MM-DD');
+  for (const [k, v] of [['earliest', earliest], ['latest', latest]]) if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error(`--${k} 格式应为 YYYY-MM-DD`);
+  if (latest && !earliest) throw new Error('有 --latest 时也要给 --earliest');
+  if (earliest && latest && latest < earliest) throw new Error('--latest 不能早于 --earliest');
   if (time && !/^\d{2}:\d{2}$/.test(time)) throw new Error('时间格式应为 HH:MM');
-  if (!CAT[category]) throw new Error('类别只能是 vaccine / checkup / other');
+  if (!CAT[category]) throw new Error(`类别只能是 ${Object.keys(CAT).join(' / ')}`);
+  if (scheduleId && !/^[a-z]+:[a-z0-9-]+$/.test(scheduleId)) throw new Error('scheduleId 格式应为 前缀:编号（如 paid:rsv）');
   let presets;
   if (remind === undefined || remind === true) presets = time ? ['eve20', 'morning8', 'h1'] : ['eve20', 'morning8'];
   else if (remind === 'none') presets = [];
@@ -125,12 +155,14 @@ function makeEvent({ title, date, time = '', category = 'other', note = '', remi
   return {
     id: uid(), date, time, title: String(title).trim(), category, note: String(note || ''), done: false,
     reminders: presets.map((p) => ({ id: uid(), kind: 'preset', preset: p })),
-    alarmAdded: false, alarmSig: '', scheduleId: '', createdAt: now, updatedAt: now, source: 'box-cli',
+    alarmAdded: false, alarmSig: '', scheduleId: String(scheduleId || ''), createdAt: now, updatedAt: now, source: 'box-cli',
+    ...(earliest ? { earliest, latest: latest || '', windowNote: String(windowNote || '') } : {}),
   };
 }
 
 function fmt(e) {
-  return `${e.done ? '✅' : '⬜'} ${e.date}${e.time ? ' ' + e.time : ''}  ${CAT[e.category] || e.category}  ${e.title}${e.note ? `  — ${e.note.replace(/\n/g, ' / ')}` : ''}  [${e.id}]`;
+  const win = e.earliest ? `  〔最早 ${e.earliest}${e.latest ? ` · 最迟 ${e.latest}` : ''}〕` : '';
+  return `${e.done ? '✅' : '⬜'} ${e.date}${e.time ? ' ' + e.time : ''}  ${CAT[e.category] || e.category}  ${e.title}${win}${e.note ? `  — ${e.note.replace(/\n/g, ' / ')}` : ''}  [${e.id}]`;
 }
 
 async function main() {
@@ -213,16 +245,82 @@ async function main() {
       ev = makeEvent({ title: `🛒 购物清单：${pos.join('、')}`, date: opt.date || today(), time: opt.time || '', category: 'other',
         note: pos.map((p) => `□ ${p}`).join('\n') + (opt.note ? `\n${opt.note}` : ''), remind: opt.remind ?? (opt.time ? undefined : 'none') });
     } else {
-      ev = makeEvent({ title: opt.title, date: opt.date || today(), time: opt.time || '', category: opt.category || 'other', note: opt.note || '', remind: opt.remind });
+      ev = makeEvent({ title: opt.title, date: opt.date || today(), time: opt.time || '', category: opt.category || 'other', note: opt.note || '', remind: opt.remind,
+        scheduleId: typeof opt['schedule-id'] === 'string' ? opt['schedule-id'] : '',
+        earliest: typeof opt.earliest === 'string' ? opt.earliest : '', latest: typeof opt.latest === 'string' ? opt.latest : '' });
+      if (ev.scheduleId) {
+        const { events } = await pullAll(cfg, keys);
+        const dup = [...events.values()].find((x) => x.event.scheduleId === ev.scheduleId);
+        if (dup) { console.log(`云端已有 ${ev.scheduleId}，未重复添加：${fmt(dup.event)}`); return; }
+      }
     }
     await pushEvents(cfg, keys, [{ event: ev }]);
     console.log(`已添加：${fmt(ev)}`);
     return;
   }
 
-  const { events } = await pullAll(cfg, keys);
+  const { events, profile } = await pullAll(cfg, keys);
   const all = [...events.values()].map((x) => x.event).sort((a, b) => (a.date + (a.time || '99')).localeCompare(b.date + (b.time || '99')));
 
+  if (cmd === 'plan' || cmd === 'plan-paid') {
+    const kind = cmd === 'plan-paid' ? 'paid' : pos[0];
+    const P = await loadPlanner(kind);
+    const bday = typeof opt.birthday === 'string' ? opt.birthday : (profile?.babyBirthday || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(bday)) throw new Error('云端没有宝宝生日：加 --birthday YYYY-MM-DD');
+    const plan = P.plan(bday, today(), all);
+    const pick = plan.filter((d) => !d.existing && !d.past && (opt['include-optional'] || !d.optional));
+    const skipped = { existing: plan.filter((d) => d.existing).length, past: plan.filter((d) => !d.existing && d.past).length, optional: plan.filter((d) => !d.existing && !d.past && d.optional && !opt['include-optional']).length };
+    const list = pick.map((d) => makeEvent({ title: d.title, date: d.date, time: '09:00', category: P.category, note: d.note, remind: 'eve20,morning8', scheduleId: d.scheduleId,
+      earliest: d.earliest || '', latest: d.latest || '', windowNote: d.windowNote || '' }));
+    list.forEach((e) => console.log(`${opt['dry-run'] ? '（预演）' : '＋'} ${fmt(e).replace(/  — .*  \[/, '  [')}  ${e.scheduleId}`));
+    console.log(`生日 ${bday}：计划 ${plan.length} 项；${opt['dry-run'] ? '将' : '已'}写入 ${list.length} 项；跳过 云端已有 ${skipped.existing}、已过 ${skipped.past}、备选/可选 ${skipped.optional}`);
+    if (!opt['dry-run'] && list.length) await pushEvents(cfg, keys, list.map((event) => ({ event })));
+    return;
+  }
+  if (cmd === 'refresh-notes') {
+    const P = await loadPlanner(pos[0]);
+    const bday = typeof opt.birthday === 'string' ? opt.birthday : (profile?.babyBirthday || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(bday)) throw new Error('云端没有宝宝生日：加 --birthday YYYY-MM-DD');
+    const byId = new Map(P.plan(bday, today(), []).map((d) => [d.scheduleId, d]));
+    const GEN = { checkup: '儿童健康管理 · ', vaccine: '国家免疫规划 · ', paid: '' }[pos[0]];
+    const out = [], stat = { same: 0, manual: 0, unknown: 0 };
+    for (const { rec, event } of events.values()) {
+      if (!String(event.scheduleId || '').startsWith(P.prefix)) continue;
+      const d = byId.get(event.scheduleId);
+      if (!d) { stat.unknown++; continue; }
+      if (event.note === d.note) { stat.same++; continue; }
+      if (event.note && GEN && !event.note.startsWith(GEN)) { stat.manual++; console.log(`跳过（备注被手动改过）：${event.title}`); continue; }
+      out.push({ event: { ...event, note: d.note, updatedAt: Math.max(Date.now(), rec.updatedAt + 1) } });
+      console.log(`${opt['dry-run'] ? '（预演）' : '✎'} ${event.date} ${event.title}  ${event.scheduleId}`);
+    }
+    console.log(`生日 ${bday}：${opt['dry-run'] ? '将' : '已'}更新备注 ${out.length} 项；已是最新 ${stat.same}、手动改过跳过 ${stat.manual}、生成器里没有 ${stat.unknown}`);
+    if (!opt['dry-run'] && out.length) await pushEvents(cfg, keys, out);
+    return;
+  }
+  if (cmd === 'refresh-windows') {
+    const kinds = !pos[0] || pos[0] === 'all' ? ['vaccine', 'paid', 'checkup'] : [pos[0]];
+    const bday = typeof opt.birthday === 'string' ? opt.birthday : (profile?.babyBirthday || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(bday)) throw new Error('云端没有宝宝生日：加 --birthday YYYY-MM-DD');
+    const out = [], stat = { same: 0, unknown: 0, other: 0, add: 0, change: 0 };
+    const planners = [];
+    for (const k of kinds) { const P = await loadPlanner(k); planners.push({ P, byId: new Map(P.plan(bday, today(), []).map((d) => [d.scheduleId, d])) }); }
+    for (const { rec, event } of events.values()) {
+      const hit = planners.find(({ P }) => String(event.scheduleId || '').startsWith(P.prefix));
+      if (!hit) { stat.other++; continue; }
+      const d = hit.byId.get(event.scheduleId);
+      if (!d || !d.earliest) { stat.unknown++; continue; }
+      const w = { earliest: d.earliest, latest: d.latest || '', windowNote: d.windowNote || '' };
+      if (event.earliest === w.earliest && (event.latest || '') === w.latest && (event.windowNote || '') === w.windowNote) { stat.same++; continue; }
+      const isNew = !event.earliest;
+      isNew ? stat.add++ : stat.change++;
+      out.push({ event: { ...event, ...w, updatedAt: Math.max(Date.now(), rec.updatedAt + 1) } });
+      const warn = event.date < w.earliest ? '  ⚠️计划日早于最早' : (w.latest && event.date > w.latest ? '  ⚠️计划日晚于最迟' : '');
+      console.log(`${opt['dry-run'] ? '（预演）' : '✎'} ${isNew ? '补' : '改'} ${event.scheduleId.padEnd(16)} 计划 ${event.date}  最早 ${w.earliest}  最迟 ${w.latest || '—'}  ${event.title}${warn}`);
+    }
+    console.log(`生日 ${bday}：${opt['dry-run'] ? '将' : '已'}写入窗口 ${out.length} 项（新补 ${stat.add}、更新 ${stat.change}）；已是最新 ${stat.same}、生成器里没有 ${stat.unknown}、非计划事项 ${stat.other}`);
+    if (!opt['dry-run'] && out.length) await pushEvents(cfg, keys, out);
+    return;
+  }
   if (cmd === 'list') {
     const from = opt.all ? '' : (opt.from || today());
     const to = opt.to || '9999-12-31';
@@ -242,7 +340,8 @@ async function main() {
     console.log(`已更新：${fmt(ev)}`);
     return;
   }
-  console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 15).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1);
+  console.log(lines.slice(0, lines.findIndex((l) => !l.startsWith('//'))).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
 }
 
 main().catch((e) => { console.error('❌', e.message); process.exit(1); });

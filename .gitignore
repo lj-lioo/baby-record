@@ -9,3 +9,5 @@ test/results-vaccine.json
 test/results-checkup.json
 .wrangler/
 test/results-sync.json
+test/results-paidvax.json
+test/results-window.json
