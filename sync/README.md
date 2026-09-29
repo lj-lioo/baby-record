@@ -43,6 +43,18 @@ scheduleId 与 App 完全一致；跳过已过的、云端已有同 scheduleId �
 
 `add` 也支持 `--category paidvax` 和 `--schedule-id paid:xxx`（同 scheduleId 已在云端则不重复添加）。
 
+### 自费疫苗按系列加入 / 移出（v1.7.0）
+v1.7.0 起自费疫苗默认「待定」：`plan paid` **只写入已选定的 RSV单抗**，其他（默认 17 剂 + 备选 11 剂）不写入。
+- `node add-item.js paid-series <疫苗> --start YYYY-MM-DD [--time 09:00] [--dry-run] [--birthday …]`：把整个系列加入计划，
+  和 App「➕ 加入计划」同一个生成器（`seriesPlan`）；第1剂不能早于最早日期，晚于最迟会提示；云端已有该疫苗的剂次时不重复添加。
+  疫苗：`rsv pcv13 penta rota5 ev71 flu var hib mcv hepai jei`。
+- `node add-item.js paid-remove <疫苗> [--dry-run]`：移出计划，未完成的剂次写删除标记（手机同步后也删掉），已完成的保留。
+- `node add-item.js prune-undecided [--dry-run] [--backup 文件.json]`：一次性迁移——删除旧版 `plan paid` 写入、用户没动过的待定自费事项。
+  RSV 保留；已完成、设过闹钟、计划日/时间/标题/备注/提醒/类别和生成器不同的保留并列出原因；删除前把要删的事项（完整事项 + updatedAt）
+  备份到 JSON（默认 `backups/paid-undecided-日期-时间戳.json`，权限 600），删除标记 updatedAt = max(现在, 原 updatedAt+1)。
+- `refresh-windows paid` 不再覆盖已有窗口的自费事项（系列剂次的最早/最迟按上一剂日期计算）；`refresh-notes paid` 对系列剂次用系列备注。
+测试：`node test/paid-cli.local.mjs`（本地 Worker，临时密钥）。
+
 ### 刷新已有计划事项的备注
 `node add-item.js refresh-notes checkup|vaccine|paid [--dry-run]`：生成器的备注更新后（如体检补充了孤独症初筛、髋关节等），
 按 scheduleId 原地更新云端已有事项的备注。只改 note 和 updatedAt，id、日期、时间、提醒、已完成、已设闹钟都保留；

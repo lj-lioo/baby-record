@@ -17,6 +17,10 @@
   卡片显示「最早 … · 计划 …」「接种窗口：… – …（最迟）· 未到窗口 / 窗口中（还剩N天）/ 已过最迟 / 已完成」；「📆 改计划日」不能早于最早日，晚于最迟会提醒；
   日历：● 实心点 = 计划日，○ 空心点 = 最早日，点「🪟 窗口」或日期后显示该事项的窗口（淡色底、虚线圈 = 最早、实心 = 计划、「止」= 最迟）。
   旧版本（≤1.5.0）同步来的/本机旧事项没有窗口字段时，按 scheduleId + 宝宝生日从生成器推算（js/windows.js，不改 updatedAt）
+- **💰 自费疫苗（待定）目录 + 按系列加入计划（v1.7.0）**：自费疫苗默认「待定」，**不再**排进日程。首页月列表下方的可折叠卡片（和 设置 → 一键生成日程 →「💰 自费疫苗（待定）」）
+  列出 11 种：RSV单抗、13价、五联、五价轮状、EV71、流感、水痘（常用）+ Hib、流脑结合、甲肝灭活、乙脑灭活（备选），每种显示预防什么、剂次与程序、本宝宝第1剂最早/最迟、可替代哪些免费剂次、以门诊为准。
+  「➕ 加入计划」选第1剂日期/时间（默认最早、周末快捷、不能早于最早、晚于最迟提醒），预览后生成整个系列：计划日 = max(推荐月龄, 上一剂 + 推荐间隔)，最早 = max(最小月龄, 上一剂 + 最短间隔)，最迟 = min(年龄上限, 上一剂 + 最长间隔)（js/paidvax.js `SERIES`）。
+  前面剂次改计划日 / 实际接种日不同 →「后续剂次一起顺延」（已设闹钟的变「需重设闹钟」，已完成的不动）；「🗑 移出计划」回到待定（只删未完成的）。计划五联后免费百白破1–4、脊灰1–4 卡片提示「已计划五联，可不打此剂（以门诊为准）」，不自动删除。
 - 📅 导出 .ics 到苹果日历（多个 VALARM，按所选提醒时间）
 - App 打开时到点弹出全屏提醒页（铃声、知道了、稍后提醒10分钟）
 - 可选：Web Push 推送（需要 `server/` 推送服务在线）
@@ -33,13 +37,13 @@ site/            静态网站（直接部署到 GitHub Pages）
   js/shortcuts.js   快捷指令 URL 与传入文本格式
   js/vaccines.js    国家免疫规划疫苗程序与日期推算（纯函数）
   js/checkups.js    0～6岁儿童健康管理体检时间表与日期推算（纯函数）
-  js/paidvax.js     自费疫苗方案（纯函数、无 import，命令行用 data: URL 加载）
+  js/paidvax.js     自费疫苗方案 + v1.7.0 系列程序 SERIES / seriesPlan / reflowSeries（纯函数、无 import，命令行用 data: URL 加载）
   js/windows.js     接种/体检窗口：旧事项补窗口、状态（未到窗口/窗口中/已过最迟/已完成）
   js/ics.js         RFC 5545 .ics 生成
   js/push.js        Web Push 客户端
   js/sync-core.js   云同步：密钥派生、加密、请求（浏览器与盒子命令行共用）
   js/sync.js        云同步：本地变更跟踪、合并、配对链接
-  js/views/*.js     页面：home / editor / actions / alarm / settings / help / vaxplan / planned（改计划日）
+  js/views/*.js     页面：home / editor / actions / alarm / settings / help / vaxplan / planned（改计划日）/ paidcat（自费疫苗待定目录、加入计划、顺延、移出计划）
   icons/src/*.svg   图标源文件（build-icons.sh 生成 PNG）
 sync/            云同步：worker/（Cloudflare Worker + D1 迁移 + 协议测试）、add-item.js（盒子命令行）、deploy.sh
 server/          可选的推送服务（Node + web-push，JSON 文件存储）
