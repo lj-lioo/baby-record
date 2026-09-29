@@ -1,0 +1,53 @@
+name: deploy
+on:
+  push:
+    branches: [main]
+    paths: ['site/**']
+  workflow_dispatch:
+    inputs:
+      src_url:
+        description: "Optional: URL of a .tar.gz of the repo tree to import before deploying"
+        required: false
+        default: ""
+      src_sha256:
+        description: "sha256 of the bundle (required when src_url is set)"
+        required: false
+        default: ""
+permissions:
+  contents: write
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import source bundle
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.src_url != '' }}
+        env:
+          SRC_URL: ${{ inputs.src_url }}
+          SRC_SHA: ${{ inputs.src_sha256 }}
+        run: |
+          test -n "$SRC_SHA"
+          curl -fsSL "$SRC_URL" -o /tmp/src.tgz
+          echo "$SRC_SHA  /tmp/src.tgz" | sha256sum -c -
+          tar xzf /tmp/src.tgz -C .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Import app source bundle" || echo "nothing to commit"
+          git push origin HEAD:main
+      - name: Build icons if missing
+        run: |
+          if [ ! -f site/icons/icon-192.png ]; then
+            sudo apt-get update && sudo apt-get install -y librsvg2-bin
+            bash site/icons/src/build-icons.sh
+          fi
+          touch site/.nojekyll
+      - name: Publish site/ to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          force_orphan: true
