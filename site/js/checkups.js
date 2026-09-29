@@ -50,6 +50,18 @@ export function checkupAge(c) {
   return c.m % 12 ? `满${c.m}月龄` : `满${c.m / 12}周岁`;
 }
 
+// 体检窗口（参考）：规范只规定了体检的月龄/年龄，没有给出日期范围。这里按儿保常用的年龄口径：
+// 「X月龄」= 满X月龄至下个月龄前一天；「X岁」= 满X周岁至下一个生日前一天；满月体检 28～42 天（不少地区做「42天体检」）。
+export function checkupWindow(birthday, c) {
+  if (c.id === 'home-visit') return { earliest: birthday, latest: addDays(birthday, 7), windowNote: '参考：出院后1周内（医生上门）' };
+  if (c.id === 'm1') return { earliest: addDays(birthday, 28), latest: addDays(birthday, 42), windowNote: '参考：满28天～42天（各地安排在满月或42天）' };
+  if (c.id === 'hearing-rescreen') return { earliest: birthday, latest: addDays(birthday, 42), windowNote: '新生儿听力筛查规范：初筛未通过者42天内复筛' };
+  if (c.d != null) return { earliest: checkupDate(birthday, c), latest: '', windowNote: '' };
+  const earliest = addMonths(birthday, c.m);
+  if (c.m < 48) return { earliest, latest: addDays(addMonths(birthday, c.m + 1), -1), windowNote: `参考：${c.m}月龄～${c.m}月龄的最后一天（儿保常用年龄口径）` };
+  return { earliest, latest: addDays(addMonths(birthday, c.m + 12), -1), windowNote: `参考：${c.m / 12}岁＝满${c.m / 12}周岁至${c.m / 12 + 1}周岁生日前` };
+}
+
 export function checkupDate(birthday, c) { return c.d != null ? addDays(birthday, c.d) : addMonths(birthday, c.m); }
 
 export function checkupNote(c, birthday) {
@@ -68,6 +80,6 @@ export function planCheckups(birthday, today, events = []) {
   return CHECKUP_SCHEDULE.map((c) => {
     const scheduleId = `chk:${c.id}`;
     const date = checkupDate(birthday, c);
-    return { ...c, scheduleId, date, note: checkupNote(c, birthday), age: checkupAge(c), past: date < today, existing: byId.get(scheduleId) || null };
+    return { ...c, ...checkupWindow(birthday, c), scheduleId, date, note: checkupNote(c, birthday), age: checkupAge(c), past: date < today, existing: byId.get(scheduleId) || null };
   });
 }

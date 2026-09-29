@@ -89,6 +89,32 @@ export const PAID_FAMILIES = {
   jei:   { name: '乙脑灭活疫苗', hint: '替代免费乙脑减毒活疫苗，部分地区免费', note: '预防流行性乙型脑炎；共4剂（8月龄2剂间隔7～10天，2周岁、6周岁各1剂）；选灭活就不打免费的乙脑减毒活疫苗（共2剂）；国家免疫规划表也列有乙脑灭活疫苗，当地免费提供时无需自费' },
 };
 
+// 接种窗口（最早 / 最迟），依据各产品说明书；「参考」表示说明书没有给出确切日期、按流行季或通用做法估算。
+// 最早：首剂用说明书的最小年龄；后续剂次用程序推荐月龄（实际还要与上一剂间隔足够）。未列出的只有最早日期。
+const beforeM = (b, m) => addDaysP(addMonthsP(b, m), -1);   // 满 m 月龄的前一天（「小于 m 月龄」）
+export function rsvSeasonEnd(b) { const { y, m } = parts(b); return `${m >= 4 ? y + 1 : y}-03-31`; }
+const WIN = {
+  rsv: (b) => ({ earliest: b, latest: rsvSeasonEnd(b), windowNote: '说明书：出生后即可注射，用于即将进入或出生在第一个RSV流行季的婴儿；最迟为参考：首个流行季结束前（北方多为11月～次年3月，南方流行期更长）' }),
+  'pcv13-1': (b) => ({ earliest: addDaysP(b, 42), latest: beforeM(b, 7), windowNote: '说明书：首剂最早6周龄，6月龄内起种按3+1程序；7月龄后起种剂次减少' }),
+  'pcv13-3': (b) => ({ latest: beforeM(b, 12), windowNote: '参考：基础3剂在12月龄前完成；各剂间隔≥28天' }),
+  'pcv13-4': (b) => ({ latest: beforeM(b, 16), windowNote: '说明书：加强剂12～15月龄，与第3剂间隔≥8周' }),
+  'rota5-1': (b) => ({ earliest: addDaysP(b, 42), latest: addDaysP(b, 84), windowNote: '说明书：第1剂6～12周龄' }),
+  'rota5-2': (b) => ({ latest: addDaysP(b, 154), windowNote: '参考：与第1剂间隔4～10周（约22周龄前）' }),
+  'rota5-3': (b) => ({ latest: addDaysP(b, 224), windowNote: '说明书：第3剂不晚于32周龄；超龄的剂次不再补种' }),
+  'ev71-1': (b) => ({ earliest: addMonthsP(b, 6), latest: beforeM(b, 72), windowNote: '说明书：6～71月龄（部分产品到35月龄），鼓励12月龄前完成2剂' }),
+  'ev71-2': (b) => ({ latest: beforeM(b, 72), windowNote: '说明书：与第1剂间隔1个月，6～71月龄内完成' }),
+  'flu-1': (b) => ({ earliest: addMonthsP(b, 6), windowNote: '说明书：6月龄起；每年流感季（9～10月起）接种，未规定最迟' }),
+  'hepai-1': (b) => ({ latest: beforeM(b, 24), windowNote: '国家免疫规划：甲肝灭活疫苗第1剂小于24月龄完成' }),
+  'hepai-2': (b) => ({ latest: beforeM(b, 36), windowNote: '国家免疫规划：甲肝灭活疫苗第2剂小于3周岁完成' }),
+  'jei-2': (b) => ({ latest: beforeM(b, 12), windowNote: '国家免疫规划：乙脑灭活疫苗第2剂小于12月龄完成' }),
+  'jei-3': (b) => ({ latest: beforeM(b, 36), windowNote: '国家免疫规划：乙脑灭活疫苗第3剂小于3周岁完成' }),
+  'jei-4': (b) => ({ latest: beforeM(b, 84), windowNote: '国家免疫规划：乙脑灭活疫苗第4剂小于7周岁完成' }),
+};
+export function paidWindow(birthday, p) {
+  const w = WIN[p.id] ? WIN[p.id](birthday) : {};
+  return { earliest: w.earliest || paidDate(birthday, p), latest: w.latest || '', windowNote: w.windowNote || '未规定最迟；按说明书与上一剂的间隔，以接种门诊为准' };
+}
+
 export function paidDate(birthday, p) {
   if (p.at) return p.at(birthday);
   const base = addMonthsP(birthday, p.m);
@@ -101,7 +127,7 @@ export function paidNote(p) {
   return [p.optional ? '备选方案' : '可选·自费', p.age, f.note, PAID_DISCLAIMER].filter(Boolean).join(' · ');
 }
 
-// 返回每一项 { ...item, scheduleId, date, note, age, past, existing, optional, hint }
+// 返回每一项 { ...item, scheduleId, date（默认计划日）, earliest, latest, windowNote, note, age, past, existing, optional, hint }
 export function planPaid(birthday, today, events = []) {
   const byId = new Map(events.filter((e) => e && e.scheduleId).map((e) => [e.scheduleId, e]));
   return PAID_SCHEDULE.map((p) => {
@@ -109,7 +135,7 @@ export function planPaid(birthday, today, events = []) {
     const date = paidDate(birthday, p);
     const f = PAID_FAMILIES[p.family] || {};
     const { at, ...rest } = p;
-    return { ...rest, scheduleId, date, note: paidNote(p), familyName: f.name || '', hint: p.optional ? (f.hint || '备选方案，默认不添加') : '',
+    return { ...rest, ...paidWindow(birthday, p), scheduleId, date, note: paidNote(p), familyName: f.name || '', hint: p.optional ? (f.hint || '备选方案，默认不添加') : '',
       optional: !!p.optional, past: date < today, existing: byId.get(scheduleId) || null };
   });
 }
