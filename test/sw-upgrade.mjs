@@ -1,10 +1,12 @@
-// 升级路径测试：旧版本 Service Worker（缓存里是旧 JS）→ v1.4.1，确认最多「关闭再打开」一次就是新界面。
+// 升级路径测试：旧版本 Service Worker（缓存里是旧 JS）→ 当前版本（site/js/views/settings.js 的 APP_BUILD），确认最多「关闭再打开」一次就是新界面。
+// v1.5.0 起另测 v1.4.1 → 当前版本（需 /tmp/swtest/v141/site：git archive 6e75a3a site | tar -x -C /tmp/swtest/v141）；v1.6.0 起再测 v1.5.0（/tmp/swtest/v150/site：git archive 8d54508 site | tar -x -C /tmp/swtest/v150）。
 // 准备：mkdir -p /tmp/swtest/v120 /tmp/swtest/v140 && git archive 0c01f7d site | tar -x -C /tmp/swtest/v120 && git archive 304e87b site | tar -x -C /tmp/swtest/v140
 //       echo '/tmp/swtest/v120/site|0|600' > /tmp/swtest/mode && python3 test/sw-upgrade-server.py &   （:8091，可切换目录 + 模拟 GitHub Pages 的 max-age=600）
 import { chromium } from 'playwright';
 import fs from 'fs';
 const BASE = 'http://127.0.0.1:8091/';
 const NEW = process.env.NEW_SITE || '/workspace/baby-app/site';
+const V = /APP_BUILD = '([^']+)'/.exec(fs.readFileSync(NEW + '/js/views/settings.js', 'utf8'))[1];
 const setMode = (root, html, js) => fs.writeFileSync('/tmp/swtest/mode', `${root}|${html}|${js}\n`);
 const results = [];
 const ok = (name, cond, extra = '') => { results.push({ name, pass: !!cond, extra }); console.log(cond ? '✅' : '❌', name, extra); };
@@ -28,14 +30,14 @@ async function open(ctx, label) {
     const reg = await navigator.serviceWorker.getRegistration();
     const sw = reg && reg.active ? reg.active.scriptURL : '';
     const keys = await caches.keys();
-    return { plan: txt.includes('一键生成日程'), chk: !!document.getElementById('btnChk'), sync: !!document.getElementById('syncCard'),
+    return { plan: txt.includes('一键生成日程'), chk: !!document.getElementById('btnChk'), paid: !!document.getElementById('btnPaid'), sync: !!document.getElementById('syncCard'),
       oldVax: txt.includes('💉 疫苗计划'), footer: (txt.match(/宝宝记录 v[^\n]*/) || [''])[0], caches: keys.join(','), controlled: !!navigator.serviceWorker.controller };
   });
   st.navs = reloads; st.dbg = dbg;
   console.log(`   [${label}] reloads=${reloads} inline=${dbg.inline} footer="${st.footer}" plan=${st.plan} chk=${st.chk} sync=${st.sync} oldVax=${st.oldVax} caches=${st.caches}`);
   return { page, st };
 }
-const isNew = (st) => st.plan && st.chk && st.sync && st.footer.startsWith('宝宝记录 v1.4.1');
+const isNew = (st) => st.plan && st.chk && st.sync && st.footer.startsWith(`宝宝记录 v${V}`) && (V < '1.5' || st.paid);
 
 async function staleState(label, htmlB = 0) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'zh-CN', timezoneId: 'Asia/Shanghai' });
@@ -56,17 +58,17 @@ async function staleState(label, htmlB = 0) {
   await ctx.close();
 }
 
-// 2) 升级到 v1.4.1（最坏情况：页面也在 HTTP 缓存里 max-age=600）
+// 2) 升级到当前版本（最坏情况：页面也在 HTTP 缓存里 max-age=600）
 for (const [variant, html] of [['页面已过期', 0], ['页面仍在HTTP缓存(max-age=600)', 600]]) {
   const { ctx } = await staleState(variant, html);
   setMode(NEW, html, 600);
-  const r1 = await open(ctx, `${variant} 部署 v1.4.1 后第1次打开`);
+  const r1 = await open(ctx, `${variant} 部署 v${V} 后第1次打开`);
   const first = isNew(r1.st);
   await r1.page.close();
   const r2 = await open(ctx, `${variant} 关闭再打开`);
   ok(`${variant}：最多关闭再打开一次就是新界面（第1次打开${first ? '就已' : '未'}更新）`, isNew(r2.st) && (html === 600 || first), `第1次=${first} 第2次=${isNew(r2.st)}`);
   ok(`${variant}：没有刷新循环（每次打开最多 1 次自动刷新）`, r1.st.navs <= 1 && r2.st.navs <= 1, `navs=${r1.st.navs},${r2.st.navs}`);
-  ok(`${variant}：只剩 v1.4.1 缓存`, r2.st.caches === 'baby-record-v1.4.1', r2.st.caches);
+  ok(`${variant}：只剩 v${V} 缓存`, r2.st.caches === `baby-record-v${V}`, r2.st.caches);
   // 离线：断网后重新打开仍可使用
   await ctx.setOffline(true);
   const r3 = await open(ctx, `${variant} 断网再打开`);
@@ -74,6 +76,24 @@ for (const [variant, html] of [['页面已过期', 0], ['页面仍在HTTP缓存(
   await ctx.setOffline(false);
   await r2.page.close(); await r3.page.close();
   await ctx.close();
+}
+
+// 2b) v1.4.1 / v1.5.0（手机上的上一版）→ 当前版本（v1.5.0 快照：cp -a <v1.5.0 的 site> /tmp/swtest/v150/）
+for (const [tag, ver, wasOk] of [['v141', '1.4.1', (st) => !st.paid], ['v150', '1.5.0', (st) => st.paid]]) {
+  if (!fs.existsSync(`/tmp/swtest/${tag}/site`)) continue;
+  for (const [variant, html] of [[`v${ver}→页面已过期`, 0], [`v${ver}→页面仍在HTTP缓存`, 600]]) {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'zh-CN', timezoneId: 'Asia/Shanghai' });
+    setMode(`/tmp/swtest/${tag}/site`, html, 600);
+    let r = await open(ctx, `${variant} v${ver} 首次`); await r.page.close();
+    r = await open(ctx, `${variant} v${ver} 再开`);
+    const wasOld = r.st.footer.startsWith(`宝宝记录 v${ver}`) && wasOk(r.st); await r.page.close();
+    setMode(NEW, html, 600);
+    const r1 = await open(ctx, `${variant} 部署 v${V} 后第1次打开`); const first = isNew(r1.st); await r1.page.close();
+    const r2 = await open(ctx, `${variant} 关闭再打开`);
+    ok(`${variant}：最多关闭再打开一次就是 v${V}`, wasOld && isNew(r2.st) && (html === 600 || first), `第1次=${first} 第2次=${isNew(r2.st)} ${r2.st.footer}`);
+    ok(`${variant}：没有刷新循环，只剩 v${V} 缓存`, r1.st.navs <= 1 && r2.st.navs <= 1 && r2.st.caches === `baby-record-v${V}`, `navs=${r1.st.navs},${r2.st.navs} ${r2.st.caches}`);
+    await r2.page.close(); await ctx.close();
+  }
 }
 
 // 3) 全新安装：不自动刷新
