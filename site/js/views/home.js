@@ -1,0 +1,197 @@
+// 首页：醒目的近期提醒卡片 + 月历 + 当日事项
+import { store } from '../store.js';
+import { CATEGORIES } from '../categories.js';
+import { todayStr, addDays, ymd, parseYmd, cnDate, weekday, countdown, pad } from '../dates.js';
+import { fireAtOf, reminderLabel } from '../reminders.js';
+import { esc, toast } from '../ui.js';
+import { openEditor } from './editor.js';
+import { openAlarmSheet, alarmState } from './actions.js';
+import { openICS } from '../ics.js';
+import { isStandalone, isIOS } from '../push.js';
+
+const ui = { month: null, selected: null };
+
+export function renderHome(root) {
+  const today = todayStr();
+  if (!ui.selected) ui.selected = today;
+  if (!ui.month) ui.month = ui.selected.slice(0, 7);
+
+  root.innerHTML = `
+    <header class="topbar">
+      <div class="logo"><img src="icons/icon-192.png" alt=""><div><h1>宝宝记录</h1><div class="sub">${cnDate(today, true)} ${weekday(today)}</div></div></div>
+    </header>
+    <div id="pushBanner"></div>
+    <section class="card remind-card" id="remindCard"></section>
+    <section class="card" id="calCard"></section>
+    <section class="card" id="dayCard"></section>
+    <button class="fab" id="fab" aria-label="添加事项">＋</button>`;
+
+  renderReminderCard(root.querySelector('#remindCard'));
+  renderCalendar(root.querySelector('#calCard'));
+  renderDay(root.querySelector('#dayCard'));
+  renderPushBanner(root.querySelector('#pushBanner'));
+  root.querySelector('#fab').onclick = () => openEditor({ date: ui.selected });
+}
+
+export function selectDate(d) { ui.selected = d; ui.month = d.slice(0, 7); }
+
+function renderReminderCard(el) {
+  const today = todayStr();
+  const end = addDays(today, 7);
+  const overdueFrom = addDays(today, -30);
+  const items = store.events()
+    .filter((e) => (e.date >= today && e.date <= end && !e.done) || (e.date < today && e.date >= overdueFrom && !e.done && e.category !== 'other'))
+    .sort((a, b) => (a.date + (a.time || '99')).localeCompare(b.date + (b.time || '99')));
+  const urgent = items.some((e) => e.date <= today);
+  el.classList.toggle('has-urgent', urgent);
+  el.innerHTML = `
+    <h2>🔔 近期提醒 <span class="muted small" style="font-weight:500">今天 ~ 未来7天</span></h2>
+    ${items.length ? `<ul class="rlist">${items.map((e) => {
+      const c = CATEGORIES[e.category], cd = countdown(e.date);
+      const past = e.date < today;
+      return `<li class="ritem lvl-${cd.level}" data-id="${e.id}">
+        <div class="ricon" style="background:var(--${e.category}-soft)">${c.icon}</div>
+        <div class="rbody"><div class="rtitle">${esc(e.title)}</div>
+          <div class="rmeta">${cnDate(e.date)} ${weekday(e.date)}${e.time ? ' ' + e.time : ''} · ${c.label}${nextRemText(e)}${!past ? alarmMini(e) : ''}</div></div>
+        ${past || cd.level === 'today' ? `<button class="mini-btn" data-done="${e.id}">${past ? '已完成?' : '完成'}</button>` : ''}
+        <span class="pill lvl-${cd.level}">${cd.text}</span>
+      </li>`;
+    }).join('')}</ul>` : '<div class="empty">🎈 未来7天没有安排，好好陪宝宝玩吧～</div>'}`;
+  el.querySelectorAll('.ritem').forEach((li) => {
+    li.onclick = (ev) => {
+      if (ev.target.closest('[data-done]')) return;
+      const e = store.getEvent(li.dataset.id);
+      selectDate(e.date);
+      window.dispatchEvent(new CustomEvent('rerender'));
+      openEditor({ id: e.id });
+    };
+  });
+  el.querySelectorAll('[data-done]').forEach((b) => {
+    b.onclick = () => { store.setDone(b.dataset.done, true); toast('已标记为已完成 ✅'); };
+  });
+}
+
+function alarmBtn(e) {
+  const st = alarmState(e);
+  if (st === 'added') return '<button class="chip-btn alarm-btn added" data-act="alarm">✅ 已设闹钟</button>';
+  if (st === 'changed') return '<button class="chip-btn alarm-btn warn" data-act="alarm">⚠️ 时间已改，重设闹钟</button>';
+  return '<button class="chip-btn alarm-btn" data-act="alarm">⏰ 设为闹钟提醒</button>';
+}
+function alarmMini(e) {
+  const st = alarmState(e);
+  return st === 'added' ? ' · <span class="ok">已设闹钟</span>' : st === 'changed' ? ' · <span class="bad">需重设闹钟</span>' : ' · <span class="bad">未设闹钟</span>';
+}
+
+function nextRemText(e) {
+  const now = Date.now();
+  const next = (e.reminders || []).map((r) => fireAtOf(e, r)).filter((t) => t != null && t > now).sort((a, b) => a - b)[0];
+  if (!next) return '';
+  const d = new Date(next);
+  return ` · ⏰${ymd(d) === todayStr() ? '今天' : `${d.getMonth() + 1}/${d.getDate()}`} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderCalendar(el) {
+  const [y, m] = ui.month.split('-').map(Number);
+  const first = new Date(y, m - 1, 1);
+  const startOffset = first.getDay();
+  const gridStart = new Date(y, m - 1, 1 - startOffset);
+  const today = todayStr();
+  const byDate = {};
+  for (const e of store.events()) (byDate[e.date] ||= []).push(e);
+  let cells = '';
+  const rows = Math.ceil((startOffset + new Date(y, m, 0).getDate()) / 7);
+  for (let i = 0; i < rows * 7; i++) {
+    const d = new Date(gridStart); d.setDate(gridStart.getDate() + i);
+    const ds = ymd(d);
+    const evs = byDate[ds] || [];
+    const hasV = evs.some((e) => e.category === 'vaccine' && !e.done);
+    const cls = ['day', d.getMonth() !== m - 1 ? 'other-month' : '', ds === today ? 'today' : '', ds === ui.selected ? 'selected' : '', hasV ? 'has-vaccine' : ''].join(' ');
+    const dots = evs.slice(0, 4).map((e) => `<i class="dot ${CATEGORIES[e.category].cls} ${e.done ? 'done' : ''}"></i>`).join('');
+    cells += `<button class="${cls}" data-date="${ds}" aria-label="${cnDate(ds)}${evs.length ? `，${evs.length}个事项` : ''}">
+      ${hasV ? '<span class="vbadge">💉</span>' : ''}<span class="num">${d.getDate()}</span><span class="dots">${dots}</span></button>`;
+  }
+  el.innerHTML = `
+    <div class="cal-head">
+      <button class="icon-btn" id="prevM" aria-label="上个月">‹</button>
+      <div style="text-align:center"><div class="month">${y}年${m}月</div>${ui.month !== today.slice(0, 7) ? '<button class="today-btn" id="toToday">回到今天</button>' : ''}</div>
+      <button class="icon-btn" id="nextM" aria-label="下个月">›</button>
+    </div>
+    <div class="weekdays">${['日', '一', '二', '三', '四', '五', '六'].map((w) => `<div>${w}</div>`).join('')}</div>
+    <div class="days">${cells}</div>
+    <div class="legend"><span><i class="dot cat-vaccine"></i>疫苗</span><span><i class="dot cat-checkup"></i>体检</span><span><i class="dot cat-other"></i>其他</span></div>`;
+  el.querySelector('#prevM').onclick = () => shiftMonth(-1);
+  el.querySelector('#nextM').onclick = () => shiftMonth(1);
+  const tt = el.querySelector('#toToday');
+  if (tt) tt.onclick = () => { selectDate(todayStr()); rerender(); };
+  el.querySelectorAll('.day').forEach((b) => {
+    b.onclick = () => {
+      const ds = b.dataset.date;
+      if (ds === ui.selected && !store.eventsOn(ds).length) { openEditor({ date: ds }); return; }
+      ui.selected = ds;
+      if (ds.slice(0, 7) !== ui.month) ui.month = ds.slice(0, 7);
+      rerender();
+      document.getElementById('dayCard')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+  });
+}
+
+function shiftMonth(n) {
+  const [y, m] = ui.month.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  ui.month = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  rerender();
+}
+const rerender = () => window.dispatchEvent(new CustomEvent('rerender'));
+
+function renderDay(el) {
+  const ds = ui.selected;
+  const evs = store.eventsOn(ds);
+  const cd = countdown(ds);
+  el.innerHTML = `
+    <div class="day-panel-head">
+      <h2 style="margin:0">${cnDate(ds)} ${weekday(ds)} <span class="pill lvl-${cd.level}" style="animation:none">${cd.text}</span></h2>
+      <button class="btn secondary" id="addHere" style="padding:8px 14px;font-size:15px">＋ 添加</button>
+    </div>
+    ${evs.length ? evs.map((e) => {
+      const c = CATEGORIES[e.category];
+      const rems = (e.reminders || []).map((r) => ({ at: fireAtOf(e, r), label: reminderLabel(r) })).filter((x) => x.at != null).sort((a, b) => a.at - b.at);
+      return `<div class="item ${c.cls} ${e.done ? 'is-done' : ''}" data-id="${e.id}">
+        <div class="irow"><span style="font-size:20px">${c.icon}</span><span class="ititle">${esc(e.title)}</span>
+          ${e.done ? '<span class="tag done">已完成</span>' : `<span class="tag ${c.cls}">${c.label}</span>`}</div>
+        <div class="imeta">🕒 ${e.time || '全天'}${e.note ? `\n📝 ${esc(e.note)}` : ''}${rems.length ? `\n⏰ ${rems.map((x) => esc(x.label)).join('、')}` : '\n⏰ 未设置提醒'}</div>
+        <div class="iactions">
+          ${e.done ? '' : alarmBtn(e)}
+          <button class="chip-btn" data-act="edit">✏️ 编辑</button>
+          <button class="chip-btn" data-act="ics">📅 苹果日历</button>
+          ${e.done ? '<button class="chip-btn" data-act="undone">↩︎ 取消完成</button>' : '<button class="chip-btn done-btn" data-act="done">✅ 已完成</button>'}
+        </div>
+      </div>`;
+    }).join('') : `<p class="muted" style="margin:12px 0 2px">这一天还没有安排。点「＋ 添加」记录疫苗、体检等事项。</p>`}`;
+  el.querySelector('#addHere').onclick = () => openEditor({ date: ds });
+  el.querySelectorAll('.item').forEach((card) => {
+    const id = card.dataset.id;
+    card.querySelectorAll('[data-act]').forEach((b) => {
+      b.onclick = () => {
+        const e = store.getEvent(id);
+        const act = b.dataset.act;
+        if (act === 'edit') openEditor({ id });
+        else if (act === 'ics') openICS(e);
+        else if (act === 'alarm') openAlarmSheet(e);
+        else if (act === 'done') { store.setDone(id, true); toast('已标记为已完成 ✅'); }
+        else if (act === 'undone') store.setDone(id, false);
+      };
+    });
+  });
+}
+
+async function renderPushBanner(el) {
+  if (localStorage.getItem('babyrecord.hideBanner') === '1') { el.innerHTML = ''; return; }
+  const msg = isIOS() && !isStandalone()
+    ? '<b>第一步：添加到主屏幕</b>Safari 分享按钮 → 添加到主屏幕；然后设置一次「宝宝闹钟」快捷指令'
+    : '<b>设置一次「宝宝闹钟」快捷指令</b>之后每个事项点「⏰ 设为闹钟提醒」，到点像闹钟一样响';
+  el.innerHTML = `<div class="banner"><span style="font-size:28px">🔔</span><div class="bt">${msg}</div>
+    <a class="btn" style="padding:8px 12px;font-size:14px;text-decoration:none" href="#/help">看步骤</a>
+    <button class="x-btn" style="width:30px;height:30px;font-size:14px;background:transparent" aria-label="关闭">✕</button></div>`;
+  el.querySelector('.x-btn').onclick = () => { localStorage.setItem('babyrecord.hideBanner', '1'); el.innerHTML = ''; };
+}
+export { parseYmd };

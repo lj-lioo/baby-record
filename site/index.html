@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>宝宝记录</title>
+  <meta name="description" content="宝宝疫苗、体检和重要事项的日历与提醒">
+  <meta name="theme-color" content="#FFF4EC">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="宝宝记录">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="config.js"></script>
+</head>
+<body>
+  <div id="app">
+    <main id="view" aria-live="polite"></main>
+    <nav class="tabbar" id="tabbar">
+      <a href="#/" data-tab="home"><span class="ti">🗓️</span><span>日程</span></a>
+      <a href="#/settings" data-tab="settings"><span class="ti">⚙️</span><span>设置</span></a>
+      <a href="#/help" data-tab="help"><span class="ti">📖</span><span>使用帮助</span></a>
+    </nav>
+  </div>
+
+  <!-- 底部弹出面板（添加/编辑等） -->
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+  <section class="sheet" id="sheet" role="dialog" aria-modal="true" hidden></section>
+
+  <!-- 全屏闹钟页 -->
+  <section class="alarm" id="alarm" role="alertdialog" aria-modal="true" hidden></section>
+
+  <div class="toast" id="toast" hidden></div>
+  <noscript>请开启 JavaScript 后使用。</noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

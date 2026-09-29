@@ -1,0 +1,1 @@
+{ "name": "baby-record-push", "version": "1.0.0", "type": "module", "private": true, "main": "server.js", "dependencies": { "web-push": "^3.6.7" } }
