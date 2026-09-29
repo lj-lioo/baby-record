@@ -1,0 +1,13 @@
+{
+  "name": "baby-record-sync-worker",
+  "private": true,
+  "description": "宝宝记录云同步 Worker（Cloudflare Workers + D1）",
+  "scripts": {
+    "dev": "wrangler dev --port 8788",
+    "deploy": "wrangler deploy",
+    "test": "node test/worker.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.143.0"
+  }
+}

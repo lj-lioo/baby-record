@@ -1,0 +1,22 @@
+# 宝宝记录 · 云同步 Worker（Cloudflare 免费计划：Workers + D1）
+name = "baby-record-sync"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+# 允许跨域调用的网页来源（逗号分隔）
+ALLOWED_ORIGINS = "https://lj-lioo.github.io,http://localhost:8080,http://127.0.0.1:8080"
+# 可选：只允许这些同步空间（sha256(令牌) 的十六进制，逗号分隔）。留空 = 任何持有有效格式密钥的设备都可以新建空间
+SPACE_ALLOWLIST = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "baby-record-sync"
+# 登录后运行 `npx wrangler d1 create baby-record-sync`，把输出的 database_id 填到这里
+# （sync/deploy.sh 会自动完成）。本地 `wrangler dev` 不需要真实 id。
+database_id = "b8d90f76-c206-419d-9a3f-da25b74b506d"
+migrations_dir = "migrations"
+
+# 在国内访问：*.workers.dev 在中国大陆被屏蔽。若有托管在 Cloudflare 的域名，取消下面注释绑定自定义域名：
+# routes = [ { pattern = "sync.example.com", custom_domain = true } ]
