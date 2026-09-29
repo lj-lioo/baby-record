@@ -1,12 +1,13 @@
 // 一键生成计划（疫苗 / 体检共用）：根据宝宝生日生成预览列表，勾选后批量添加事项。
-// 疫苗：国家免疫规划疫苗儿童免疫程序（vaccines.js）；体检：0～6岁儿童健康管理（checkups.js）；自费疫苗 + RSV单抗（paidvax.js）。
+// 疫苗：国家免疫规划疫苗儿童免疫程序（vaccines.js）；体检：0～6岁儿童健康管理（checkups.js）。
+// v1.7.0：自费疫苗不再一键生成，改为「待定」目录（paidcat.js），按需加入计划。
 import { store, uid } from '../store.js';
 import { esc, openSheet, closeSheet, toast } from '../ui.js';
 import { todayStr, cnDate, weekday } from '../dates.js';
 import { defaultReminders } from '../reminders.js';
 import { planVaccines, NIP_SOURCE } from '../vaccines.js';
 import { planCheckups, CHECKUP_SOURCE } from '../checkups.js';
-import { planPaid } from '../paidvax.js';
+import { openPaidCatalog } from './paidcat.js';
 
 const TIME = '09:00';
 export const DEFAULT_BIRTHDAY = '2026-09-17';
@@ -30,25 +31,16 @@ const KINDS = {
     meta: (d) => [d.age],
     next: '下一次',
   },
-  paid: {
-    icon: '💰', title: '自费疫苗（可选）', unit: '项', noun: '自费疫苗事项', category: 'paidvax', prefix: 'paid:',
-    intro: '常见<b>自费（非免疫规划）疫苗</b>的建议日程，加到日程里的「自费疫苗」类别（蓝色）。默认只勾选每类疫苗的常用方案；备选方案默认不勾选。<b>RSV单抗</b>已和乙肝第2剂安排在同一天。',
-    disclaimer: '⚠️ 自费疫苗自愿接种，<b>是否接种、品牌和时间以接种门诊建议为准</b>。含免费疫苗成分的（如五联含百白破、脊灰）按说明书接种后可替代相应免费剂次，到时可删掉对应的免费事项。不同疫苗可同一天在不同部位接种；两种注射类活疫苗（如麻腮风、水痘）不同天接种须间隔≥28天。',
-    plan: (bday, events) => planPaid(bday, todayStr(), events),
-    pastLabel: () => '已过',
-    meta: (d) => [d.age],
-    next: '下一个',
-    groupLabel: '备选方案（默认不添加，按需勾选）',
-  },
 };
 
+const PREFIX = { vaccine: 'nip:', checkup: 'chk:', paid: 'paid:' };
 export function planCounts(kind) {
-  return store.events().filter((e) => (e.scheduleId || '').startsWith(KINDS[kind].prefix)).length;
+  return store.events().filter((e) => (e.scheduleId || '').startsWith(PREFIX[kind])).length;
 }
 
 export function openVaxPlan() { openPlan('vaccine'); }
 export function openCheckupPlan() { openPlan('checkup'); }
-export function openPaidPlan() { openPlan('paid'); }
+export function openPaidPlan() { openPaidCatalog(); } // 旧版设置页按钮：打开「自费疫苗（待定）」目录
 
 export function openPlan(kind) {
   const K = KINDS[kind];
