@@ -11,8 +11,11 @@ import { isStandalone, isIOS } from '../push.js';
 import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 import { openPlannedSheet } from './planned.js';
 import { windowOf, windowStatus, planOutside } from '../windows.js';
+import { renderPaidCard, markDone } from './paidcat.js';
+import { replacementHints } from '../paidvax.js';
 
 const ui = { month: null, selected: null, focus: null, scrollTo: null };
+let repHints = new Map(); // v1.7.0：已计划的自费疫苗可替代的免费剂次
 
 export function renderHome(root) {
   const today = todayStr();
@@ -28,11 +31,13 @@ export function renderHome(root) {
     <section class="card remind-card" id="remindCard"></section>
     <section class="card" id="calCard"></section>
     <section class="card" id="dayCard"></section>
+    <section class="card paid-card" id="paidCard"></section>
     <button class="fab" id="fab" aria-label="添加事项">＋</button>`;
 
   renderReminderCard(root.querySelector('#remindCard'));
   renderCalendar(root.querySelector('#calCard'));
   renderMonthList(root.querySelector('#dayCard'));
+  renderPaidCard(root.querySelector('#paidCard'));
   renderPushBanner(root.querySelector('#pushBanner'));
   renderVaxCta(root.querySelector('#vaxCta'));
   root.querySelector('#fab').onclick = () => openEditor({ date: ui.selected });
@@ -77,7 +82,7 @@ function renderReminderCard(el) {
     };
   });
   el.querySelectorAll('[data-done]').forEach((b) => {
-    b.onclick = () => { store.setDone(b.dataset.done, true); toast('已标记为已完成 ✅'); };
+    b.onclick = () => markDone(b.dataset.done);
   });
 }
 
@@ -211,6 +216,7 @@ function itemCard(e, today, bday) {
     <div class="iplan">${plan}</div>
     ${w ? `<button type="button" class="iwin st-${st.key}" data-act="focus">🪟 ${noun}窗口${w.ref ? '（参考）' : ''}：${esc(winText(w))} · <b>${esc(st.text)}</b></button>` : ''}
     ${w && ui.focus === e.id && w.note ? `<div class="inote">ℹ️ ${esc(w.note)}</div>` : ''}
+    ${!e.done && repHints.get(e.scheduleId) ? `<div class="irep">💡 ${esc(repHints.get(e.scheduleId))}</div>` : ''}
     ${out === 'early' ? `<div class="iwarn">⚠️ 计划日早于最早${noun}日，请改计划日</div>` : out === 'late' ? `<div class="iwarn">⚠️ 计划日晚于最迟日期（逾期补种）</div>` : ''}
     <div class="imeta">${e.note ? `📝 ${esc(e.note)}\n` : ''}${rems.length ? `⏰ ${rems.map((x) => esc(x.label)).join('、')}` : '⏰ 未设置提醒'}</div>
     <div class="iactions">
@@ -230,6 +236,7 @@ function renderMonthList(el) {
   const [y, m] = ui.month.split('-').map(Number);
   const monthStart = `${ui.month}-01`, monthEnd = ymd(new Date(y, m, 0));
   const inMonth = store.events().filter((e) => e.date >= monthStart && e.date <= monthEnd);
+  repHints = replacementHints(store.events());
   const byDate = {};
   for (const e of inMonth) (byDate[e.date] ||= []).push(e);
   const dates = Object.keys(byDate);
@@ -272,7 +279,7 @@ function renderMonthList(el) {
           rerender();
           if (ui.focus) document.getElementById('calCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
-        else if (act === 'done') { store.setDone(id, true); toast('已标记为已完成 ✅'); }
+        else if (act === 'done') markDone(id);
         else if (act === 'undone') store.setDone(id, false);
       };
     });
