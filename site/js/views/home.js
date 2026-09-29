@@ -8,7 +8,7 @@ import { openEditor } from './editor.js';
 import { openAlarmSheet, alarmState } from './actions.js';
 import { openICS } from '../ics.js';
 import { isStandalone, isIOS } from '../push.js';
-import { openVaxPlan } from './vaxplan.js';
+import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 
 const ui = { month: null, selected: null };
 
@@ -197,14 +197,23 @@ async function renderPushBanner(el) {
     <button class="x-btn" style="width:30px;height:30px;font-size:14px;background:transparent" aria-label="关闭">✕</button></div>`;
   el.querySelector('.x-btn').onclick = () => { localStorage.setItem('babyrecord.hideBanner', '1'); el.innerHTML = ''; };
 }
-// 还没有生成疫苗计划时，在首页提示「一键生成疫苗计划」
+// 还没有生成疫苗/体检计划时，在首页提示「一键生成」
 function renderVaxCta(el) {
-  const has = store.events().some((e) => (e.scheduleId || '').startsWith('nip:'));
-  if (has || localStorage.getItem('babyrecord.hideVaxCta') === '1') { el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="banner" style="border-color:#C9BDFF"><span style="font-size:28px">💉</span><div class="bt"><b>一键生成疫苗计划</b>输入宝宝生日，按国家免疫程序自动添加全部免费疫苗日程</div>
-    <button class="btn" id="vaxGo" style="padding:8px 12px;font-size:14px;background:var(--vaccine)">生成</button>
-    <button class="x-btn" style="width:30px;height:30px;font-size:14px;background:transparent" aria-label="关闭">✕</button></div>`;
-  el.querySelector('#vaxGo').onclick = () => openVaxPlan();
-  el.querySelector('.x-btn').onclick = () => { localStorage.setItem('babyrecord.hideVaxCta', '1'); el.innerHTML = ''; toast('可在「设置 → 疫苗计划」里生成'); };
+  const needV = !planCounts('vaccine') && localStorage.getItem('babyrecord.hideVaxCta') !== '1';
+  const needC = !planCounts('checkup') && localStorage.getItem('babyrecord.hideChkCta') !== '1';
+  if (!needV && !needC) { el.innerHTML = ''; return; }
+  const head = needV && needC ? '<b>一键生成疫苗/体检计划</b>输入宝宝生日，按国家规范自动添加全部免费疫苗和儿保体检日程'
+    : needV ? '<b>一键生成疫苗计划</b>输入宝宝生日，按国家免疫程序自动添加全部免费疫苗日程'
+      : '<b>一键生成体检计划</b>输入宝宝生日，按国家儿童健康管理规范自动添加儿保体检日程';
+  el.innerHTML = `<div class="banner" style="border-color:#C9BDFF"><span style="font-size:28px">${needV ? '💉' : '🩺'}</span><div class="bt">${head}
+    <div class="cta-btns">${needV ? '<button class="btn" id="vaxGo" style="background:var(--vaccine)">💉 疫苗计划</button>' : ''}${needC ? '<button class="btn" id="chkGo" style="background:var(--checkup)">🩺 体检计划</button>' : ''}</div></div>
+    <button class="x-btn" style="width:30px;height:30px;font-size:14px;background:transparent;align-self:flex-start" aria-label="关闭">✕</button></div>`;
+  el.querySelector('#vaxGo')?.addEventListener('click', () => openVaxPlan());
+  el.querySelector('#chkGo')?.addEventListener('click', () => openCheckupPlan());
+  el.querySelector('.x-btn').onclick = () => {
+    if (needV) localStorage.setItem('babyrecord.hideVaxCta', '1');
+    if (needC) localStorage.setItem('babyrecord.hideChkCta', '1');
+    el.innerHTML = ''; toast('可在「设置 → 一键生成日程」里生成');
+  };
 }
 export { parseYmd };

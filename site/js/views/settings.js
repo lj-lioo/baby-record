@@ -6,7 +6,7 @@ import { showAlarm } from './alarm.js';
 import { unlockAudio } from '../sound.js';
 import { todayStr, cnDate } from '../dates.js';
 import { testAlarmUrl } from '../shortcuts.js';
-import { openVaxPlan } from './vaxplan.js';
+import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 
 export function renderSettings(root) {
   const st = store.state.settings;
@@ -24,11 +24,15 @@ export function renderSettings(root) {
     </section>
 
     <section class="card" id="vaxCard">
-      <h2>💉 疫苗计划</h2>
-      <p class="small muted" style="margin-top:0">输入宝宝生日，按国家免疫规划（2026年版）自动添加到 6 周岁的全部免费疫苗日程。重复生成不会重复添加。</p>
+      <h2>📋 一键生成日程</h2>
+      <p class="small muted" style="margin-top:0">输入宝宝生日，按国家规范自动添加到 6 周岁的免费疫苗（国家免疫规划 2026年版）和儿保体检（0～6岁儿童健康管理）日程。重复生成不会重复添加。</p>
       <div class="kv"><span>宝宝生日</span><span>${st.babyBirthday ? esc(cnDate(st.babyBirthday, true)) : '<span class="muted">未设置</span>'}</span></div>
-      <div class="kv"><span>已生成的疫苗事项</span><span>${store.events().filter((e) => (e.scheduleId || '').startsWith('nip:')).length} 个</span></div>
-      <button class="btn block" id="btnVax" style="margin-top:10px">一键生成疫苗计划</button>
+      <div class="kv"><span>💉 已生成的疫苗事项</span><span>${planCounts('vaccine')} 个</span></div>
+      <div class="kv"><span>🩺 已生成的体检事项</span><span>${planCounts('checkup')} 个</span></div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn" id="btnVax" style="background:var(--vaccine)">💉 疫苗计划</button>
+        <button class="btn" id="btnChk" style="background:var(--checkup)">🩺 体检计划</button>
+      </div>
     </section>
 
     <section class="card">
@@ -83,6 +87,7 @@ export function renderSettings(root) {
     try { await sendTestPush(60); toast('1分钟后会收到测试通知，现在可以回到主屏幕或锁屏'); } catch (e) { toast('设置失败：' + e.message, 4000); }
   };
   q('#btnVax').onclick = () => openVaxPlan();
+  q('#btnChk').onclick = () => openCheckupPlan();
   q('#btnTestAlarm').onclick = () => { location.href = testAlarmUrl(); };
   q('#btnPreview').onclick = () => {
     unlockAudio();
