@@ -7,3 +7,5 @@ test/backup.json
 test/results.json
 test/results-vaccine.json
 test/results-checkup.json
+.wrangler/
+test/results-sync.json

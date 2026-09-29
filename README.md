@@ -1,6 +1,6 @@
 # 宝宝记录 · baby-record
 
-一个给 iPhone 用的宝宝日程 PWA（纯静态，数据只存在手机本地，无登录、无个人数据）。
+一个给 iPhone 用的宝宝日程 PWA（纯静态，默认数据只存在手机本地，无登录；可选端到端加密的云同步）。
 
 **在线使用：** https://lj-lioo.github.io/baby-record/ （用 Safari 打开 → 分享 → 添加到主屏幕）
 
@@ -14,6 +14,7 @@
 - 📅 导出 .ics 到苹果日历（多个 VALARM，按所选提醒时间）
 - App 打开时到点弹出全屏提醒页（铃声、知道了、稍后提醒10分钟）
 - 可选：Web Push 推送（需要 `server/` 推送服务在线）
+- **☁️ 云同步（可选，v1.4.0）**：设置 → 云同步，多台设备 / 盒子命令行共用一个同步密钥；数据在设备上 AES-GCM 加密后存到 Cloudflare Worker + D1（免费计划），服务端只见密文；开启时本机已有事项会上传合并、不会清空；配对链接 `#pair=<密钥>` 只在本地读取并立即从地址栏移除
 - 设置页导出 / 导入 JSON 备份
 
 ## 结构
@@ -28,10 +29,13 @@ site/            静态网站（直接部署到 GitHub Pages）
   js/checkups.js    0～6岁儿童健康管理体检时间表与日期推算（纯函数）
   js/ics.js         RFC 5545 .ics 生成
   js/push.js        Web Push 客户端
+  js/sync-core.js   云同步：密钥派生、加密、请求（浏览器与盒子命令行共用）
+  js/sync.js        云同步：本地变更跟踪、合并、配对链接
   js/views/*.js     页面：home / editor / actions / alarm / settings / help
   icons/src/*.svg   图标源文件（build-icons.sh 生成 PNG）
+sync/            云同步：worker/（Cloudflare Worker + D1 迁移 + 协议测试）、add-item.js（盒子命令行）、deploy.sh
 server/          可选的推送服务（Node + web-push，JSON 文件存储）
-test/            Playwright 端到端测试、ics 校验、疫苗/体检计划测试（node test/vaccines.test.mjs；node test/vaccine-ui.mjs；node test/checkups.test.mjs；node test/checkup-ui.mjs）
+test/            Playwright 端到端测试、ics 校验、疫苗/体检计划测试（node test/vaccines.test.mjs；node test/vaccine-ui.mjs；node test/checkups.test.mjs；node test/checkup-ui.mjs；SYNC_BASE=… node test/sync-ui.mjs）
 ```
 
 ## 快捷指令传入格式

@@ -1,0 +1,9 @@
+{
+  "name": "baby-record-sync-cli",
+  "private": true,
+  "type": "module",
+  "description": "宝宝记录云同步：盒子端命令行（添加/查看事项）",
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}
