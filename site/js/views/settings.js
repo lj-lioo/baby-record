@@ -10,7 +10,7 @@ import { openVaxPlan, openCheckupPlan, openPaidPlan, planCounts } from './vaxpla
 import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../sync.js';
 import { extractSyncKey } from '../sync-core.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.5.0';
+export const APP_BUILD = '1.6.0';
 
 export function renderSettings(root) {
   const st = store.state.settings;
