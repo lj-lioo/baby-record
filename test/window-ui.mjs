@@ -3,6 +3,7 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:8080/';
 const SHOTS = '/workspace/baby-app/screenshots/';
+const APP_V = /APP_BUILD = '([^']+)'/.exec(fs.readFileSync(new URL('../site/js/views/settings.js', import.meta.url), 'utf8'))[1]; // 当前版本（v1.7.1 起不再写死）
 const results = [];
 const ok = (name, cond, extra = '') => { results.push({ name, pass: !!cond, extra }); console.log(cond ? '✅' : '❌', name, extra); };
 
@@ -35,7 +36,7 @@ for (const [fam, date] of [['rsv', '2026-10-17'], ['pcv13', '2026-11-17'], ['rot
   await page.click('#sp-ok'); await page.waitForTimeout(500);
 }
 await page.goto(BASE + '#/settings'); await page.waitForTimeout(400);
-ok('设置页版本 v1.7.0', (await page.textContent('#appVer')).includes('宝宝记录 v1.7.0'));
+ok(`设置页版本 v${APP_V}`, (await page.textContent('#appVer')).includes(`宝宝记录 v${APP_V}`));
 
 // 生成的事项带窗口字段；计划日（date）不变
 const hb2 = await bySid('nip:hepb-2'), hb3 = await bySid('nip:hepb-3'), rsv = await bySid('paid:rsv'), m1 = await bySid('chk:m1');
