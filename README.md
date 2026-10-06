@@ -21,6 +21,10 @@
   列出 11 种：RSV单抗、13价、五联、五价轮状、EV71、流感、水痘（常用）+ Hib、流脑结合、甲肝灭活、乙脑灭活（备选），每种显示预防什么、剂次与程序、本宝宝第1剂最早/最迟、可替代哪些免费剂次、以门诊为准。
   「➕ 加入计划」选第1剂日期/时间（默认最早、周末快捷、不能早于最早、晚于最迟提醒），预览后生成整个系列：计划日 = max(推荐月龄, 上一剂 + 推荐间隔)，最早 = max(最小月龄, 上一剂 + 最短间隔)，最迟 = min(年龄上限, 上一剂 + 最长间隔)（js/paidvax.js `SERIES`）。
   前面剂次改计划日 / 实际接种日不同 →「后续剂次一起顺延」（已设闹钟的变「需重设闹钟」，已完成的不动）；「🗑 移出计划」回到待定（只删未完成的）。计划五联后免费百白破1–4、脊灰1–4 卡片提示「已计划五联，可不打此剂（以门诊为准）」，不自动删除。
+- **⏰ 重设闹钟自动替换旧的（v1.7.1）**：传给快捷指令的每行备注末尾多一个事项标记 `<宝宝#事项id>`（id 只含 0-9a-z；非常规 id 用 `x`+djb2 短哈希），格式仍是 `时间|标题|备注`，旧快捷指令照常工作。
+  新建第二个快捷指令「宝宝闹钟删除」（= 设置里的名称 + 删除：匹配文本 `宝宝#[0-9a-z]+>` → 重复每一项 → 查找提醒事项（列表 是 宝宝 且 备注 包含 重复项目）→ 如果有任何值 → 移除提醒事项），
+  并在「宝宝闹钟」最上面加「运行快捷指令 宝宝闹钟删除（输入 = 快捷指令输入）」：改计划日 / 顺延后再点「⏰ 设为闹钟提醒」会先删掉这个事项的旧提醒再新建。
+  删除事项 / 移出计划时，设过闹钟的会弹「🗑 删除旧闹钟」（输入每行一个标记）；⏰ 面板里也有这个按钮。v1.7.1 之前建的提醒没有标记（`alarmTagged=false`），需要在「提醒事项」里手动删一次。步骤见 App 内「使用帮助」（标「新增」）
 - 📅 导出 .ics 到苹果日历（多个 VALARM，按所选提醒时间）
 - App 打开时到点弹出全屏提醒页（铃声、知道了、稍后提醒10分钟）
 - 可选：Web Push 推送（需要 `server/` 推送服务在线）
@@ -47,14 +51,15 @@ site/            静态网站（直接部署到 GitHub Pages）
   icons/src/*.svg   图标源文件（build-icons.sh 生成 PNG）
 sync/            云同步：worker/（Cloudflare Worker + D1 迁移 + 协议测试）、add-item.js（盒子命令行）、deploy.sh
 server/          可选的推送服务（Node + web-push，JSON 文件存储）
-test/            Playwright 端到端测试、ics 校验、疫苗/体检计划测试（node test/vaccines.test.mjs；node test/vaccine-ui.mjs；node test/checkups.test.mjs；node test/checkup-ui.mjs；node test/paidvax.test.mjs；node test/paidvax-ui.mjs；node test/windows.test.mjs；node test/window-ui.mjs；node test/refresh-windows.local.mjs（本地 Worker）；SYNC_BASE=… node test/sync-ui.mjs；node test/sw-upgrade.mjs）
+test/            Playwright 端到端测试、ics 校验、疫苗/体检计划测试（node test/vaccines.test.mjs；node test/vaccine-ui.mjs；node test/checkups.test.mjs；node test/checkup-ui.mjs；node test/paidvax.test.mjs；node test/paidvax-ui.mjs；node test/windows.test.mjs；node test/window-ui.mjs；node test/alarm-tag-ui.mjs；node test/refresh-windows.local.mjs（本地 Worker）；SYNC_BASE=… node test/sync-ui.mjs；node test/sw-upgrade.mjs）
 ```
 
 ## 快捷指令传入格式
 每行一个提醒：`yyyy-MM-dd HH:mm|标题|备注`，例如
 ```
-2026-09-30 20:00|【宝宝】明天 10:00 打乙肝疫苗第2针|💉疫苗 · 10月1日 10:00 · 前一天 20:00提醒 · 备注：带疫苗本
+2026-09-30 20:00|【宝宝】明天 10:00 打乙肝疫苗第2针|💉疫苗 · 10月1日 10:00 · 前一天 20:00提醒 · 备注：带疫苗本 · <宝宝#mg3k2x9a1b2c3>
 ```
+v1.7.1 起备注末尾是事项标记 `<宝宝#id>`（同一事项每行相同）。「宝宝闹钟删除」的输入：每行一个标记，例如 `<宝宝#mg3k2x9a1b2c3>`。
 
 ## 部署
 推送到 `main` 后，GitHub Actions 会把 `site/` 发布到 `gh-pages` 分支。
