@@ -4,8 +4,12 @@ import { esc } from '../ui.js';
 
 export function renderHelp(root) {
   const name = esc(store.state.settings.shortcutName || '宝宝闹钟');
+  const del = `${name}删除`; // v1.7.1：删除用的快捷指令（名称 = 闹钟快捷指令名称 + 删除）
   root.innerHTML = `
     <header class="topbar"><h1>使用帮助</h1></header>
+    <style>/* v1.7.1：「新增」标记（只在帮助页用） */
+      .newtag { display: inline-block; font-size: 12px; font-weight: 800; color: #fff; background: #E8590C; border-radius: 6px; padding: 1px 6px; margin-right: 4px; vertical-align: 1px; }
+      .h4new { font-size: 15px; margin: 14px 0 4px; padding-left: 8px; border-left: 4px solid #E8590C; }</style>
     <div class="help">
 
     <section class="card" id="h-home">
@@ -57,8 +61,9 @@ export function renderHelp(root) {
       <p class="note">💡 第5、7、8步的结果都叫「来自列表的项目」，选变量时一定要点<b>对应步骤正下方</b>的蓝色标签。</p>
       <p class="small">快捷指令会自动保存，没有「完成」按钮，点左上角 <b>&lt;</b> 返回即可。</p>
       <p class="small">传给快捷指令的内容：每行一个提醒，格式为 <span class="kbd">时间|标题|备注</span>，例如：</p>
-      <div class="code">2026-09-30 20:00|【宝宝】明天 10:00 打乙肝疫苗第2针|💉疫苗 · 10月1日 10:00 · 前一天 20:00提醒 · 备注：带疫苗本
-2026-10-01 08:00|【宝宝】今天 10:00 打乙肝疫苗第2针|💉疫苗 · 10月1日 10:00 · 当天 08:00提醒 · 备注：带疫苗本</div>
+      <div class="code">2026-09-30 20:00|【宝宝】明天 10:00 打乙肝疫苗第2针|💉疫苗 · 10月1日 10:00 · 前一天 20:00提醒 · 备注：带疫苗本 · &lt;宝宝#mg3k2x9a1b2c3&gt;
+2026-10-01 08:00|【宝宝】今天 10:00 打乙肝疫苗第2针|💉疫苗 · 10月1日 10:00 · 当天 08:00提醒 · 备注：带疫苗本 · &lt;宝宝#mg3k2x9a1b2c3&gt;</div>
+      <p class="small">v1.7.1 起备注最后多了一个 <b>事项标记</b> <span class="kbd">&lt;宝宝#…&gt;</span>（同一事项的每条提醒相同），用来在重设时找到并删除旧提醒。格式没变，没更新的快捷指令照常工作，只是备注里多了这个标记。</p>
 
       <h3 style="font-size:16px;margin:12px 0 4px">测试</h3>
       <ol class="steps">
@@ -66,7 +71,55 @@ export function renderHelp(root) {
         <li>第一次运行会询问是否允许输出提醒事项，选 <b>「始终允许」</b>。</li>
         <li>锁屏等待 2 分钟，应全屏响铃。测试成功后可在「提醒事项」的「宝宝」列表里删除这条。</li>
       </ol>
-      <p class="note">以后每个事项点 <b>「⏰ 设为闹钟提醒」</b> 即可；设置后事项会显示「✅ 已设闹钟」，避免重复添加。如果之后改了时间，会提示「时间已改，重设闹钟」，请先在「提醒事项」里删除旧的再重设。</p>
+      <p class="note">以后每个事项点 <b>「⏰ 设为闹钟提醒」</b> 即可；设置后事项会显示「✅ 已设闹钟」，避免重复添加。如果之后改了时间，会提示「时间已改，重设闹钟」，请先在「提醒事项」里删除旧的再重设。<span class="newtag">新增</span> 完成下面的步骤后，直接再点一次即可，旧的会自动删除。</p>
+
+      <h3 style="font-size:16px;margin:16px 0 4px" id="h-replace"><span class="newtag">新增</span> 重设闹钟时自动删除旧的（v1.7.1，做一次）</h3>
+      <p class="small" style="margin:4px 0">完成下面 A、B、C 三部分后：改了计划日再点「⏰ 设为闹钟提醒」，会<b>先删掉这个事项的旧闹钟提醒，再新建</b>，不会重复响铃；删除事项或「移出计划」时还可以点 <b>「🗑 删除旧闹钟」</b>。</p>
+
+      <h4 class="h4new"><span class="newtag">新增</span> A. 允许快捷指令直接删除（不弹确认）</h4>
+      <ol class="steps">
+        <li>打开「设置」→ 点 <b>「App」</b> → 点 <b>「快捷指令」</b> → 点 <b>「高级」</b>。</li>
+        <li>打开 <b>「允许不确认直接删除」</b>。（不打开也能用，但每次删除都会弹窗，需要点确认。）</li>
+      </ol>
+
+      <h4 class="h4new"><span class="newtag">新增</span> B. 新建快捷指令「${del}」</h4>
+      <p class="small" style="margin:4px 0">打开「快捷指令」App →「快捷指令」页右上角 <b>＋</b>。点顶部名称 →「重新命名」→ 改为 <b>${del}</b>（就是「${name}」后面加「删除」两个字）。然后按顺序添加：</p>
+      <ol class="steps">
+        <li>点底部「搜索操作」，输入「匹配」，点 <b>「匹配文本」</b>。这一行有两个蓝色参数：
+          <ul class="steps">
+            <li>点<b>模式</b>（正则表达式那一格），删掉原来的内容，输入 <span class="kbd">宝宝#[0-9a-z]+&gt;</span>
+              <div class="note">⚠️ 「宝宝」用中文键盘打；<span class="kbd">#[0-9a-z]+&gt;</span> 必须切到<b>英文键盘</b>打：点 <span class="kbd">123</span> → <span class="kbd">#+=</span> 可以找到 <span class="kbd">#</span> <span class="kbd">[</span> <span class="kbd">]</span> <span class="kbd">+</span> <span class="kbd">&gt;</span>，<span class="kbd">-</span> 在 <span class="kbd">123</span> 页。中文键盘打出的全角「＃【】＋＞」不能用。前后不要有空格。</div></li>
+            <li>点<b>文本</b> →「选择变量」→ <b>「快捷指令输入」</b>。</li>
+          </ul></li>
+        <li>添加 <b>「重复每一项」</b>：重复 <b>匹配项</b> 中的每一项（一般自动选好；不是的话点它 →「选择变量」→ 第1步正下方的「匹配项」）。<b>下面第3～4步都放在「重复」和「结束重复」之间。</b></li>
+        <li>在重复里添加 <b>「查找提醒事项」</b>：
+          <ul class="steps">
+            <li>点 <b>「添加过滤条件」</b>，把这一条改成 <b>列表</b> · <b>是</b> · <b>宝宝</b>。</li>
+            <li>再点 <b>「添加过滤条件」</b>，改成 <b>备注</b> · <b>包含</b>，右边的值 →「选择变量」→ <b>「重复项目」</b>。</li>
+            <li>有两个条件时上面会出现「全部 / 任一」，要选 <b>全部</b>。排序、限制都不用改。</li>
+          </ul></li>
+        <li>添加 <b>「如果」</b>：如果 <b>提醒事项</b>（第3步的结果，一般自动选好）<b>有任何值</b>。会自动出现「否则」和「结束如果」。
+          <ul class="steps">
+            <li>在「如果」和「否则」之间添加 <b>「移除提醒事项」</b>，移除的是 <b>提醒事项</b>（第3步的结果；不是的话点它 →「选择变量」→ 第3步正下方的「提醒事项」）。</li>
+            <li>「否则」下面什么都不放。</li>
+          </ul></li>
+      </ol>
+      <p class="small">点左上角 <b>&lt;</b> 返回（自动保存）。</p>
+
+      <h4 class="h4new"><span class="newtag">新增</span> C. 在「${name}」最上面加一步</h4>
+      <ol class="steps">
+        <li>点开「${name}」，点底部「搜索操作」，输入「运行」，找到 <b>「运行快捷指令」</b>。<b>按住它拖到最上面</b>，放在原来第2步「拆分文本（按 新行）」的上面。（如果直接点了它，它会加到最下面，再按住它拖到最上面。）</li>
+        <li>点蓝色的「快捷指令」→ 选 <b>${del}</b>。</li>
+        <li>点 <b>›</b> 展开（如果这一行本身就有「输入」两个字，直接点它），把 <b>输入</b> 设为 <b>「快捷指令输入」</b>（点它 →「选择变量」→「快捷指令输入」）。</li>
+        <li>检查原来的「拆分文本」仍然是「按 <b>新行</b> 拆分 <b>快捷指令输入</b>」。如果变成了「快捷指令的结果」或别的，点它 →「选择变量」→ <b>「快捷指令输入」</b>。其余步骤都不用改（加了这一步后，原来各步的编号会往后推一位，比如原来的第2步变成第3步，内容不变）。</li>
+        <li>点左上角 <b>&lt;</b> 返回。</li>
+      </ol>
+      <h4 class="h4new"><span class="newtag">新增</span> 测试</h4>
+      <ol class="steps">
+        <li>到本App「设置」→ 连续点两次 <b>「测试闹钟（2分钟后响）」</b>（中间回到本App再点）。第一次运行「${del}」时如果询问权限，选 <b>「始终允许」</b>；如果弹出删除确认，点确认删除（或按 A 打开开关）。</li>
+        <li>打开「提醒事项」→「宝宝」：应该<b>只有一条</b>「【宝宝】测试闹钟」（第二次把第一次的替换掉了）。</li>
+      </ol>
+      <p class="note">⚠️ v1.7.1 之前建的闹钟提醒备注里没有标记，不会被自动删除：请打开「提醒事项」→ 点「宝宝」列表 → 在旧提醒上向左轻扫 → 点「删除」，手动删一次。以后新建的都会自动替换。<br>💡 删除事项或「移出计划」时，如果它设过闹钟，App 会弹出 <b>「🗑 删除旧闹钟」</b>（运行「${del}」）。事项卡片的「⏰」面板里也有这个按钮。</p>
       <p class="small muted">说明：我们没有提供可直接导入的快捷指令文件——这类文件需要苹果设备签名，无法在这里可靠生成，所以请按上面步骤手动创建一次。</p>
     </section>
 
@@ -97,7 +150,7 @@ export function renderHelp(root) {
         <li>每剂疫苗/体检卡片上有 <b>「🪟 窗口」</b>：<b>最早</b>哪天可以打、<b>最迟</b>哪天前要完成，以及状态（未到窗口 / 窗口中·还剩N天 / <span class="bad">已过最迟</span> / 已完成）。免费疫苗按《国家免疫规划疫苗儿童免疫程序及说明（2026年版）》；自费疫苗按说明书；体检是参考范围。</li>
         <li>点「🪟 窗口」，日历上会显示这个事项的窗口：<b>淡色底</b>=窗口，<b>虚线圈</b>=最早日，<b>实心</b>=计划日，<b>「止」</b>=最迟日。日历上的 ● 实心点是计划日，○ 空心点是最早可接种日。</li>
         <li>那天去不了？点 <b>「📆 改计划日」</b> 选别的日期和时间（不能早于最早日；晚于最迟日会提醒）。提醒、闹钟和苹果日历都按<b>计划日</b>。</li>
-        <li>已经设过闹钟的事项改了计划日后会显示 <b class="bad">「需重设闹钟」</b>：到「提醒事项」删掉旧提醒，再点一次「⏰ 设为闹钟提醒」。</li>
+        <li>已经设过闹钟的事项改了计划日后会显示 <b class="bad">「需重设闹钟」</b>：到「提醒事项」删掉旧提醒，再点一次「⏰ 设为闹钟提醒」。<span class="newtag">新增</span> 完成 <a href="#/help" data-jump="h-replace">「重设闹钟时自动删除旧的」</a> 后，直接再点一次就会先删旧的再新建。</li>
       </ul>
       <p class="small muted">具体接种时间以接种门诊/社区医院的安排为准。</p>
     </section>
@@ -116,10 +169,11 @@ export function renderHelp(root) {
       <h2>ℹ️ 小贴士与限制</h2>
       <ul class="steps">
         <li>网页App不能直接在 iPhone 上设置闹钟，所以通过「快捷指令」创建紧急提醒事项来实现闹钟效果；日历和推送是备用方式。</li>
-        <li>在本App里修改或删除事项，<b>不会</b>自动修改已经建好的提醒事项，需要到「提醒事项」App的「宝宝」列表里手动修改/删除。</li>
+        <li>在本App里修改或删除事项，<b>不会</b>自动修改已经建好的提醒事项，需要到「提醒事项」App的「宝宝」列表里手动修改/删除。<span class="newtag">新增</span> v1.7.1 起：重设闹钟会自动替换旧的，删除事项时可点「🗑 删除旧闹钟」（需先完成上面的「新增」步骤）。</li>
         <li>App打开时到了提醒时间，会直接弹出全屏提醒页并播放铃声（需要先点过屏幕任意处，iPhone 才允许播放声音）。</li>
         <li>数据只存在本机，请定期「导出备份」。</li>
       </ul>
     </section>
     </div>`;
+  root.querySelectorAll('[data-jump]').forEach((a) => { a.onclick = (e) => { e.preventDefault(); document.getElementById(a.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; });
 }
