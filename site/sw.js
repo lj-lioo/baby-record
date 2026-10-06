@@ -4,7 +4,7 @@
 //   任何一个失败则安装失败、继续用旧版本，避免新旧文件混在一个缓存里；
 // - 页面、JS、CSS、config.js、manifest：网络优先（cache:'no-cache' 让浏览器向服务器确认），断网或 4 秒无响应时用缓存；
 // - 图标等其他静态文件：缓存优先。
-const VERSION = 'v1.7.0';
+const VERSION = 'v1.7.1';
 const CACHE = `baby-record-${VERSION}`;
 const ASSETS = [
   './', './index.html', './manifest.json', './config.js', './css/app.css', './css/vaxplan.css',
