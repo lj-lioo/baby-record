@@ -84,7 +84,8 @@ ok('B：宝宝生日也同步过来', (await B.page.evaluate(() => JSON.parse(lo
 // 3) 盒子命令行（同一密钥）shop / add → 手机收到
 const envFile = '/tmp/sync-ui-test.env';
 fs.writeFileSync(envFile, `BABY_SYNC_URL=${SYNC}\nBABY_SYNC_KEY=${metaA.key}\n`, { mode: 0o600 });
-const cli = (...args) => execFileSync('node', ['/workspace/baby-app/sync/add-item.js', ...args], { env: { ...process.env, BABY_SYNC_ENV: envFile }, encoding: 'utf8' });
+// 去掉环境变量里的 BABY_SYNC_KEY / BABY_SYNC_URL（盒子上可能注入了正式密钥，它优先于配置文件），只用临时配置
+const cli = (...args) => execFileSync('node', ['/workspace/baby-app/sync/add-item.js', ...args], { env: { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'BABY_SYNC_KEY' && k !== 'BABY_SYNC_URL')), BABY_SYNC_ENV: envFile }, encoding: 'utf8' });
 ok('命令行 shop：添加购物清单', cli('shop', '尿不湿 NB码', '婴儿湿巾', '--date', '2026-09-30').includes('已添加'));
 ok('命令行 add：添加带时间的事项', cli('add', '--title', '带宝宝晒太阳', '--date', '2026-10-02', '--time', '10:00', '--note', '15分钟').includes('已添加'));
 const cliList = cli('list', '--all');
