@@ -3,6 +3,7 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:8080/';
 const SHOTS = '/workspace/baby-app/screenshots/';
+const APP_V = /APP_BUILD = '([^']+)'/.exec(fs.readFileSync(new URL('../site/js/views/settings.js', import.meta.url), 'utf8'))[1]; // 当前版本（v1.7.1 起不再写死）
 const results = [];
 const ok = (name, cond, extra = '') => { results.push({ name, pass: !!cond, extra }); console.log(cond ? '✅' : '❌', name, extra); };
 
@@ -45,7 +46,7 @@ await page.click('#vaxGo'); await page.waitForSelector('.vp-item'); await page.c
 // —— 1. 设置页：版本、入口按钮 ——
 await page.goto(BASE + '#/settings'); await page.waitForTimeout(500);
 const verTxt = await page.textContent('#appVer');
-ok('设置页版本 v1.7.0', verTxt.includes('宝宝记录 v1.7.0') && !verTxt.includes('正在更新'), verTxt);
+ok(`设置页版本 v${APP_V}`, verTxt.includes(`宝宝记录 v${APP_V}`) && !verTxt.includes('正在更新'), verTxt);
 ok('「一键生成日程」的自费按钮改为「💰 自费疫苗（待定）」', (await page.textContent('#btnPaid')).trim() === '💰 自费疫苗（待定）');
 ok('显示「已加入计划的自费疫苗 0 种」', /已加入计划的自费疫苗\s*0 种/.test(await page.locator('#vaxCard').innerText()));
 await page.click('#btnPaid'); await page.waitForSelector('#sheet .pc-item');
@@ -215,6 +216,10 @@ ok('取消：五联仍在计划中，回到目录', (await paidEvs('penta')).len
 await openEntry('penta', '#sheet');
 await page.click('#sheet [data-rm="penta"]'); await page.waitForTimeout(300);
 await page.click('#sheet [data-a="yes"]'); await page.waitForTimeout(400);
+// v1.7.1：第2剂设过闹钟（v1.7.1 之前的旧闹钟，没有标记）→ 先提示「提醒事项」里的旧闹钟还在、需手动删除
+ok('移出后：设过闹钟的剂次 → 提示旧闹钟还在（无标记 → 手动删除说明，没有自动删除按钮）', (await sheetKind()) === 'alarmclean' && (await page.locator('#sheet').innerText()).includes('到点还会响')
+  && (await page.locator('#sheet').innerText()).includes('五联疫苗 第2剂') && (await page.locator('#oc-go').count()) === 0);
+await page.click('#oc-no'); await page.waitForTimeout(300);
 ok('确认：五联 4 剂全部删除，目录里回到「待定」', (await paidEvs('penta')).length === 0 && (await page.locator('#sheet .pc-item[data-fam="penta"] .pc-st').innerText()) === '待定');
 await openEntry('rota5', '#sheet');
 await page.click('#sheet [data-rm="rota5"]'); await page.waitForTimeout(300);
