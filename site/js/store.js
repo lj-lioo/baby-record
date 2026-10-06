@@ -67,6 +67,7 @@ export function normalizeEvent(e) {
     reminders: Array.isArray(e.reminders) ? e.reminders : [],
     alarmAdded: !!e.alarmAdded,     // 是否已通过快捷指令设为 iPhone 闹钟提醒（避免重复添加）
     alarmSig: e.alarmSig || '',     // 设置时的提醒时间签名；之后改了时间会提示重新设置
+    alarmTagged: !!e.alarmTagged,   // v1.7.1：闹钟是带事项标记 <宝宝#id> 建的（可用「宝宝闹钟删除」自动删除）；旧闹钟没有标记
     scheduleId: e.scheduleId || '', // 由「一键生成疫苗计划」生成的剂次编号（如 nip:hepb-2），用于去重
     // v1.6.0：接种/体检窗口（YYYY-MM-DD，可为空）。date/time 是「计划日期/时间」，提醒和闹钟都按它。
     earliest: validYmd(e.earliest),
@@ -139,9 +140,10 @@ export const store = {
     state.snoozes = state.snoozes.filter((s) => s.eventId !== id);
     save();
   },
-  setAlarmAdded(id, added, sig = '') {
+  // tagged：true = 这次是 v1.7.1 起带标记建的闹钟；不传 = 保持原值（取消勾选时清掉）
+  setAlarmAdded(id, added, sig = '', tagged) {
     const e = this.getEvent(id);
-    if (e) { e.alarmAdded = added; e.alarmSig = added ? sig : ''; e.updatedAt = Date.now(); save(); }
+    if (e) { e.alarmAdded = added; e.alarmSig = added ? sig : ''; e.alarmTagged = added ? (tagged === undefined ? !!e.alarmTagged : !!tagged) : false; e.updatedAt = Date.now(); save(); }
   },
   setDone(id, done) {
     const e = this.getEvent(id);
