@@ -111,3 +111,24 @@
   paidvax-ui 60/60、worker 15/15、refresh-windows.local 11/11、paid-cli.local 20/20、sw-upgrade 24/24（含 v1.6.0→v1.7.0）。
   线上 BASE：paidvax-ui 60/60、window-ui 54/54、vaccine-ui 22/22、checkup-ui 15/15、e2e 29/29（sync-ui 线上需 https 的测试 Worker，未跑，避免在正式 Worker 留测试数据）。
   新截图 23–26（paidvax-ui 生成）：23-paid-catalog、24-paid-add-picker、25-month-list-penta、26-cascade-prompt。
+
+## v1.7.1（2026-10-06 18:06 CST 线上 40 个文件逐字节一致）重设闹钟时自动删除旧的
+- 问题：改计划日后「需重设闹钟」，再点「⏰ 设为闹钟提醒」，快捷指令「宝宝闹钟」又新建一套紧急提醒，旧的还在 → 重复响铃。
+- 载荷（js/shortcuts.js，字段数不变，旧快捷指令照常工作）：每行 `yyyy-MM-dd HH:mm|【宝宝】…标题|类别 · 日期时间 · 提醒说明 · 备注：… · <宝宝#事项id>`。
+  标记 `<宝宝#id>` 在备注（最后一个字段）末尾，同一事项每行相同；id 只含 0-9a-z（uid() 本来就是），非常规 id 用 `x`+djb2（base36）。
+  快捷指令里用正则 `宝宝#[0-9a-z]+>` 取出（末尾 `>` 防止前缀误匹配）。测试闹钟带 `<宝宝#test>`。alarmSig 不变（不含备注）。
+- 第二个快捷指令「宝宝闹钟删除」（= 设置里的名称 + 删除）：输入每行一个标记；匹配文本 → 重复每一项 → 查找提醒事项（列表 是 宝宝 且 备注 包含 重复项目，全部）
+  → 如果 提醒事项 有任何值 → 移除提醒事项。没有标记的输入 = 0 次循环，什么都不删。「宝宝闹钟」最上面加「运行快捷指令 宝宝闹钟删除（输入 = 快捷指令输入）」。
+  设置 → App → 快捷指令 → 高级 →「允许不确认直接删除」（不开也能用，每次弹确认）。步骤在 使用帮助 #h-replace（标「新增」），未在真机验证。
+- 数据：事项新增 `alarmTagged`（v1.7.1 起点「打开快捷指令…」设的闹钟 = true；旧闹钟 false → 面板提示手动删除，不显示「删除旧闹钟」）。
+- 界面：⏰ 面板（带标记时）按钮「打开快捷指令，替换为 N 个新闹钟提醒」+「🗑 删除旧闹钟」；删除事项 / 自费疫苗「移出计划」后，设过闹钟的弹「🗑 删除旧闹钟？」
+  （带标记 → `shortcuts://run-shortcut?name=宝宝闹钟删除&input=text&text=<标记…>`；旧的 → 手动删除说明 + 标题列表）。改计划日面板说明按是否带标记区分。
+- 提交：f7249e0 18:00:16（shortcuts.js、store.js）→ 01a14ab 18:01:19（actions.js、editor.js、planned.js）→ 9e1f8a9 18:02:13（paidcat.js）
+  → caa5e11 18:03:48（help.js，「新增」样式内联在帮助页）→ d23cf84 18:05:04（settings.js、config.js、sw.js 版本 1.7.1）
+  → 1c6496f 18:12:55（test/alarm-tag-ui.mjs 新、sync-ui.mjs、sw-upgrade.mjs）→ 9338048 18:13:53（window-ui.mjs）→ ae19ac2 18:14:47（paidvax-ui.mjs）→ d6afafa 18:15:18（README.md）→ 本文件。
+- 测试（本地）：vaccines 7、checkups 6、paidvax 19、windows 8、vaccine-ui 22/22、checkup-ui 15/15、window-ui 54/54、sync-ui 31/31、paidvax-ui 61/61、
+  alarm-tag-ui 37/37（新）、worker 15/15、refresh-windows.local 11/11、paid-cli.local 20/20、sw-upgrade 28/28（加 v1.7.0→v1.7.1）、
+  e2e 20/22（2 项失败都是推送服务：server/ 没在运行、trycloudflare 隧道 dod-reno-routers-button 已失效，与本次改动无关）。
+  线上 BASE：alarm-tag-ui 37/37、paidvax-ui 61/61、window-ui 54/54、vaccine-ui 22/22、checkup-ui 15/15、e2e 20/22（同上推送原因）。
+  sync-ui：盒子环境变量里有 BABY_SYNC_KEY 时会覆盖测试用的临时配置，测试里已去掉（只用临时密钥）。
+  新截图 27–31（alarm-tag-ui）：27-help-new-replace-alarm、28-help-new-delete-shortcut、29-help-new-run-shortcut-top、30-alarm-sheet-replace、31-delete-old-alarm-prompt。
