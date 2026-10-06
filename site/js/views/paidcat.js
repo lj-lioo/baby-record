@@ -4,6 +4,7 @@ import { store, uid } from '../store.js';
 import { esc, openSheet, closeSheet, toast, confirmSheet } from '../ui.js';
 import { todayStr, cnDate, weekday, addDays, parseYmd } from '../dates.js';
 import { defaultReminders } from '../reminders.js';
+import { offerOldAlarmCleanup } from './actions.js';
 import { SERIES, catalogEntries, seriesPlan, seriesStartInfo, seriesOfSid, reflowSeries, PAID_CATEGORY, PAID_DISCLAIMER } from '../paidvax.js';
 
 const TIME = '09:00';
@@ -185,10 +186,13 @@ export async function removeSeries(fam, back = null) {
   const pending = evs.filter((e) => !e.done), doneN = evs.length - pending.length;
   if (!pending.length) return;
   const alarmN = pending.filter((e) => e.alarmAdded).length;
-  const ok = await confirmSheet(`把「${S.short || S.title}」移出计划？将删除 ${pending.length} 个未完成的剂次${doneN ? `（已完成的 ${doneN} 剂保留）` : ''}，回到「待定」。${alarmN ? `其中 ${alarmN} 剂设过 iPhone 闹钟，请到「提醒事项」App 删掉。` : ''}`, '移出计划', true);
+  const ok = await confirmSheet(`把「${S.short || S.title}」移出计划？将删除 ${pending.length} 个未完成的剂次${doneN ? `（已完成的 ${doneN} 剂保留）` : ''}，回到「待定」。${alarmN ? `其中 ${alarmN} 剂设过 iPhone 闹钟，下一步可以删除旧闹钟。` : ''}`, '移出计划', true);
   if (!ok) { if (back) back(); return; }
+  const old = pending.map((e) => ({ ...e }));
   store.deleteEvents(pending.map((e) => e.id));
   toast(`已把${S.short || S.title}移出计划（${pending.length} 剂），回到待定`, 3000);
+  // v1.7.1：设过闹钟的剂次 → 提示删除「提醒事项」里的旧闹钟，关掉后再回到目录
+  if (offerOldAlarmCleanup(old, `「${S.short || S.title}」已移出计划`, back)) return;
   if (back) back();
 }
 
