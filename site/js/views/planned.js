@@ -32,7 +32,7 @@ export function openPlannedSheet(ev) {
     </div>
     ${chips.length ? `<div class="quick" id="pd-chips" style="margin:-6px 0 10px">${chips.map((d) => `<button type="button" data-d="${d}">${w && d === w.earliest ? '最早 ' : ''}${esc(fmt(d))}</button>`).join('')}</div>` : ''}
     <div id="pd-warn"></div>
-    ${ev.alarmAdded ? '<p class="note small">⏰ 这个事项已设过 iPhone 闹钟。改了计划日后会显示「需重设闹钟」：请到「提醒事项」的「宝宝」列表删掉旧提醒，再点「⏰ 设为闹钟提醒」。</p>' : ''}
+    ${ev.alarmAdded ? (ev.alarmTagged ? '<p class="note small">⏰ 这个事项已设过 iPhone 闹钟。改了计划日后会显示「需重设闹钟」：再点「⏰ 设为闹钟提醒」会先自动删除旧提醒再新建（需已按帮助页「新增」步骤更新快捷指令）。</p>' : '<p class="note small">⏰ 这个事项已设过 iPhone 闹钟。改了计划日后会显示「需重设闹钟」：请到「提醒事项」的「宝宝」列表删掉旧提醒，再点「⏰ 设为闹钟提醒」。</p>') : ''}
     <p class="small muted" style="margin:4px 0 10px">提醒（前一天 20:00、当天 08:00 等）、闹钟和苹果日历都会按计划日期/时间。</p>
     <div class="btn-row">
       <button type="button" class="btn ghost" id="pd-cancel">取消</button>

@@ -5,7 +5,7 @@ import { PRESETS, fireAtOf, reminderLabel, defaultReminders } from '../reminders
 import { fmtDateTime, toLocalInput, addDays, cnDate, weekday } from '../dates.js';
 import { esc, openSheet, closeSheet, toast, confirmSheet } from '../ui.js';
 import { openICS } from '../ics.js';
-import { openAlarmSheet } from './actions.js';
+import { openAlarmSheet, offerOldAlarmCleanup } from './actions.js';
 import { alarmSig } from '../shortcuts.js';
 import { windowOf } from '../windows.js';
 import { maybeCascade } from './paidcat.js';
@@ -149,11 +149,15 @@ export function openEditor({ id = null, date = null } = {}) {
     if (existing) {
       q('#f-del').onclick = async () => {
         const ok = await confirmSheet(`确定删除「${ev.title}」吗？`, '删除', true);
-        if (ok) { store.deleteEvent(ev.id); toast('已删除'); }
+        if (ok) {
+          const old = store.getEvent(ev.id);
+          store.deleteEvent(ev.id); toast('已删除');
+          offerOldAlarmCleanup([old], `「${ev.title}」已删除`); // v1.7.1：设过闹钟的，提示删除「提醒事项」里的旧闹钟
+        }
       };
       q('#f-ics').onclick = () => { readForm(); openICS(ev); };
       q('#f-sc').onclick = () => { readForm(); ev.reminders = ev.reminders.filter((r) => fireAtOf(ev, r) != null); store.upsertEvent(ev); openAlarmSheet(store.getEvent(ev.id)); };
-      q('#f-added').onchange = (e2) => { ev.alarmAdded = e2.target.checked; if (!ev.alarmAdded) ev.alarmSig = ''; };
+      q('#f-added').onchange = (e2) => { ev.alarmAdded = e2.target.checked; if (!ev.alarmAdded) { ev.alarmSig = ''; ev.alarmTagged = false; } };
     } else {
       q('#f-cancel').onclick = closeSheet;
     }
