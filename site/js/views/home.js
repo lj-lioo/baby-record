@@ -12,7 +12,7 @@ import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 import { openPlannedSheet } from './planned.js';
 import { windowOf, windowStatus, planOutside } from '../windows.js';
 import { renderPaidCard, markDone } from './paidcat.js';
-import { replacementHints } from '../paidvax.js';
+import { replacementHints, priceBriefOfSid } from '../paidvax.js';
 
 const ui = { month: null, selected: null, focus: null, scrollTo: null };
 let repHints = new Map(); // v1.7.0：已计划的自费疫苗可替代的免费剂次
@@ -216,6 +216,7 @@ function itemCard(e, today, bday) {
     <div class="iplan">${plan}</div>
     ${w ? `<button type="button" class="iwin st-${st.key}" data-act="focus">🪟 ${noun}窗口${w.ref ? '（参考）' : ''}：${esc(winText(w))} · <b>${esc(st.text)}</b></button>` : ''}
     ${w && ui.focus === e.id && w.note ? `<div class="inote">ℹ️ ${esc(w.note)}</div>` : ''}
+    ${e.category === 'paidvax' && priceBriefOfSid(e.scheduleId) ? `<div class="iprice">💰 襄阳参考价 ${esc(priceBriefOfSid(e.scheduleId))}（以当地门诊为准）</div>` : ''}
     ${!e.done && repHints.get(e.scheduleId) ? `<div class="irep">💡 ${esc(repHints.get(e.scheduleId))}</div>` : ''}
     ${out === 'early' ? `<div class="iwarn">⚠️ 计划日早于最早${noun}日，请改计划日</div>` : out === 'late' ? `<div class="iwarn">⚠️ 计划日晚于最迟日期（逾期补种）</div>` : ''}
     <div class="imeta">${e.note ? `📝 ${esc(e.note)}\n` : ''}${rems.length ? `⏰ ${rems.map((x) => esc(x.label)).join('、')}` : '⏰ 未设置提醒'}</div>

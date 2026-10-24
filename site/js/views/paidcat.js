@@ -5,7 +5,7 @@ import { esc, openSheet, closeSheet, toast, confirmSheet } from '../ui.js';
 import { todayStr, cnDate, weekday, addDays, parseYmd } from '../dates.js';
 import { defaultReminders } from '../reminders.js';
 import { offerOldAlarmCleanup } from './actions.js';
-import { SERIES, catalogEntries, seriesPlan, seriesStartInfo, seriesOfSid, reflowSeries, PAID_CATEGORY, PAID_DISCLAIMER } from '../paidvax.js';
+import { SERIES, catalogEntries, seriesPlan, seriesStartInfo, seriesOfSid, reflowSeries, PAID_CATEGORY, PAID_DISCLAIMER, PAID_PRICE_NOTE, PAID_REC_NOTE, priceLine, priceBrief, recLine, recBrief } from '../paidvax.js';
 
 const TIME = '09:00';
 const BDAY_DEFAULT = '2026-09-17';
@@ -37,8 +37,12 @@ function entryHtml(x, all) {
   const nd = S.doses.length;
   const conflict = S.conflict && all.find((y) => y.family === S.conflict && y.inPlan) ? S.conflictText : '';
   const status = x.inPlan ? `<span class="pc-st in">已计划</span>` : x.doneN ? `<span class="pc-st done">已接种</span>` : '<span class="pc-st">待定</span>';
+  const pb = priceBrief(fam);
+  const pl = priceLine(fam);
+  const rb = recBrief(fam);
+  const rl = recLine(fam);
   const sub = x.inPlan ? `下一剂 ${fmtS(x.next.date)}${x.doneN ? ` · 已完成 ${x.doneN} 剂` : ''}`
-    : x.doneN ? `已完成 ${x.doneN}/${nd} 剂` : `${nd > 1 ? `${nd}剂` : '单剂'} · 最早 ${fmtS(info.earliest)}`;
+    : x.doneN ? `已完成 ${x.doneN}/${nd} 剂` : `${nd > 1 ? `${nd}剂` : '单剂'} · 最早 ${fmtS(info.earliest)}${rb ? ' · ' + rb : ''}${pb ? ' · ' + pb : ''}`;
   const late = !x.inPlan && !x.doneN && info.latest && info.latest < todayStr();
   const body = x.doses.length
     ? `<ol class="pc-doses">${x.doses.map((e) => `<li class="${e.done ? 'done' : ''}"><b>${esc(doseLabel(fam, nOf(e)))}</b> ${esc(fmt(e.date))}${e.done ? ' ✅ 已完成' : ''}</li>`).join('')}</ol>
@@ -49,12 +53,14 @@ function entryHtml(x, all) {
     <div class="pc-body">
       <div class="pc-row"><span class="pc-k">🛡 预防</span><span>${esc(S.prevents)}</span></div>
       <div class="pc-row"><span class="pc-k">💉 程序</span><span>${esc(S.schedule)}</span></div>
+      <div class="pc-row pc-rec"><span class="pc-k">⭐ 推荐</span><span>${esc(rl || '—')}</span></div>
+      <div class="pc-row pc-price"><span class="pc-k">💰 参考价</span><span>${esc(pl || '以当地接种门诊为准')}</span></div>
       <div class="pc-row"><span class="pc-k">🪟 第1剂</span><span>最早 <b>${esc(fmt(info.earliest))}</b>${info.latest ? ` · 最迟 <b>${esc(fmt(info.latest))}</b>` : ' · 未规定最迟'}${info.latestNote ? `<br><span class="muted">${esc(info.latestNote)}</span>` : ''}</span></div>
       <div class="pc-row"><span class="pc-k">🔁 可替代</span><span>${esc(S.replaces || '不替代免费疫苗')}</span></div>
       ${conflict ? `<p class="pd-warn" style="margin:6px 0">⚠️ ${esc(conflict)}</p>` : ''}
       ${late ? `<p class="pd-warn" style="margin:6px 0">⚠️ 已过第1剂最迟日期（${esc(fmtS(info.latest))}），请咨询接种门诊</p>` : ''}
       ${f.note ? `<details class="pc-more"><summary>详细说明</summary><p>${esc(f.note)}</p></details>` : ''}
-      <p class="pc-disc">🏷 ${esc(PAID_DISCLAIMER)}（品牌/产品不同程序略有差异）</p>
+      <p class="pc-disc">🏷 ${esc(PAID_DISCLAIMER)}（品牌/产品不同程序略有差异） · ${esc(PAID_PRICE_NOTE)} · ${esc(PAID_REC_NOTE)}</p>
       ${body}
     </div></details>`;
 }
@@ -90,7 +96,7 @@ export function renderPaidCard(el) {
     <button type="button" class="pc-toggle" id="pcToggle" aria-expanded="${cardOpen}">
       <span class="pc-t">💰 自费疫苗（待定）</span>
       <span class="pc-count">${c.undecided} 种待定${c.planned ? ` · ${c.planned} 种已计划` : ''}</span><span class="pc-chev">${cardOpen ? '▴' : '▾'}</span></button>
-    ${cardOpen ? `<div class="pc-wrap"><p class="small muted" style="margin:8px 0 4px">自费疫苗<b>默认不排进日程</b>。决定要打哪种，点开后「➕ 加入计划」，会按说明书的间隔和月龄排好全部剂次。</p>
+    ${cardOpen ? `<div class="pc-wrap"><p class="small muted" style="margin:8px 0 4px">自费疫苗<b>默认不排进日程</b>。每种标了推荐指数和襄阳参考价（湖北挂网/附近常见价，以当地门诊为准）。决定要打哪种，点开后「➕ 加入计划」，会按说明书的间隔和月龄排好全部剂次。</p>
       ${catalogHtml()}</div>` : ''}`;
   el.querySelector('#pcToggle').onclick = () => { cardOpen = !cardOpen; renderPaidCard(el); if (cardOpen) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   if (cardOpen) bindCatalog(el, null);
@@ -100,9 +106,9 @@ export function renderPaidCard(el) {
 export function openPaidCatalog() {
   openSheet(`
     <h3>💰 自费疫苗（待定）</h3>
-    <p class="small muted" style="margin-top:0">自费疫苗自愿接种，<b>默认不排进日程</b>。决定要打哪种，点开后「➕ 加入计划」，选第1剂日期，后面的剂次按说明书的最短间隔和月龄自动排好。<b>RSV单抗</b>已按你的选择加入计划。</p>
+    <p class="small muted" style="margin-top:0">自费疫苗自愿接种，<b>默认不排进日程</b>。每种标了推荐指数和襄阳参考价（湖北挂网/附近常见价，以当地门诊为准）。决定要打哪种，点开后「➕ 加入计划」，选第1剂日期，后面的剂次按说明书的最短间隔和月龄自动排好。<b>RSV单抗</b>已按你的选择加入计划。</p>
     <div id="pcSheetBody">${catalogHtml()}</div>
-    <p class="note small">⚠️ ${esc(PAID_DISCLAIMER)}。含免费疫苗成分的（如五联含百白破、脊灰）按说明书接种后可替代相应免费剂次，免费事项上会提示「可不打此剂」，不会自动删除。不同疫苗可同一天在不同部位接种；两种注射类活疫苗（如麻腮风、水痘）不同天接种须间隔≥28天。</p>
+    <p class="note small">⚠️ ${esc(PAID_DISCLAIMER)}。${esc(PAID_PRICE_NOTE)}。含免费疫苗成分的（如五联含百白破、脊灰）按说明书接种后可替代相应免费剂次，免费事项上会提示「可不打此剂」，不会自动删除。不同疫苗可同一天在不同部位接种；两种注射类活疫苗（如麻腮风、水痘）不同天接种须间隔≥28天。</p>
     <button type="button" class="btn ghost block" id="pcClose">关闭</button>`, (s) => {
     s.dataset.kind = 'paidcat';
     bindCatalog(s, openPaidCatalog);
@@ -121,6 +127,7 @@ export function openSeriesPicker(fam, back = null) {
   openSheet(`
     <h3>➕ 加入计划：${esc(S.short || S.title)}</h3>
     <p class="small muted" style="margin:0 0 8px">${esc(S.schedule)}</p>
+    ${priceLine(fam) ? `<p class="pc-price-line">💰 ${esc(priceLine(fam))}</p>` : ''}
     <div class="pd-win">🪟 第1剂：<b>最早 ${esc(fmt(info.earliest))}</b>${info.latest ? ` – <b>最迟 ${esc(fmt(info.latest))}</b>` : ' 起（未规定最迟）'}</div>
     <div class="row2" style="margin-top:10px">
       <div class="field"><label for="sp-date">第1剂计划日期</label><input id="sp-date" type="date" class="input" value="${esc(info.def)}" min="${info.earliest}"></div>
