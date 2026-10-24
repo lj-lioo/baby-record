@@ -11,6 +11,55 @@ export const PAID_PREFIX = 'paid:';
 export const PAID_CATEGORY = 'paidvax';
 export const PAID_DISCLAIMER = '是否接种、品牌和时间以接种门诊建议为准';
 
+// 襄阳参考价（元）：襄阳本地未见公开零售价目表 → 用湖北省「其他地市」挂网结算价 + 湖北门诊常见零售；另收约20元/剂次接种服务费（鄂发改价调〔2022〕257号）。
+// 来源：湖北省药械集中采购 RSV 挂网（2024-11，其他地市 1878/3186）、湖北门诊到货/零售汇总（五联≈625、国产13价≈623、进口13价≈723、五价轮状≈305、EV71≈213、水痘≈175、Hib≈114、甲肝灭活≈126）、襄州区2026非免疫规划疫苗遴选（有品类无标价）。以当地接种门诊公示为准。
+export const PAID_PRICE_NOTE = '襄阳参考价（湖北挂网/附近门诊常见价，以当地接种门诊为准）；湖北另收约20元/剂次接种服务费';
+export const PAID_PRICES = {
+  // unit = 每剂；course = 全程总价文案；brief = 折叠摘要；doses = 剂次数（展示用）
+  rsv:   { doses: 1, brief: '每剂约1878–3186元', unit: '每剂约1878–3186元（50mg约1878，100mg约3186，湖北挂网）', course: '全程1剂约1878–3186元', note: '乐唯初；门诊零售偶更高' },
+  pcv13: { doses: 4, brief: '每剂约623–723元', unit: '每剂约623–723元（国产约623，进口约723）', course: '全程4剂约2492–2892元' },
+  penta: { doses: 4, brief: '每剂约625元', unit: '每剂约625元', course: '全程4剂约2500元' },
+  rota5: { doses: 3, brief: '每剂约305元', unit: '每剂约305元', course: '全程3剂约915元' },
+  ev71:  { doses: 2, brief: '每剂约213元', unit: '每剂约213元', course: '全程2剂约426元' },
+  flu:   { doses: 2, brief: '每剂约64–140元', unit: '每剂约64–140元（儿童四价常见约97–140）', course: '全程首次2剂约130–280元（之后每年1剂）' },
+  var:   { doses: 2, brief: '每剂约175元', unit: '每剂约175元', course: '全程2剂约350元', note: '湖北仍自费（江浙沪部分免费）' },
+  hib:   { doses: 4, brief: '每剂约114元', unit: '每剂约114元', course: '全程4剂约456元（单独接种时；打五联则不必）' },
+  mcv:   { doses: 1, brief: 'AC约110 / ACYW约430元/剂', unit: 'AC结合约110–178元/剂，ACYW结合约430–452元/剂', course: '全程常见先1剂结合约110–452元（加强以门诊为准）' },
+  hepai: { doses: 2, brief: '每剂约126–170元', unit: '每剂约126–170元', course: '全程2剂约252–340元' },
+  jei:   { doses: 4, brief: '每剂约180–230元', unit: '每剂约180–230元', course: '全程4剂约720–920元' },
+};
+export function priceLine(fam) {
+  const p = PAID_PRICES[fam];
+  if (!p) return '';
+  return p.course ? `${p.unit} · ${p.course}` : p.unit;
+}
+export function priceBrief(fam) { return PAID_PRICES[fam]?.brief || ''; }
+
+// 推荐指数（非医疗建议）：综合考虑疾病负担、保护效力、能否替代免费剂次、儿科共识与预算。1–5★。
+export const PAID_REC_NOTE = '推荐指数仅供参考，非医疗建议，最终以接种门诊医生为准';
+export const PAID_RECS = {
+  rsv:   { score: 5, label: '强烈推荐', stars: '★★★★★', reason: '首个RSV季防重症毛细支气管炎，秋冬出生尤需；单剂但单价高' },
+  pcv13: { score: 5, label: '强烈推荐', stars: '★★★★★', reason: '肺炎球菌疾病常见，儿科广泛推荐，保护侵袭性感染' },
+  penta: { score: 5, label: '强烈推荐', stars: '★★★★★', reason: '一针替代百白破+脊灰+Hib，少跑门诊（预算允许时）' },
+  rota5: { score: 5, label: '强烈推荐', stars: '★★★★★', reason: '婴幼儿轮状病毒肠炎高发，口服方便' },
+  flu:   { score: 5, label: '强烈推荐', stars: '★★★★★', reason: '满6月龄起每流感季建议接种，防重症' },
+  ev71:  { score: 4, label: '推荐',     stars: '★★★★☆', reason: '湖北手足口病常见，防EV71重症；中部地区更值得打' },
+  var:   { score: 4, label: '推荐',     stars: '★★★★☆', reason: '湖北仍自费；2剂保护更好，防聚集性疫情' },
+  mcv:   { score: 3, label: '可考虑',   stars: '★★★☆☆', reason: '结合疫苗覆盖更广，可作免费多糖程序的升级替代' },
+  hepai: { score: 3, label: '可考虑',   stars: '★★★☆☆', reason: '灭活替代免费减毒甲肝，特殊健康状况更稳妥' },
+  jei:   { score: 3, label: '可考虑',   stars: '★★★☆☆', reason: '灭活替代免费减毒乙脑，免疫异常等可选' },
+  hib:   { score: 2, label: '一般',     stars: '★★☆☆☆', reason: '已打五联则不必再打；不打五联时再考虑单独Hib' },
+};
+export function recLine(fam) {
+  const r = PAID_RECS[fam];
+  if (!r) return '';
+  return `${r.stars} ${r.label}：${r.reason}`;
+}
+export function recBrief(fam) {
+  const r = PAID_RECS[fam];
+  return r ? `${r.stars} ${r.label}` : '';
+}
+
 const pad = (n) => String(n).padStart(2, '0');
 function parts(s) { const [y, m, d] = s.split('-').map(Number); return { y, m, d }; }
 function fmt(dt) { return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`; }
@@ -249,6 +298,15 @@ export function seriesOfSid(sid) {
 export function seriesTitle(fam, n) {
   const S = SERIES[fam], d = S.doses[n - 1];
   return fam === 'rsv' ? S.title : `${S.title} ${d.label}`; // 卡片上有蓝色「自费疫苗」标签
+}
+
+export function priceOfSid(sid) {
+  const s = seriesOfSid(sid);
+  return s ? priceLine(s.family) : '';
+}
+export function priceBriefOfSid(sid) {
+  const s = seriesOfSid(sid);
+  return s ? priceBrief(s.family) : '';
 }
 
 // 第1剂：最早、最迟、默认计划日（不早于 today；流感默认按流感季）
