@@ -1,4 +1,4 @@
-// 端到端（iPhone 尺寸）：v1.7.0 自费疫苗「待定」目录 → 加入计划（系列自动排期、间隔/月龄）→ 顺延 → 移出计划；截图 23～26。BASE=... 可指定地址
+// 端到端（iPhone 尺寸）：v1.7.0 自费疫苗「待定」目录 → 加入计划（系列自动排期、间隔/月龄）→ 顺延 → 移出计划；截图 23～26；v1.7.2 起另有 32～（参考价）。BASE=... 可指定地址
 import { chromium } from 'playwright';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:8080/';
@@ -65,9 +65,10 @@ ok('#paidCard 在 #dayCard 之后，默认折叠，显示「11 种待定」', aw
 await openCard();
 await openEntry('penta');
 const penta = await page.locator('#paidCard .pc-item[data-fam="penta"]').innerText();
-ok('五联条目：预防/程序/第1剂最早（本宝宝 11月17日 周二）/未规定最迟/可替代/门诊提示/加入计划按钮',
-  penta.includes('4剂 · 最早 11月17日') && penta.includes('白喉、破伤风、百日咳') && penta.includes('18月龄加强') && penta.includes('最早 11月17日 周二') && penta.includes('未规定最迟')
-  && penta.includes('免费百白破第1～4剂、脊灰第1～4剂') && penta.includes('以接种门诊建议为准') && penta.includes('➕ 加入计划'), penta.replace(/\n/g, ' | ').slice(0, 300));
+ok('五联条目：预防/程序/推荐/参考价(每剂+全程)/第1剂最早/可替代/门诊提示/加入计划',
+  penta.includes('4剂 · 最早 11月17日') && penta.includes('强烈推荐') && penta.includes('每剂约625元') && penta.includes('全程4剂约2500元')
+  && penta.includes('白喉、破伤风、百日咳') && penta.includes('18月龄加强') && penta.includes('最早 11月17日 周二') && penta.includes('未规定最迟')
+  && penta.includes('免费百白破第1～4剂、脊灰第1～4剂') && penta.includes('以接种门诊建议为准') && penta.includes('当地接种门诊为准') && penta.includes('➕ 加入计划'), penta.replace(/\n/g, ' | ').slice(0, 450));
 await openEntry('rota5');
 const rota = await page.locator('#paidCard .pc-item[data-fam="rota5"]').innerText();
 ok('五价轮状条目：第1剂最早 10月29日、最迟 12月10日（12周龄）', rota.includes('最早 10月29日') && rota.includes('最迟 12月10日'), rota.replace(/\n/g, ' | ').slice(0, 160));
@@ -75,6 +76,12 @@ await page.evaluate(() => { const d = document.querySelector('#paidCard .pc-item
 await hideToast();
 await page.evaluate(() => { document.getElementById('paidCard').scrollIntoView({ block: 'start' }); window.scrollBy(0, -8); }); await page.waitForTimeout(300);
 await page.screenshot({ path: SHOTS + '23-paid-catalog.png' });
+await openEntry('penta');
+await page.evaluate(() => { document.querySelector('#paidCard .pc-item[data-fam="penta"]')?.scrollIntoView({ block: 'center' }); });
+await page.waitForTimeout(200);
+await page.screenshot({ path: SHOTS + '32-paid-catalog-prices.png' });
+// keep penta open — next step clicks [data-add="penta"]
+
 
 // —— 3. 加入计划：选第1剂日期 + 预览 ——
 await page.click('#paidCard [data-add="penta"]'); await page.waitForSelector('#sp-list li');
@@ -112,6 +119,12 @@ ok('提示覆盖百白破1–4、脊灰1–4（不含百白破第5剂）', allHi
 await hideToast();
 await page.evaluate(() => { document.getElementById('g-2026-11-17').scrollIntoView({ block: 'start' }); window.scrollBy(0, -8); }); await page.waitForTimeout(300);
 await page.screenshot({ path: SHOTS + '25-month-list-penta.png' });
+const priceCard = await page.locator('#dayCard .item.cat-paidvax .iprice').first().innerText();
+ok('计划卡片显示襄阳参考价', priceCard.includes('每剂约625元') && priceCard.includes('当地门诊为准'), priceCard);
+await page.locator('#dayCard .item.cat-paidvax .iprice').first().scrollIntoViewIfNeeded();
+await page.waitForTimeout(200);
+await page.screenshot({ path: SHOTS + '33-paid-item-price.png' });
+
 ok('日历 11-17 同时有紫色和蓝色圆点', (await page.locator('.day[data-date="2026-11-17"] .dot.cat-vaccine').count()) >= 1 && (await page.locator('.day[data-date="2026-11-17"] .dot.cat-paidvax').count()) === 1);
 
 // —— 5. 其他疫苗的间隔/月龄 ——
@@ -254,6 +267,12 @@ const nBefore = (await events()).length;
 await page.reload(); await page.waitForTimeout(800);
 ok('重新打开后事项全部还在', (await events()).length === nBefore);
 ok('无 JS 报错', errors.length === 0, errors.join(' || '));
+await page.goto(BASE + '#/help'); await page.waitForTimeout(400);
+const helpPaid = await page.locator('#h-paid').innerText();
+ok('帮助页说明推荐指数与襄阳参考价', helpPaid.includes('推荐指数') && helpPaid.includes('襄阳参考价') && helpPaid.includes('非医疗建议') && helpPaid.includes('20元'), helpPaid.replace(/\n/g, ' ').slice(0, 280));
+await page.locator('#h-paid').scrollIntoViewIfNeeded();
+await page.waitForTimeout(200);
+await page.screenshot({ path: SHOTS + '34-help-paid-price.png' });
 await browser.close();
 fs.writeFileSync('/workspace/baby-app/test/results-paidvax.json', JSON.stringify(results, null, 2));
 console.log(`\n${results.filter((r) => r.pass).length}/${results.length} passed`);

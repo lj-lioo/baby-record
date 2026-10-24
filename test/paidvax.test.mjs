@@ -143,4 +143,29 @@ t('目录条目：已计划/已完成/下一剂', () => {
   assert.ok(c.rsv.inPlan); assert.equal(c.rsv.next.date, '2026-10-17');
   assert.ok(!c.rota5.inPlan); assert.equal(c.rota5.doneN, 1); assert.ok(!c.penta.inPlan && !c.penta.doses.length);
 });
+t('襄阳参考价 PAID_PRICES：每剂+全程；备注不写价格；每家都有推荐指数', () => {
+  assert.match(P.PAID_PRICE_NOTE, /襄阳|湖北/);
+  assert.match(P.PAID_REC_NOTE, /非医疗建议/);
+  for (const f of P.SERIES_ORDER) {
+    const pr = P.PAID_PRICES[f];
+    assert.ok(pr && pr.unit && pr.brief && pr.course, f);
+    assert.match(pr.unit, /每剂|元\/剂/);
+    assert.match(pr.course, /全程/);
+    assert.match(P.priceLine(f), /每剂|元/);
+    assert.match(P.priceLine(f), /全程/);
+    const r = P.PAID_RECS[f];
+    assert.ok(r && r.score >= 1 && r.score <= 5 && r.label && r.reason && r.stars, f);
+    assert.match(P.recLine(f), /推荐|可考虑|一般/);
+  }
+  assert.match(P.priceLine('penta'), /每剂约625元/);
+  assert.match(P.priceLine('penta'), /全程4剂约2500元/);
+  assert.match(P.priceLine('rsv'), /1878/);
+  assert.equal(P.PAID_RECS.penta.score, 5);
+  assert.equal(P.PAID_RECS.hib.score, 2);
+  assert.equal(P.priceOfSid('paid:penta-2'), P.priceLine('penta'));
+  assert.equal(P.priceBriefOfSid('paid:rsv'), P.priceBrief('rsv'));
+  assert.equal(P.priceOfSid('nip:dtap-1'), '');
+  for (const d of P.seriesPlan('penta', B, '2026-11-17')) assert.ok(!/[元￥¥]|价格|参考价/.test(d.note), d.id);
+  assert.ok(!/[元￥¥]|价格|参考价/.test(P.seriesPlan('rsv', B, '2026-10-17')[0].note));
+});
 console.log(`\n${pass} passed`);
