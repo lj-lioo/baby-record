@@ -132,3 +132,20 @@
   线上 BASE：alarm-tag-ui 37/37、paidvax-ui 61/61、window-ui 54/54、vaccine-ui 22/22、checkup-ui 15/15、e2e 20/22（同上推送原因）。
   sync-ui：盒子环境变量里有 BABY_SYNC_KEY 时会覆盖测试用的临时配置，测试里已去掉（只用临时密钥）。
   新截图 27–31（alarm-tag-ui）：27-help-new-replace-alarm、28-help-new-delete-shortcut、29-help-new-run-shortcut-top、30-alarm-sheet-replace、31-delete-old-alarm-prompt。
+
+## v1.7.2（2026-10-24 18:10 CST）自费疫苗襄阳参考价 + 推荐指数
+- 需求：自费疫苗目录与计划卡片缺少价格；用户在湖北襄阳。
+- 价格来源（襄阳 vs 回退）：
+  - **襄阳本地**：检索襄阳 / 襄阳市疾控 / 襄城区 / 樊城区「非免疫规划疫苗价格公示」——未见公开零售价目表（襄州区 2026 遴选仅有品类无单价）。
+  - **回退**：湖北省「其他地市」挂网结算价（RSV 尼塞韦 50mg≈1878 / 100mg≈3186）+ 湖北门诊常见零售（五联≈625、13价国产≈623/进口≈723、五价轮状≈305、EV71≈213、水痘≈175、Hib≈114、流感儿童四价≈64–140、甲肝灭活≈126–170、乙脑灭活≈180–230、流脑 AC 结合≈110–178 / ACYW≈430–452）。
+  - UI 标注：「襄阳参考价（湖北挂网/附近门诊常见价，以当地接种门诊为准）」；另收约 **20元/剂次** 接种服务费（鄂发改价调〔2022〕257号）。水痘在湖北仍自费（非江浙沪式免费）。
+  - 始终同时展示 **每剂** 与 **全程总价**（如「每剂约 625 元 · 全程 4 剂约 2500 元」）。
+- 推荐指数（非医疗建议，最终以门诊医生为准）：
+  - ★★★★★ 强烈推荐：RSV尼塞韦、13价肺炎、五联、五价轮状、流感（满6月龄每季）
+  - ★★★★☆ 推荐：EV71（湖北/中部手足口常见）、水痘
+  - ★★★☆☆ 可考虑：流脑结合、甲肝灭活、乙脑灭活（免费程序升级替代）
+  - ★★☆☆☆ 一般：单独 Hib（已打五联则不必）
+- 实现：`site/js/paidvax.js` 新增 `PAID_PRICES` / `PAID_RECS` / `priceLine` / `recLine`（UI-only，备注仍禁止含「元/价格」）；`paidcat.js` 目录卡 ⭐推荐 + 💰参考价；`home.js` `.iprice`；`help.js`「怎么看推荐」；`app.css` `.pc-price` / `.pc-rec` / `.iprice`；版本 1.7.2（config.js / sw.js / settings.js APP_BUILD）。
+- 测试（本地）：paidvax 20/20、paidvax-ui 63/63、sw-upgrade 32/32（加 v1.7.1→v1.7.2）。新截图 32–34：32-paid-catalog-prices、33-paid-item-price、34-help-paid-price。
+- 提交：f398bfb（paidvax.js PAID_PRICES/PAID_RECS）→ 5fcafa7（paidcat.js、home.js、app.css）→ d6be88a（help.js）
+  → 7a3f0c0（config.js、sw.js、settings.js 版本 1.7.2）→ 63bec0a（paidvax.test、paidvax-ui、sw-upgrade）→ ac34ef4（README）→ 本文件。
