@@ -133,7 +133,7 @@
   sync-ui：盒子环境变量里有 BABY_SYNC_KEY 时会覆盖测试用的临时配置，测试里已去掉（只用临时密钥）。
   新截图 27–31（alarm-tag-ui）：27-help-new-replace-alarm、28-help-new-delete-shortcut、29-help-new-run-shortcut-top、30-alarm-sheet-replace、31-delete-old-alarm-prompt。
 
-## v1.7.2（2026-10-24 18:10 CST）自费疫苗襄阳参考价 + 推荐指数
+## v1.7.2（2026-10-24 18:10 CST 线上 site 8 个关键文件逐字节一致）自费疫苗襄阳参考价 + 推荐指数
 - 需求：自费疫苗目录与计划卡片缺少价格；用户在湖北襄阳。
 - 价格来源（襄阳 vs 回退）：
   - **襄阳本地**：检索襄阳 / 襄阳市疾控 / 襄城区 / 樊城区「非免疫规划疫苗价格公示」——未见公开零售价目表（襄州区 2026 遴选仅有品类无单价）。
