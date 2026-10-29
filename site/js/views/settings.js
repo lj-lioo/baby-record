@@ -16,7 +16,7 @@ import {
   ROLES, ADMIN_ROLES, ELDER_ROLES, roleCapabilityText, openRolePicker, copyInviteFor,
 } from '../roles.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.13.6';
+export const APP_BUILD = '1.13.7';
 
 /** 编辑宝宝名字 + 生日（云同步 profile）；保存后触发 rerender */
 export function openBabyProfile({ onSaved } = {}) {

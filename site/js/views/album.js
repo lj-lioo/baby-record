@@ -4,8 +4,10 @@ import { esc, toast, confirmSheet, openSheet, closeSheet } from '../ui.js';
 import { canDeleteAlbum } from '../roles.js';
 import {
   photosByDay, fmtDayTitle, dayNumberOnDate, addPhotoFromFile, loadPhotoBlob, removePhoto,
-  retryUpload, photoApiBase, pingPhotoServer, isUploading, hasLocalPhoto,
+  retryUpload, photoApiBase, pingPhotoServer, isUploading, isUploadPending, hasLocalPhoto,
   addVideoFromFile, loadVideoBlob, hasLocalVideo,
+  getUploadSession, onUploadSession, beginUploadBatch, setUploadBatchText, endUploadBatch,
+  retryAllPendingUploads, BATCH_SOFT_LIMIT,
 } from '../photos.js';
 import { syncStatus } from '../sync.js';
 
@@ -175,7 +177,10 @@ export function renderAlbum(root) {
     ${!api ? `<div class="banner album-tip"><div class="bt"><b>还没填照片服务地址</b>缩略图和说明可以先同步；填极空间照片服务地址后，全家才能看到原图。家里 Wi‑Fi 填局域网地址即可。</div>
       <button class="btn secondary" id="btnGoPhotoSet" style="flex:none">去设置</button></div>` : ''}
     ${api && !syncOn ? `<div class="banner album-tip"><div class="bt"><b>建议开启云同步</b>原图用同步密钥加密后上传；元数据也靠云同步共享给家人。</div></div>` : ''}
-    <div class="banner album-progress" id="albumProgress" hidden><div class="bt" id="albumProgressText">上传中…</div></div>
+    <div class="banner album-progress" id="albumProgress" hidden>
+      <div class="bt" id="albumProgressText">上传中…</div>
+      <button type="button" class="btn secondary" id="btnRetryPending" hidden style="flex:none">一键补传</button>
+    </div>
     ${groups.length === 0 ? `
       <section class="card album-empty">
         <div style="font-size:48px;text-align:center">📷</div>
@@ -189,7 +194,7 @@ export function renderAlbum(root) {
             <button type="button" class="album-cell" data-id="${esc(p.id)}" aria-label="${p.kind === 'video' ? '查看视频' : '查看照片'}">
               <img src="${esc(p.thumbData || '')}" alt="" loading="lazy">
               ${p.kind === 'video' ? `<span class="album-play">▶ ${esc(fmtDur(p.duration))}</span>` : ''}
-              ${isUploading(p.id) ? '<span class="album-badge uploading" title="正在上传到照片服务">上传中</span>' : (p.remoteReady ? '' : '<span class="album-badge" title="原图尚未上传到照片服务">本地</span>')}
+              ${(!p.remoteReady && isUploadPending(p.id)) ? '<span class="album-badge uploading" title="正在上传到照片服务（切页也会保留）">上传中</span>' : (p.remoteReady ? '' : '<span class="album-badge" title="原图尚未上传到照片服务">本地</span>')}
               ${p.note ? `<span class="album-note-dot" title="${esc(p.note)}">📝</span>` : ''}
             </button>`).join('')}
         </div>
@@ -205,61 +210,64 @@ export function renderAlbum(root) {
     e.target.value = '';
     if (!files.length) return;
     const total = files.length;
+    if (total > BATCH_SOFT_LIMIT) {
+      toast(`一次选了 ${total} 张，建议每次 ${BATCH_SOFT_LIMIT} 张左右分批传（隧道限速，会串行分块）。本次仍继续，请保持屏幕常亮。`, 5500);
+    }
     let ok = 0, fail = 0, uploadFail = 0;
     const lastErr = [];
-    const progressEls = () => {
-      const rootEl = albumRootRef || root;
-      return [rootEl.querySelector('#albumProgress'), rootEl.querySelector('#albumProgressText')];
-    };
     const setProg = (t) => {
-      const [prog, progT] = progressEls();
-      if (!prog || !progT) return;
-      prog.hidden = false;
-      progT.textContent = t;
+      setUploadBatchText(t);
+      syncAlbumProgressUi(albumRootRef || root);
     };
     const refresh = () => {
       if (location.hash.startsWith('#/album')) renderAlbum(albumRootRef || root);
     };
-    setProg(`正在处理 0/${total}…`);
-    for (const [i, f] of files.entries()) {
-      const n = i + 1;
-      try {
-        const isVid = String(f.type || '').startsWith('video/') || /\.(mov|mp4|m4v)$/i.test(f.name || '');
-        setProg(isVid
-          ? `已处理 ${i}/${total}，准备视频 ${n}/${total}（约 ${fmtSize(f.size)}）…`
-          : `已处理 ${i}/${total}，处理中 ${n}/${total}…`);
-        const opts = {
-          onLocalReady: () => {
-            // 缩略图已入库：立刻刷新时间轴，角标显示「上传中」
-            refresh();
-            setProg(`已处理 ${n}/${total}，上传中…`);
-          },
-          onProgress: (ev) => {
-            if (ev?.phase === 'upload') {
-              const pct = ev.ratio != null ? ` ${Math.round(ev.ratio * 100)}%` : '';
-              setProg(isVid
-                ? `上传中 ${n}/${total}${pct}（约 ${fmtSize(f.size)}）`
-                : `上传中 ${n}/${total}…`);
-            } else if (ev?.phase === 'done') {
-              setProg(`已处理 ${n}/${total}` + (n < total ? '，继续…' : '，完成'));
-            }
-          },
-        };
-        const r = isVid ? await addVideoFromFile(f, opts) : await addPhotoFromFile(f, opts);
-        ok++;
-        if (r.needsPhotoApi) lastErr.push('已保存到本机；填照片服务地址后全家才能看原图');
-        else if (r.uploadError) { uploadFail++; lastErr.push(r.uploadError); }
-        refresh();
-      } catch (err) {
-        fail++;
-        lastErr.push(err.message || '上传失败');
-        refresh();
+    beginUploadBatch(total, `正在处理 0/${total}…`);
+    syncAlbumProgressUi(albumRootRef || root);
+    const wake = await requestAlbumWakeLock();
+    try {
+      for (const [i, f] of files.entries()) {
+        const n = i + 1;
+        try {
+          const isVid = String(f.type || '').startsWith('video/') || /\.(mov|mp4|m4v)$/i.test(f.name || '');
+          setProg(isVid
+            ? `已处理 ${i}/${total}，准备视频 ${n}/${total}（约 ${fmtSize(f.size)}）…`
+            : `已处理 ${i}/${total}，处理中 ${n}/${total}…`);
+          const opts = {
+            onLocalReady: () => {
+              refresh();
+              setProg(`已处理 ${n}/${total}，上传中…`);
+            },
+            onProgress: (ev) => {
+              if (ev?.phase === 'upload') {
+                const pct = ev.ratio != null ? ` ${Math.round(ev.ratio * 100)}%` : '';
+                setProg(isVid
+                  ? `上传中 ${n}/${total}${pct}（约 ${fmtSize(f.size)}）`
+                  : `上传中 ${n}/${total}${pct}…`);
+              } else if (ev?.phase === 'done') {
+                setProg(`已处理 ${n}/${total}` + (n < total ? '，继续…' : '，完成'));
+              }
+            },
+          };
+          // 限并发=1：串行 await，避免隧道挤满
+          const r = isVid ? await addVideoFromFile(f, opts) : await addPhotoFromFile(f, opts);
+          ok++;
+          if (r.needsPhotoApi) lastErr.push('已保存到本机；填照片服务地址后全家才能看原图');
+          else if (r.uploadError) { uploadFail++; lastErr.push(r.uploadError); }
+          refresh();
+        } catch (err) {
+          fail++;
+          lastErr.push(err.message || '上传失败');
+          refresh();
+        }
       }
+    } finally {
+      endUploadBatch();
+      releaseAlbumWakeLock(wake);
+      syncAlbumProgressUi(albumRootRef || root);
     }
-    const [pEnd] = progressEls();
-    if (pEnd) pEnd.hidden = true;
     if (fail && !ok) toast(lastErr[0] || '上传失败', 4500);
-    else if (uploadFail) toast(`已添加 ${ok} 项，其中 ${uploadFail} 项原图上传失败：${lastErr[lastErr.length - 1]}。可点开后点「补传原图」`, 5500);
+    else if (uploadFail) toast(`已添加 ${ok} 项，其中 ${uploadFail} 项原图上传失败：${lastErr[lastErr.length - 1]}。可点「一键补传」或打开后补传`, 5500);
     else if (ok && lastErr.length && !uploadFail) toast(lastErr[0], 4000);
     else if (ok && !fail) toast(ok === 1 ? '已添加并上传 1 项' : `已添加并上传 ${ok} 项`);
   };
@@ -270,13 +278,54 @@ export function renderAlbum(root) {
   root.querySelectorAll('.album-cell').forEach((btn) => {
     btn.onclick = () => openViewer(btn.dataset.id, root);
   });
+  // 切页回来：进度条/角标跟 uploadSession + remoteReady 对齐
+  syncAlbumProgressUi(root);
+  wireRetryPending(root);
+  if (uploadUnsub) { try { uploadUnsub(); } catch { /* ignore */ } }
+  uploadUnsub = onUploadSession(() => {
+    if (!location.hash.startsWith('#/album')) return;
+    const r = albumRootRef;
+    if (!r) return;
+    // 只更新进度条，避免整页重绘打断滚动；角标在下次 render / 单项刷新时对齐
+    syncAlbumProgressUi(r);
+    // 有进行中的项时轻量刷新格子角标
+    const sess = getUploadSession();
+    if (sess.active || sess.pending) {
+      r.querySelectorAll('.album-cell').forEach((btn) => {
+        const id = btn.dataset.id;
+        const meta = store.getPhoto(id);
+        if (!meta) return;
+        let badge = btn.querySelector('.album-badge');
+        const wantUp = !meta.remoteReady && isUploadPending(id);
+        if (wantUp) {
+          if (!badge || !badge.classList.contains('uploading')) {
+            if (badge) badge.remove();
+            const s = document.createElement('span');
+            s.className = 'album-badge uploading';
+            s.title = '正在上传到照片服务（切页也会保留）';
+            s.textContent = '上传中';
+            btn.appendChild(s);
+          }
+        } else if (meta.remoteReady) {
+          badge?.remove();
+        } else if (!badge || badge.classList.contains('uploading')) {
+          badge?.remove();
+          const s = document.createElement('span');
+          s.className = 'album-badge';
+          s.title = '原图尚未上传到照片服务';
+          s.textContent = '本地';
+          btn.appendChild(s);
+        }
+      });
+    }
+  });
 }
 
 /** 「＋ 上传」：选从相册（可多选）或拍照（带 capture，走相机） */
 function openAddPhotoSheet(albumRoot) {
   openSheet(`
     <h3>添加照片 / 视频</h3>
-    <p class="small muted" style="margin-top:0">从手机相册选照片或视频，或直接拍照、录视频。视频上限 ${Math.round((Number(store.state.settings.videoMaxMB) || 200))}MB，可在设置里改。</p>
+    <p class="small muted" style="margin-top:0">从手机相册选照片或视频，或直接拍照、录视频。视频上限 ${Math.round((Number(store.state.settings.videoMaxMB) || 200))}MB，可在设置里改。大批量建议每次约 ${BATCH_SOFT_LIMIT} 张，原图会分块串行上传，请保持屏幕常亮。</p>
     <div class="btn-row" style="flex-direction:column;gap:10px">
       <button type="button" class="btn" id="pickAlbum">🖼 从相册选择</button>
       <button type="button" class="btn secondary" id="pickCamera">📷 拍照</button>
@@ -457,7 +506,71 @@ async function openVideoViewer(id, albumRoot) {
 // 设置页可调用：测试照片服务
 export { pingPhotoServer, photoApiBase };
 
-let albumRootRef = null, onFilesRef = null;
+let albumRootRef = null, onFilesRef = null, uploadUnsub = null, retryBusy = false;
+
+async function requestAlbumWakeLock() {
+  try {
+    if (navigator.wakeLock?.request) return await navigator.wakeLock.request('screen');
+  } catch { /* 不支持或被拒就忽略 */ }
+  return null;
+}
+function releaseAlbumWakeLock(lock) {
+  try { lock?.release?.(); } catch { /* ignore */ }
+}
+
+function syncAlbumProgressUi(rootEl) {
+  if (!rootEl) return;
+  const prog = rootEl.querySelector('#albumProgress');
+  const progT = rootEl.querySelector('#albumProgressText');
+  const btn = rootEl.querySelector('#btnRetryPending');
+  if (!prog || !progT) return;
+  const sess = getUploadSession();
+  const pendingNotReady = store.photos().filter((p) => !p.remoteReady).length;
+  if (sess.active) {
+    prog.hidden = false;
+    progT.textContent = sess.text || `上传中…（${sess.done}/${sess.total}）`;
+    if (btn) btn.hidden = true;
+  } else if (sess.pending || pendingNotReady) {
+    prog.hidden = false;
+    progT.textContent = sess.text || (sess.pending
+      ? `还有 ${sess.pending} 项未传到照片服务`
+      : `有 ${pendingNotReady} 项仅本机 / 未上传`);
+    if (btn) btn.hidden = !photoApiBase();
+  } else {
+    prog.hidden = true;
+    if (btn) btn.hidden = true;
+  }
+}
+
+function wireRetryPending(rootEl) {
+  const btn = rootEl?.querySelector('#btnRetryPending');
+  if (!btn) return;
+  btn.onclick = async () => {
+    if (retryBusy) return;
+    retryBusy = true;
+    btn.disabled = true;
+    btn.textContent = '补传中…';
+    const wake = await requestAlbumWakeLock();
+    try {
+      const r = await retryAllPendingUploads({
+        onProgress: () => syncAlbumProgressUi(albumRootRef || rootEl),
+      });
+      if (location.hash.startsWith('#/album')) renderAlbum(albumRootRef || rootEl);
+      if (r.ok && !r.fail) toast(r.ok === 1 ? '已补传 1 项' : `已补传 ${r.ok} 项`);
+      else if (r.ok || r.fail) toast(`补传完成：成功 ${r.ok}，失败 ${r.fail}${r.skipped ? `，跳过 ${r.skipped}（无本机缓存）` : ''}`, 5000);
+      else toast(r.skipped ? '这些项本机没有原图缓存，需重新选图上传' : '没有需要补传的项', 4000);
+    } catch (e) {
+      toast(`补传失败：${e.message || e}`, 4500);
+    } finally {
+      releaseAlbumWakeLock(wake);
+      retryBusy = false;
+      btn.disabled = false;
+      btn.textContent = '一键补传';
+      syncAlbumProgressUi(albumRootRef || rootEl);
+    }
+  };
+}
+
 function ensureFileInputs() {
   const defs = [['filePhotoAlbum', 'image/*,video/*', true, false], ['filePhotoCamera', 'image/*', false, 'environment'], ['fileVideoCamera', 'video/*', false, 'environment']];
   for (const [id, accept, multi, cap] of defs) {

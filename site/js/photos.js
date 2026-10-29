@@ -97,16 +97,30 @@ function corsHeaders() {
   return {};
 }
 
-export async function putEncryptedPhoto(id, packedBytes) {
+/** 隧道慢链路上单次 PUT 易超时；小图仍可走整文件，失败由调用方改分块 */
+export async function putEncryptedPhoto(id, packedBytes, { timeoutMs = 90000 } = {}) {
   const base = photoApiBase();
   if (!base) throw new Error('未配置照片服务地址');
-  const res = await fetch(`${base}/v1/photo/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/octet-stream', ...corsHeaders() },
-    body: packedBytes,
-  });
-  if (!res.ok) throw new Error(`照片服务返回 ${res.status}`);
-  return true;
+  let lastErr;
+  for (let tryN = 0; tryN < 3; tryN++) {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+    try {
+      const res = await fetch(`${base}/v1/photo/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/octet-stream', ...corsHeaders() },
+        body: packedBytes,
+        signal: ctrl?.signal,
+      });
+      if (res.ok) return true;
+      lastErr = new Error(`照片服务返回 ${res.status}`);
+    } catch (e) {
+      lastErr = e?.name === 'AbortError' ? new Error('上传超时（隧道链路较慢，将改用分块）') : e;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  throw lastErr || new Error('照片上传失败');
 }
 
 export async function fetchEncryptedPhoto(id) {
@@ -166,12 +180,90 @@ export async function pingPhotoServer(baseUrl) {
   }
 }
 
-/** 本机「上传中」状态（不同步）：缩略图先入库后角标用 */
+/** 本机「上传中」状态（不同步）：缩略图先入库后角标用；切页不丢 */
 const uploadingIds = new Set();
-export function isUploading(id) { return uploadingIds.has(id); }
-function markUploading(id, on) {
-  if (on) uploadingIds.add(id); else uploadingIds.delete(id);
+/** 本批/补传队列：remoteReady 前一直算未传完，切日程再回相册仍显示「上传中」 */
+const uploadSession = {
+  active: false,
+  total: 0,
+  done: 0,
+  fail: 0,
+  text: '',
+  pendingIds: new Set(),
+};
+const uploadListeners = new Set();
+function notifyUpload() {
+  for (const fn of [...uploadListeners]) {
+    try { fn(getUploadSession()); } catch { /* ignore */ }
+  }
 }
+export function isUploading(id) { return uploadingIds.has(id); }
+/** 正在传、或仍在本批待传队列且尚未 remoteReady */
+export function isUploadPending(id) {
+  if (uploadingIds.has(id)) return true;
+  if (uploadSession.pendingIds.has(id)) {
+    const p = typeof store !== 'undefined' && store.getPhoto?.(id);
+    if (p && p.remoteReady) {
+      uploadSession.pendingIds.delete(id);
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+export function getUploadSession() {
+  return {
+    active: uploadSession.active,
+    total: uploadSession.total,
+    done: uploadSession.done,
+    fail: uploadSession.fail,
+    text: uploadSession.text,
+    pending: uploadSession.pendingIds.size,
+    pendingIds: [...uploadSession.pendingIds],
+  };
+}
+export function onUploadSession(fn) {
+  uploadListeners.add(fn);
+  return () => uploadListeners.delete(fn);
+}
+export function beginUploadBatch(total, text = '') {
+  uploadSession.active = true;
+  uploadSession.total = total;
+  uploadSession.done = 0;
+  uploadSession.fail = 0;
+  uploadSession.text = text || `准备上传 0/${total}…`;
+  notifyUpload();
+}
+export function setUploadBatchText(text) {
+  uploadSession.text = text || '';
+  notifyUpload();
+}
+export function endUploadBatch() {
+  uploadSession.active = false;
+  // 失败项仍留在 pendingIds，角标继续「上传中/待补传」直到 remoteReady 或删掉
+  if (uploadSession.pendingIds.size) {
+    uploadSession.text = `还有 ${uploadSession.pendingIds.size} 项未传到照片服务，可点「一键补传」`;
+  } else {
+    uploadSession.text = '';
+  }
+  notifyUpload();
+}
+function trackPending(id, on) {
+  if (on) uploadSession.pendingIds.add(id);
+  else uploadSession.pendingIds.delete(id);
+  notifyUpload();
+}
+function markUploading(id, on) {
+  if (on) {
+    uploadingIds.add(id);
+    uploadSession.pendingIds.add(id);
+  } else {
+    uploadingIds.delete(id);
+  }
+  notifyUpload();
+}
+export const BATCH_SOFT_LIMIT = 12; // 建议单次张数；超过只提示，不硬拦
+export const UPLOAD_CONCURRENCY = 1; // 隧道串行，避免挤垮慢上行
 
 /** 选图/拍照后入库：先写缩略图+本机缓存立刻可见，再后台加密上传原图 */
 export async function addPhotoFromFile(file, { note = '', takenAt, onLocalReady, onProgress } = {}) {
@@ -206,13 +298,20 @@ export async function addPhotoFromFile(file, { note = '', takenAt, onLocalReady,
 
   let remoteReady = false;
   let uploadError = '';
+  let chunks = 0;
   if (willUpload) {
     try {
-      const enc = await getEncKey();
-      const packed = await core.sealBytes(enc, id, buf);
-      await putEncryptedPhoto(id, packed);
+      // 隧道慢上行：整文件 PUT 易超时；统一按 UPLOAD_CHUNK 分块走 /v1/video（与视频同协议）
+      chunks = await putPlainChunks(id, buf, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
       remoteReady = true;
-      photo = store.upsertPhoto({ ...store.getPhoto(id), remoteReady: true });
+      photo = store.upsertPhoto({
+        ...store.getPhoto(id),
+        chunks,
+        chunkSize: UPLOAD_CHUNK,
+        storage: 'chunks',
+        remoteReady: true,
+      });
+      trackPending(id, false);
       onProgress?.({ phase: 'done', id });
     } catch (e) {
       uploadError = e.message || String(e);
@@ -226,7 +325,9 @@ export async function addPhotoFromFile(file, { note = '', takenAt, onLocalReady,
 }
 
 // ───────── v1.10.0 视频 ─────────
-export const VIDEO_CHUNK = 4 * 1024 * 1024; // 每块明文 4MB，单独 AES-GCM（AAD = id:n），iPhone 不用整段读进内存
+/** 明文分块大小。Cloudflare Tunnel 慢上行时 ≥512KB 易超时；256KB 实测稳定 */
+export const UPLOAD_CHUNK = 256 * 1024;
+export const VIDEO_CHUNK = UPLOAD_CHUNK; // 与照片同块大小，兼容旧 meta.chunkSize
 export function videoMaxBytes() { return Math.max(10, Number(store.state.settings.videoMaxMB) || 200) * 1024 * 1024; }
 export function videoCacheBytes() { return Math.max(50, Number(store.state.settings.videoCacheMB) || 500) * 1024 * 1024; }
 const vkey = (id) => `v:${id}`;
@@ -300,21 +401,52 @@ async function evictVideoCache(keepId) {
 }
 export async function hasLocalVideo(id) { return !!(await idbGet(vkey(id)).catch(() => null))?.blob; }
 
-async function putVideoChunks(id, blob, onProgress) {
+/** 把明文（Uint8Array 或 Blob）按 UPLOAD_CHUNK 分块加密 PUT 到 /v1/video/:id/:n */
+async function putPlainChunks(id, plainOrBlob, onProgress) {
   const base = photoApiBase();
+  if (!base) throw new Error('未配置照片服务地址');
   const enc = await getEncKey();
-  const chunks = Math.max(1, Math.ceil(blob.size / VIDEO_CHUNK));
+  const isU8 = plainOrBlob instanceof Uint8Array;
+  const size = isU8 ? plainOrBlob.byteLength : plainOrBlob.size;
+  const chunkSize = UPLOAD_CHUNK;
+  const chunks = Math.max(1, Math.ceil(size / chunkSize));
   for (let n = 0; n < chunks; n++) {
-    const part = new Uint8Array(await blob.slice(n * VIDEO_CHUNK, (n + 1) * VIDEO_CHUNK).arrayBuffer());
+    let part;
+    if (isU8) {
+      part = plainOrBlob.subarray(n * chunkSize, Math.min(size, (n + 1) * chunkSize));
+    } else {
+      part = new Uint8Array(await plainOrBlob.slice(n * chunkSize, (n + 1) * chunkSize).arrayBuffer());
+    }
     const packed = await core.sealBytes(enc, `${id}:${n}`, part);
     let res;
+    let lastErr;
     for (let tryN = 0; tryN < 3; tryN++) {
-      try { res = await fetch(`${base}/v1/video/${encodeURIComponent(id)}/${n}`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: packed }); if (res.ok) break; } catch (e) { if (tryN === 2) throw e; }
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), 90000) : null;
+      try {
+        res = await fetch(`${base}/v1/video/${encodeURIComponent(id)}/${n}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: packed,
+          signal: ctrl?.signal,
+        });
+        if (res.ok) break;
+        lastErr = new Error(`照片服务返回 ${res.status}`);
+      } catch (e) {
+        lastErr = e?.name === 'AbortError' ? new Error('分块上传超时，请检查隧道或稍后再补传') : e;
+        if (tryN === 2) throw lastErr;
+        await new Promise((r) => setTimeout(r, 800 * (tryN + 1)));
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
     }
-    if (!res?.ok) throw new Error(`照片服务返回 ${res?.status}（旧版服务不支持视频？请在极空间重建容器）`);
+    if (!res?.ok) throw lastErr || new Error(`照片服务返回 ${res?.status}（旧版服务不支持分块？请在极空间重建容器）`);
     onProgress?.((n + 1) / chunks);
   }
   return chunks;
+}
+async function putVideoChunks(id, blob, onProgress) {
+  return putPlainChunks(id, blob, onProgress);
 }
 
 /** 选视频后入库：先封面+本机缓存立刻可见，再分块加密上传 */
@@ -345,6 +477,7 @@ export async function addVideoFromFile(file, { note = '', takenAt, onLocalReady,
       chunks = await putVideoChunks(id, file, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
       remoteReady = true;
       photo = store.upsertPhoto({ ...store.getPhoto(id), chunks, chunkSize: VIDEO_CHUNK, remoteReady: true });
+      trackPending(id, false);
       onProgress?.({ phase: 'done', id });
     } catch (e) {
       uploadError = e.message || String(e);
@@ -427,8 +560,25 @@ export async function loadPhotoBlob(id) {
 
   try {
     const enc = await getEncKey();
-    const packed = await fetchEncryptedPhoto(id);
-    const plain = await core.unsealBytes(enc, id, packed);
+    let plain;
+    if (meta.chunks || meta.storage === 'chunks') {
+      const base = photoApiBase();
+      const parts = [];
+      const nChunks = Number(meta.chunks) || 0;
+      if (!nChunks) throw new Error('分块元数据缺失');
+      for (let n = 0; n < nChunks; n++) {
+        const res = await fetch(`${base}/v1/video/${encodeURIComponent(id)}/${n}`);
+        if (!res.ok) throw new Error(res.status === 404 ? '照片服务上找不到这张原图' : `照片服务返回 ${res.status}`);
+        parts.push(await core.unsealBytes(enc, `${id}:${n}`, new Uint8Array(await res.arrayBuffer())));
+      }
+      const total = parts.reduce((s, p) => s + p.byteLength, 0);
+      plain = new Uint8Array(total);
+      let off = 0;
+      for (const p of parts) { plain.set(p, off); off += p.byteLength; }
+    } else {
+      const packed = await fetchEncryptedPhoto(id);
+      plain = await core.unsealBytes(enc, id, packed);
+    }
     await idbPut(id, { plain, mime: meta.mime, savedAt: Date.now() });
     return { blob: new Blob([plain], { type: meta.mime }), source: 'remote' };
   } catch (e) {
@@ -452,6 +602,13 @@ export async function removePhoto(id) {
   }
   await idbDel(id).catch(() => {});
   await deleteRemotePhoto(id);
+  // 分块存的照片走 /v1/video 目录
+  if (meta?.chunks || meta?.storage === 'chunks') {
+    const base = photoApiBase();
+    if (base) await fetch(`${base}/v1/video/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+  }
+  uploadSession.pendingIds.delete(id);
+  uploadingIds.delete(id);
   store.deletePhoto(id);
 }
 
@@ -468,11 +625,16 @@ export async function retryUpload(id, { onProgress } = {}) {
     } else {
       const cached = await idbGet(id);
       if (!cached?.plain) throw new Error('本机没有原图缓存，无法补传。删过 App 后需删除这条，再从手机相册重新选图上传');
-      const enc = await getEncKey();
-      const packed = await core.sealBytes(enc, id, cached.plain);
-      await putEncryptedPhoto(id, packed);
-      store.upsertPhoto({ ...store.getPhoto(id), remoteReady: true });
+      const chunks = await putPlainChunks(id, cached.plain, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
+      store.upsertPhoto({
+        ...store.getPhoto(id),
+        chunks,
+        chunkSize: UPLOAD_CHUNK,
+        storage: 'chunks',
+        remoteReady: true,
+      });
     }
+    trackPending(id, false);
     onProgress?.({ phase: 'done', id });
   } catch (e) {
     onProgress?.({ phase: 'error', id, error: e.message || String(e) });
@@ -480,6 +642,41 @@ export async function retryUpload(id, { onProgress } = {}) {
   } finally {
     markUploading(id, false);
   }
+}
+
+/** 对本机仍有缓存、remoteReady=false 的项串行补传（限并发=1） */
+export async function retryAllPendingUploads({ onProgress, onlyIds } = {}) {
+  if (!photoApiBase()) throw new Error('请先填写照片服务地址');
+  const idSet = onlyIds ? new Set(onlyIds) : null;
+  const list = store.photos().filter((p) => {
+    if (p.remoteReady) return false;
+    if (idSet && !idSet.has(p.id)) return false;
+    return true;
+  });
+  const todo = [];
+  for (const p of list) {
+    const has = p.kind === 'video' ? await hasLocalVideo(p.id) : await hasLocalPhoto(p.id);
+    if (has) todo.push(p);
+  }
+  if (!todo.length) return { ok: 0, fail: 0, skipped: list.length };
+  beginUploadBatch(todo.length, `补传 0/${todo.length}…`);
+  let ok = 0, fail = 0;
+  for (const [i, p] of todo.entries()) {
+    setUploadBatchText(`补传 ${i + 1}/${todo.length}…`);
+    onProgress?.({ phase: 'upload', id: p.id, index: i, total: todo.length });
+    try {
+      await retryUpload(p.id, { onProgress });
+      ok++;
+      uploadSession.done = ok;
+    } catch (e) {
+      fail++;
+      uploadSession.fail = fail;
+      onProgress?.({ phase: 'error', id: p.id, error: e.message || String(e) });
+    }
+    notifyUpload();
+  }
+  endUploadBatch();
+  return { ok, fail, skipped: list.length - todo.length };
 }
 
 export function photosByDay(list = store.photos()) {
