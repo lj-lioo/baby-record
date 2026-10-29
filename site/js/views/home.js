@@ -15,6 +15,7 @@ import { renderPaidCard, markDone } from './paidcat.js';
 import { replacementHints, priceBriefOfSid } from '../paidvax.js';
 import { ageOnDate } from '../growth.js';
 import { openBabyProfile } from './settings.js';
+import { openVoice } from './voice.js';
 
 const ui = { month: null, selected: null, focus: null, scrollTo: null };
 let repHints = new Map(); // v1.7.0：已计划的自费疫苗可替代的免费剂次
@@ -38,6 +39,7 @@ export function renderHome(root) {
         <div><h1>${esc(babyName)}${totalDays ? `<span class="title-days" id="titleDays">（${totalDays}天）</span>` : ''}</h1><div class="sub">${esc(sub)}</div></div>
       </button>
     </header>
+    <button type="button" class="voice-cta" id="btnVoice">🎤 说一句话记事<span>如「11月5号买奶粉」</span></button>
     <div id="pushBanner"></div>
     <div id="vaxCta"></div>
     <section class="card remind-card" id="remindCard"></section>
@@ -47,6 +49,7 @@ export function renderHome(root) {
     <button class="fab" id="fab" aria-label="添加事项">＋</button>`;
 
   root.querySelector('#btnBabyProfile').onclick = () => openBabyProfile();
+  root.querySelector('#btnVoice').onclick = () => openVoice();
   repHints = replacementHints(store.events()); // 日历针标红叉也要用，须在 renderCalendar 之前
   renderReminderCard(root.querySelector('#remindCard'));
   renderCalendar(root.querySelector('#calCard'));
