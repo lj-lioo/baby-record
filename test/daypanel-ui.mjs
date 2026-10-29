@@ -45,7 +45,7 @@ await page.evaluate(async (all) => {
 await page.reload(); await page.waitForTimeout(900);
 const day = (d) => page.locator(`.day[data-date="${d}"]`);
 const shot = async (n) => { await page.evaluate(() => { const p = document.getElementById('dayPanel'); if (p) window.scrollBy(0, p.getBoundingClientRect().bottom - window.innerHeight + 200); }); await page.waitForTimeout(200); await page.screenshot({ path: path.join(shotDir, n) }); };
-check(`版本 ${APP_V}`, APP_V === '1.12.10');
+check(`版本 ${APP_V}`, APP_V === '1.12.11');
 // 1) 有事项（含黄色其他）第一次点 → 小框，不展开不滚
 await day('2026-10-30').scrollIntoViewIfNeeded(); const y0 = await page.evaluate(() => window.scrollY);
 await day('2026-10-30').evaluate((b) => b.click()); await page.waitForTimeout(400);
@@ -95,9 +95,10 @@ check('切月后无小框', await page.locator('#dayPanel').count() === 0);
 await day('2027-01-17').click(); await page.waitForTimeout(400);
 check('1/17 小框只剩五联（脊灰/百白破被替代不列）', await page.locator('#dayPanel .dp-row').count() === 1 && (await page.locator('#dayPanel').innerText()).includes('五联'));
 await shot('62-daypanel-0117.png');
-// FAB 左下、缩小
-const fb = await page.locator('#fab').boundingBox();
-check(`FAB 46px 左下 (${Math.round(fb.width)} @x${Math.round(fb.x)})`, fb.width <= 47 && fb.x < 40);
+// v1.12.11：无浮动＋；空日子不在列表生成占位框
+check('无浮动＋', await page.locator('#fab, .fab').count() === 0);
+check('列表无「这一天还没有安排」', !(await page.locator('body').innerText()).includes('这一天还没有安排'));
+check('保留月标题＋添加', await page.locator('#addHere').count() === 1);
 // 被自费替代的免费剂次：日历/小框/列表完全不显示
 const reps = await page.evaluate(async () => { const { store } = await import('./js/store.js'); const { replacementHints } = await import('./js/paidvax.js'); const h = replacementHints(store.events()); return store.events().filter((e) => e.category === 'vaccine' && !e.done && h.get(e.scheduleId)).map((e) => ({ id: e.id, date: e.date, title: e.title })); });
 console.log('被替代剂次', reps.map((r) => r.date + ' ' + r.title).join(' | '));

@@ -28,7 +28,7 @@ const shanghai = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/S
 const d0 = ymd(shanghai), d2 = ymd(new Date(shanghai.getTime() + 2 * 864e5)), d5 = ymd(new Date(shanghai.getTime() + 5 * 864e5));
 
 async function addItem({ title, cat, date, time, note, customAbs }) {
-  await page.click('#fab');
+  await page.click('#addHere');
   await page.waitForSelector('#f-title');
   await page.fill('#f-title', title);
   await page.click(`#f-cat [data-cat=${cat}]`);
