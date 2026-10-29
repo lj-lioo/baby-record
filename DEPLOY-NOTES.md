@@ -1,3 +1,9 @@
+## v1.14.1（修：选图点勾没反应）
+
+- 根因：`＋上传` 先关面板再延时点 file input，打断 iOS 用户手势链，偶发选完勾选后 change 丢失；叠加上传中 `store.subscribe` 整页重绘。
+- 修：手势里同步 `input.click()` 再关面板；选中后立刻 toast「正在处理」；body 委托 change；上传批次中跳过相册整页 subscribe 重绘；局域网 http / 旧版服务快速失败并提示。
+- 版本：config / sw / settings → 1.14.1。
+
 ## v1.14.0（极空间存普通照片，不再加密）
 
 - photo-server 1.14.0：`/v1/file/:id/:n` 明文 256KB 分块，收齐拼成 `年/年-月/YYYYMMDD_HHMMSS_短id.ext`，mtime=拍摄时间；`.index/<id>.json` 记录路径/MIME；GET 原样返回（Range）；`/v1/legacy/:id` 删旧密文。旧 `/v1/photo`、`/v1/video` 全保留。
