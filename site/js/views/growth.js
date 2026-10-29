@@ -4,7 +4,7 @@ import { esc, toast, confirmSheet, openSheet, closeSheet } from '../ui.js';
 import { openBabyProfile } from './settings.js';
 import { todayStr } from '../dates.js';
 import {
-  ageOnDate, growthSorted, deltaTip, validateGrowth, chartSvg, seriesFor,
+  ageOnDate, growthSorted, medsSorted, medPeriod, deltaTip, validateGrowth, chartSvg, seriesFor,
   HEIGHT_MIN, HEIGHT_MAX, WEIGHT_MIN, WEIGHT_MAX, HEAD_MIN, HEAD_MAX,
 } from '../growth.js';
 
@@ -31,6 +31,7 @@ export function renderGrowth(root) {
       ${TABS.map((t) => `<button type="button" role="tab" class="gr-tab${activeTab === t.id ? ' on' : ''}" data-tab="${t.id}" aria-selected="${activeTab === t.id}">${esc(t.label)}</button>`).join('')}
     </div>
     <div id="grBody">${activeTab === 'list' ? renderList(list, bday) : renderChart(activeTab)}</div>
+    ${renderMeds()}
     <p class="small muted" style="text-align:center;margin:8px 0 24px">数据本机保存并可云同步 · 曲线与增减仅供参考，非医疗建议</p>
   `;
 
@@ -42,6 +43,10 @@ export function renderGrowth(root) {
   });
   root.querySelectorAll('[data-gid]').forEach((el) => {
     el.onclick = () => openEditor(el.dataset.gid, root);
+  });
+  q('#btnAddMed').onclick = () => openMedEditor(null, root);
+  root.querySelectorAll('[data-mid]').forEach((el) => {
+    el.onclick = () => openMedEditor(el.dataset.mid, root);
   });
 }
 
@@ -133,6 +138,76 @@ function openEditor(id, growthRoot) {
       const ok = await confirmSheet('确定删除这条生长记录吗？其他家人同步后也会删掉。', '删除', true);
       if (!ok) return;
       store.deleteGrowth(existing.id);
+      toast('已删除');
+      closeSheet();
+      renderGrowth(growthRoot);
+    };
+  });
+}
+
+// v1.12.0 用药记录（放在生长记录下方）：在用排上面，已停用在下
+function medRow(m, on) {
+  return `<div class="md-row${on ? ' on' : ''}" data-mid="${esc(m.id)}" role="button" tabindex="0">
+    <div class="md-top"><span class="md-name">${esc(m.name)}</span>${on ? '<span class="md-tag">在用</span>' : ''}</div>
+    ${m.dose ? `<div class="md-dose">${esc(m.dose)}</div>` : ''}
+    <div class="md-period">${esc(medPeriod(m))}</div>
+    ${m.note ? `<div class="md-note">${esc(m.note)}</div>` : ''}
+  </div>`;
+}
+function renderMeds() {
+  const { active, past } = medsSorted();
+  return `<section class="card md-card" id="medsCard">
+    <div class="md-head"><h2 style="margin:0">💊 用药记录</h2>
+      <button class="btn secondary" id="btnAddMed" style="padding:6px 12px;flex:none">添加</button></div>
+    ${!active.length && !past.length ? '<p class="small muted" style="margin:8px 0 0">还没有用药记录，点「添加」记下药品、剂量和开始日期。</p>' : ''}
+    ${active.length ? `<div class="md-sec">在用 · ${active.length}</div>${active.map((m) => medRow(m, true)).join('')}` : ''}
+    ${past.length ? `<div class="md-sec">已停用 / 单次 · ${past.length}</div>${past.map((m) => medRow(m, false)).join('')}` : ''}
+  </section>`;
+}
+
+function openMedEditor(id, growthRoot) {
+  const existing = id ? store.getMed(id) : null;
+  const m = existing || { name: '', dose: '', start: todayStr(), end: '', note: '' };
+  openSheet(`
+    <h3>${existing ? '编辑用药' : '添加用药'}</h3>
+    <div class="field"><label for="md-name">药品</label>
+      <input id="md-name" class="input" maxlength="60" value="${esc(m.name)}" placeholder="例如 维生素AD"></div>
+    <div class="field"><label for="md-dose">剂量 / 用法</label>
+      <input id="md-dose" class="input" maxlength="80" value="${esc(m.dose)}" placeholder="例如 一天一粒"></div>
+    <div class="field"><label for="md-start">开始日期</label>
+      <input id="md-start" type="date" class="input" value="${esc(m.start)}"></div>
+    <div class="field"><label for="md-end">结束日期（还在吃就不填）</label>
+      <input id="md-end" type="date" class="input" value="${esc(m.end)}"></div>
+    <div class="field"><label for="md-note">备注（可不填）</label>
+      <input id="md-note" class="input" maxlength="200" value="${esc(m.note || '')}" placeholder="可选"></div>
+    <p class="small muted" id="mdErr" hidden style="color:var(--danger);font-weight:700"></p>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn ghost" id="mdCancel">取消</button>
+      ${existing && !existing.end ? '<button class="btn secondary" id="mdStop">今天停用</button>' : ''}
+      <button class="btn" id="mdSave">保存</button>
+    </div>
+    ${existing ? '<div class="btn-row" style="margin-top:8px"><button class="btn danger" id="mdDel">删除</button></div>' : ''}
+  `, (sh) => {
+    const v = (s) => sh.querySelector(s).value;
+    const save = (patch = {}) => {
+      const p = { id: existing?.id, createdAt: existing?.createdAt, name: v('#md-name'), dose: v('#md-dose'), start: v('#md-start'), end: v('#md-end'), note: v('#md-note'), ...patch };
+      const errEl = sh.querySelector('#mdErr');
+      const err = !p.name.trim() ? '请填写药品' : !/^\d{4}-\d{2}-\d{2}$/.test(p.start) ? '请选择开始日期' : (p.end && p.end < p.start ? '结束日期不能早于开始日期' : '');
+      if (err) { errEl.hidden = false; errEl.textContent = err; return; }
+      store.upsertMed(p);
+      toast(existing ? '已保存' : '已添加');
+      closeSheet();
+      renderGrowth(growthRoot);
+    };
+    sh.querySelector('#mdCancel').onclick = closeSheet;
+    sh.querySelector('#mdSave').onclick = () => save();
+    const stop = sh.querySelector('#mdStop');
+    if (stop) stop.onclick = () => save({ end: todayStr() });
+    const del = sh.querySelector('#mdDel');
+    if (del) del.onclick = async () => {
+      const ok = await confirmSheet('确定删除这条用药记录吗？其他家人同步后也会删掉。', '删除', true);
+      if (!ok) return;
+      store.deleteMed(existing.id);
       toast('已删除');
       closeSheet();
       renderGrowth(growthRoot);

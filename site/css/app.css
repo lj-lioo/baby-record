@@ -427,3 +427,15 @@ summary { font-weight: 700; cursor: pointer; }
 .v-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 .v-row .input { flex: 1; min-width: 0; }
 .v-meta .v-when { flex: 1; text-align: right; }
+/* v1.12.0 用药记录 */
+.md-card { margin-top: 14px; }
+.md-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.md-sec { margin: 14px 0 6px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.md-row { padding: 10px 12px; border-radius: 12px; background: #FBF6F2; margin-bottom: 8px; cursor: pointer; }
+.md-row.on { background: #EAF7F3; border-left: 4px solid #20A98B; }
+.md-top { display: flex; align-items: center; gap: 8px; }
+.md-name { font-weight: 800; font-size: 16px; }
+.md-tag { font-size: 11px; font-weight: 700; color: #fff; background: #20A98B; border-radius: 999px; padding: 1px 8px; }
+.md-dose { margin-top: 2px; font-size: 14px; }
+.md-period { margin-top: 2px; font-size: 13px; color: var(--muted); }
+.md-note { margin-top: 4px; font-size: 12px; color: var(--muted); }
