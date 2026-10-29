@@ -67,3 +67,7 @@ v1.7.0 起自费疫苗默认「待定」：`plan paid` **只写入已选定的 R
 `date`/`time` 仍是计划日期/时间，所以闹钟签名不变，不会误标「需重设闹钟」。`plan` 新写入的事项直接带窗口；`add` 可加 `--earliest/--latest`。
 v1.5.0 及更早的 App 不认识这三个字段（编辑后会丢掉），v1.6.0 会按 scheduleId + 生日重新推算显示，不影响使用。
 测试：`node test/refresh-windows.local.mjs`（本地 Worker，临时密钥）。
+
+## 相册原图（v1.8.0）
+元数据（`ph:<id>`，含缩略图）走上面的 Worker 同步；**原图密文**存极空间，见同目录 `photo-server/README.md`。
+App「设置 → 📷 照片服务」填局域网地址；客户端用同步密钥 AES-GCM 加密后再 PUT。

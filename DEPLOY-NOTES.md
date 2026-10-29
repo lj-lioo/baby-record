@@ -149,3 +149,18 @@
 - 测试（本地）：paidvax 20/20、paidvax-ui 63/63、sw-upgrade 32/32（加 v1.7.1→v1.7.2）。新截图 32–34：32-paid-catalog-prices、33-paid-item-price、34-help-paid-price。
 - 提交：f398bfb（paidvax.js PAID_PRICES/PAID_RECS）→ 5fcafa7（paidcat.js、home.js、app.css）→ d6be88a（help.js）
   → 7a3f0c0（config.js、sw.js、settings.js 版本 1.7.2）→ 63bec0a（paidvax.test、paidvax-ui、sw-upgrade）→ ac34ef4（README）→ 本文件。
+
+## v1.8.0（相册 + 极空间照片服务）
+- 需求：App 加「相册」页；元数据（缩略图/说明/时间）走现有端到端云同步；原图 AES-GCM 加密后存极空间 Docker 小服务；暂不买域名（家里局域网 / 外出 VPN）。
+- 新增：
+  - `site/js/photos.js`（缩略图、IndexedDB 缓存、加密 PUT/GET）
+  - `site/js/views/album.js`（时间轴相册 UI）
+  - `site/js/sync-core.js`：`PHOTO_PREFIX` / `sealBytes` / `unsealBytes` / `keyFingerprint`
+  - `site/js/store.js`：`photos[]`、`photoApi` 设置、`applyRemote` 支持相册
+  - `site/js/sync.js`：同步 `ph:<id>` 元数据 + tombstone
+  - `sync/photo-server/`：Node 服务 + Dockerfile + README（端口 8789，挂载 `/data`）
+- 设置：「📷 照片服务」填 `http://192.168.x.x:8789`，可测试连接（本机设置，不同步）。
+- 帮助：`#h-album`、`#h-nas`。
+- 版本：config.js / sw.js / settings APP_BUILD → 1.8.0；sw ASSETS 加 photos.js、album.js。
+- 测试：`node test/photos.test.mjs`（4）、`node sync/photo-server/test.mjs`（4）、`node test/album-ui.mjs`（9，截图 35–37）；回归 vaccines/paidvax/windows/checkups。
+- 已知限制：无自定义域名时，云同步（workers.dev）与外出访问极空间都需要 VPN 或同网；家人权限与现网一致（同一同步密钥全能）。
