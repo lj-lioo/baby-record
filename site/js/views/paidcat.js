@@ -6,6 +6,7 @@ import { todayStr, cnDate, weekday, addDays, parseYmd } from '../dates.js';
 import { defaultReminders } from '../reminders.js';
 import { offerOldAlarmCleanup } from './actions.js';
 import { SERIES, catalogEntries, seriesPlan, seriesStartInfo, seriesOfSid, reflowSeries, PAID_CATEGORY, PAID_DISCLAIMER, PAID_PRICE_NOTE, PAID_REC_NOTE, priceLine, priceBrief, recLine, recBrief } from '../paidvax.js';
+import { canEditEvents, requireEditEvents } from '../roles.js';
 
 const TIME = '09:00';
 const BDAY_DEFAULT = '2026-09-17';
@@ -46,8 +47,8 @@ function entryHtml(x, all) {
   const late = !x.inPlan && !x.doneN && info.latest && info.latest < todayStr();
   const body = x.doses.length
     ? `<ol class="pc-doses">${x.doses.map((e) => `<li class="${e.done ? 'done' : ''}"><b>${esc(doseLabel(fam, nOf(e)))}</b> ${esc(fmt(e.date))}${e.done ? ' ✅ 已完成' : ''}</li>`).join('')}</ol>
-       ${x.inPlan ? `<button type="button" class="btn danger pc-rm" data-rm="${fam}">🗑 移出计划（回到待定）</button>` : '<p class="small muted" style="margin:6px 0 0">其余剂次已移出计划。需要时可用「＋ 添加」手动记录，或咨询接种门诊。</p>'}`
-    : `<button type="button" class="btn pc-add" data-add="${fam}" ${late ? 'disabled' : ''}>➕ 加入计划</button>`;
+       ${x.inPlan ? (canEditEvents() ? `<button type="button" class="btn danger pc-rm" data-rm="${fam}">🗑 移出计划（回到待定）</button>` : '<p class="small muted" style="margin:6px 0 0">亲友身份不能移出计划。</p>') : '<p class="small muted" style="margin:6px 0 0">其余剂次已移出计划。需要时可用「＋ 添加」手动记录，或咨询接种门诊。</p>'}`
+    : (canEditEvents() ? `<button type="button" class="btn pc-add" data-add="${fam}" ${late ? 'disabled' : ''}>➕ 加入计划</button>` : '<p class="small muted" style="margin:6px 0 0">亲友身份不能加入计划。</p>');
   return `<details class="pc-item ${x.inPlan ? 'in' : ''}" data-fam="${fam}" ${openFam === fam ? 'open' : ''}>
     <summary><span class="pc-name">${esc(S.short || S.title)}</span>${status}<span class="pc-sub">${esc(sub)}</span></summary>
     <div class="pc-body">
@@ -118,6 +119,7 @@ export function openPaidCatalog() {
 
 // ———————————————— 加入计划：选第1剂日期 + 预览全部剂次 ————————————————
 export function openSeriesPicker(fam, back = null) {
+  if (!requireEditEvents('当前身份不能加入自费疫苗计划')) return;
   const S = SERIES[fam];
   const b = bday(), today = todayStr();
   const info = seriesStartInfo(fam, b, today);
@@ -188,6 +190,7 @@ export function openSeriesPicker(fam, back = null) {
 
 // ———————————————— 移出计划（回到待定） ————————————————
 export async function removeSeries(fam, back = null) {
+  if (!requireEditEvents('当前身份不能移出计划')) return;
   const S = SERIES[fam];
   const evs = famEvents(fam);
   const pending = evs.filter((e) => !e.done), doneN = evs.length - pending.length;

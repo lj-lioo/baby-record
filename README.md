@@ -29,6 +29,7 @@
 - 📅 导出 .ics 到苹果日历（多个 VALARM，按所选提醒时间）
 - App 打开时到点弹出全屏提醒页（铃声、知道了、稍后提醒10分钟）
 - 可选：Web Push 推送（需要 `server/` 推送服务在线）
+- **👨‍👩‍👧 亲友身份与邀请（v1.13.0）**：六种本机身份（爸爸/妈妈管理员；爷爷/奶奶/姥姥/姥爷可浏览+相册上传下载，不能改事项/闹钟/密钥等）。设置 → 亲友团生成 `#/join?role=…` 邀请（约7天、带签名、**不含同步密钥**）；详见 `docs/family-roles.md`。
 - **☁️ 云同步（可选，v1.4.0）**：设置 → 云同步，多台设备 / 盒子命令行共用一个同步密钥；数据在设备上 AES-GCM 加密后存到 Cloudflare Worker + D1（免费计划），服务端只见密文；开启时本机已有事项会上传合并、不会清空；配对链接 `#pair=<密钥>` 只在本地读取并立即从地址栏移除
 - 设置页导出 / 导入 JSON 备份
 
@@ -48,6 +49,7 @@ site/            静态网站（直接部署到 GitHub Pages）
   js/push.js        Web Push 客户端
   js/sync-core.js   云同步：密钥派生、加密、请求（浏览器与盒子命令行共用）
   js/sync.js        云同步：本地变更跟踪、合并、配对链接
+  js/roles.js       亲友身份 / 权限 / 邀请链接（v1.13.0）
   js/views/*.js     页面：home / editor / actions / alarm / settings / help / vaxplan / planned（改计划日）/ paidcat（自费疫苗待定目录、加入计划、顺延、移出计划）
   icons/src/*.svg   图标源文件（build-icons.sh 生成 PNG）
 sync/            云同步：worker/（Cloudflare Worker + D1 迁移 + 协议测试）、add-item.js（盒子命令行）、deploy.sh
