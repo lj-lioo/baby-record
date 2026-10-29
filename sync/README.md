@@ -1,5 +1,7 @@
 # 宝宝记录 · 云同步
 
+**已切换（2026-10-29）**：生产同步地址 `https://sync.jiayouzhaozhao.cn`（Cloudflare 账号 4678aa04…，D1 `b72d832b-…`）。旧 workers.dev（163 账号）仅作备份。照片 HTTPS 见 `docs/photo-tunnel.md`。
+
 **已部署（2026-09-29）**：Worker `https://baby-record-sync.baby-record-e1lwbaby-record-e1lw.workers.dev`（健康检查 `/v1/health`），D1 `baby-record-sync`；App v1.4.0 已启用。盒子密钥在 `~/.config/baby-record/sync.env`。
 
 ## 设计

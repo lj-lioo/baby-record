@@ -15,8 +15,9 @@ binding = "DB"
 database_name = "baby-record-sync"
 # 登录后运行 `npx wrangler d1 create baby-record-sync`，把输出的 database_id 填到这里
 # （sync/deploy.sh 会自动完成）。本地 `wrangler dev` 不需要真实 id。
-database_id = "b8d90f76-c206-419d-9a3f-da25b74b506d"
+database_id = "b72d832b-751d-46cd-ab37-8c1d762112a3"
 migrations_dir = "migrations"
 
 # 在国内访问：*.workers.dev 在中国大陆被屏蔽。若有托管在 Cloudflare 的域名，取消下面注释绑定自定义域名：
-# routes = [ { pattern = "sync.example.com", custom_domain = true } ]
+routes = [ { pattern = "sync.jiayouzhaozhao.cn", custom_domain = true } ]
+# 账号：域名所在 Cloudflare 账户 4678aa04…（Nbacba100201@gmail.com）；旧 Worker/D1 曾在 aa62ab9c…（163 邮箱）

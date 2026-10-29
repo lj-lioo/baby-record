@@ -222,7 +222,7 @@ export function renderHelp(root) {
         <li>本 App「设置 → 📷 照片服务」填同一个地址，点「测试连接」。</li>
         <li><b>v1.10.0 起支持视频</b>：极空间里需要用新代码重建一次容器（旧容器传视频会失败），/health 显示 version 1.10.0 即可。</li>
         <li><b>家里</b>：局域网直连即可上传/看原图。<b>外出</b>：需 VPN 连回家，或以后买域名 + Cloudflare Tunnel。</li>
-        <li>疫苗等事项的云同步目前仍是 <span class="kbd">*.workers.dev</span>，国内常需 VPN；以后绑自己的域名后家人一般可直连。</li>
+        <li>云同步已绑自定义域名 <span class="kbd">https://sync.jiayouzhaozhao.cn</span>，国内一般可直连（关 VPN 试一下「立即同步」）。照片需 <span class="kbd">https://photo.jiayouzhaozhao.cn</span>（Tunnel 就绪后）。</li>
       </ol>
       <p class="note">服务端只存密文，看不到照片内容。不要把同步密钥发给不信任的人，也不要写进 Docker 环境变量提交到公开地方。</p>
     </section>
