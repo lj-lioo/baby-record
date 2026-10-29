@@ -164,3 +164,12 @@
 - 版本：config.js / sw.js / settings APP_BUILD → 1.8.0；sw ASSETS 加 photos.js、album.js。
 - 测试：`node test/photos.test.mjs`（4）、`node sync/photo-server/test.mjs`（4）、`node test/album-ui.mjs`（9，截图 35–37）；回归 vaccines/paidvax/windows/checkups。
 - 已知限制：无自定义域名时，云同步（workers.dev）与外出访问极空间都需要 VPN 或同网；家人权限与现网一致（同一同步密钥全能）。
+
+## v1.9.0（生长记录）
+- 底部 Tab「📏 生长」：记录列表 + 身高/体重/头围曲线；右上角「添加」。
+- 字段：date、height(cm)、weight(kg)、head(cm 可选)、note；日龄按 settings.babyBirthday（出生当天＝第1天）。
+- 同步：`gr:` 前缀（sync-core `GROWTH_PREFIX`），type `growth`，删除 tombstone；与相册同一套端到端加密。
+- **不做**参考图里的 AI 评语/「问问小伴」；列表仅「相对上次」增减 +「非医疗建议」。
+- 曲线：纯 SVG，无外部 chart CDN。
+- 版本：config / sw / settings APP_BUILD → 1.9.0；sw ASSETS 加 growth.js、views/growth.js。
+- 测试：`node test/growth.test.mjs`（14）、`node test/growth-ui.mjs`（12，截图 38–41）。
