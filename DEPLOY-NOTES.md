@@ -1,3 +1,9 @@
+## v1.13.3（相册上传进度：先出缩略图再传原图）
+- 体验：选完图后立刻把本地缩略图插进时间轴（角标「上传中」），顶部进度条保持到原图上传结束（「已处理 1/3，上传中…」「上传中 2/3」）；失败明确 toast，可点「补传原图」。
+- `photos.js`：`addPhotoFromFile` / `addVideoFromFile` 先 upsert `remoteReady=false` 再加密上传；`isUploading` 本机角标；`retryUpload` 带进度且失败抛错。
+- `album.js`：进度条贯穿整批上传；补传按钮显示「补传中…」/失败文案。
+- 版本：config / sw / settings → 1.13.3。
+
 ## v1.13.2（修：从相册选图后什么都不出现）
 - 根因：file input 在相册页 DOM 里；iOS 从照片选择器返回触发 visibilitychange/同步 → render() 重建相册 DOM，旧 input 被替换，change 处理丢失，静默无反应。服务端（Tunnel/CORS/PUT/GET）curl 验证正常。
 - 修：三个 file input 改为挂在 body 常驻；选完先 toast「正在处理」；HEIC/空 MIME 按扩展名识别；createImageBitmap 失败回落 <img> 解码并给出明确报错。
