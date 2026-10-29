@@ -87,6 +87,8 @@ await check('面板有已完成与闹钟按钮', await page.locator('#evdDone').
 await page.screenshot({ path: path.join(shotDir, '56-reminder-detail.png'), fullPage: false });
 await page.locator('#sheetBackdrop').click({ position: { x: 10, y: 10 } }); await page.waitForTimeout(300);
 await check('点遮罩关闭', await page.locator('#sheet').isHidden());
+const tabs = await page.locator('#tabbar a').allInnerTexts();
+await check('底部导航顺序 ' + tabs.map((t) => t.replace(/\s+/g, '')).join('/'), tabs.map((t) => t.replace(/[^\u4e00-\u9fa5]/g, '')).join('/') === '日程/生长/相册/设置/帮助');
 await check('无页面错误 ' + errors.join(';'), errors.length === 0);
 await browser.close(); appSrv.close();
 console.log(`通过 ${pass}，失败 ${fail}`);
