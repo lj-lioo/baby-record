@@ -270,6 +270,13 @@ export function syncNow(reason = '') {
 // 打开时、每次修改后（1.5 秒防抖）、切回前台时、恢复联网时、前台每 2 分钟 同步一次
 export function initSync() {
   if (!syncAvailable()) return;
+  // v1.12.1：版本升级后游标归零。旧版不认识的前缀（如当时还没有的 gr:/md:）会被跳过但仍推进 cursor，导致升级后永远拉不到。
+  const ver = String(window.BABY_CONFIG?.appVersion || '');
+  if (ver && meta.appVer !== ver) {
+    meta.cursor = 0;
+    meta.appVer = ver;
+    saveMeta();
+  }
   store.subscribe(() => {
     if (applying || !meta.enabled) return;
     clearTimeout(timer);
