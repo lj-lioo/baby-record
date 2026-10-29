@@ -57,6 +57,14 @@ await page.waitForTimeout(800);
 await check('相册页有标题', await page.locator('h1').innerText() === '相册');
 await check('有上传按钮', await page.locator('#btnAddPhoto').count() === 1);
 await check('底部有相册 Tab', await page.locator('#tabbar a[data-tab=album]').count() === 1);
+await check('相册 input 无 capture', await page.locator('#filePhotoAlbum').count() === 1 && !(await page.locator('#filePhotoAlbum').getAttribute('capture')));
+await check('拍照 input 有 capture', (await page.locator('#filePhotoCamera').getAttribute('capture')) === 'environment');
+await page.click('#btnAddPhoto');
+await page.waitForTimeout(300);
+await check('上传面板有从相册选择', await page.locator('#pickAlbum').count() === 1);
+await check('上传面板有拍照', await page.locator('#pickCamera').count() === 1);
+await page.click('#pickCancel');
+await page.waitForTimeout(200);
 await page.screenshot({ path: path.join(shotDir, '35-album-empty.png'), fullPage: true });
 
 await page.goto(`http://127.0.0.1:${APP_PORT}/#/settings`);
@@ -80,7 +88,7 @@ await page.screenshot({ path: path.join(shotDir, '37-help-album-nas.png') });
   await page.goto(`http://127.0.0.1:${APP_PORT}/#/settings`);
   await page.waitForTimeout(400);
   const v = await page.locator('#appVer').innerText();
-  await check('设置页版本 1.8.0', v.includes('v1.8.0'));
+  await check('设置页版本 1.9.1', v.includes('v1.9.1'));
 }
 
 await check('无页面 JS 错误', errors.length === 0);

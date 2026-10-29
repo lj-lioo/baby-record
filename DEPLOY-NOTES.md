@@ -165,6 +165,11 @@
 - 测试：`node test/photos.test.mjs`（4）、`node sync/photo-server/test.mjs`（4）、`node test/album-ui.mjs`（9，截图 35–37）；回归 vaccines/paidvax/windows/checkups。
 - 已知限制：无自定义域名时，云同步（workers.dev）与外出访问极空间都需要 VPN 或同网；家人权限与现网一致（同一同步密钥全能）。
 
+## v1.9.1（相册选图：从相册 / 拍照分开）
+- 问题：`file` input 带 `capture="environment"`，iPhone 上「＋ 上传」只会开相机，无法从相册多选。
+- 改法：点「＋ 上传」弹出面板——「从相册选择」（`#filePhotoAlbum`，无 capture、可 multiple）与「拍照」（`#filePhotoCamera`，`capture="environment"`）；帮助文案同步；版本 1.9.1。
+- 未改生长记录逻辑。测试：album-ui 13/13、growth-ui 12/12。
+
 ## v1.9.0（生长记录）
 - 底部 Tab「📏 生长」：记录列表 + 身高/体重/头围曲线；右上角「添加」。
 - 字段：date、height(cm)、weight(kg)、head(cm 可选)、note；日龄按 settings.babyBirthday（出生当天＝第1天）。
