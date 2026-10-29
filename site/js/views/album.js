@@ -55,14 +55,19 @@ function triggerAnchor(blob, name) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
-/** 把已解密的原件交给系统保存；返回采用的方式 */
+/** 把已解密的原件交给系统保存；返回采用的方式：share|download|open|cancel */
 export async function saveBlobToDevice(blob, name) {
   const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
   if (isIOS() && navigator.canShare && navigator.share) {
     let can = false; try { can = navigator.canShare({ files: [file] }); } catch { can = false; }
     if (can) {
-      try { await navigator.share({ files: [file] }); return 'share'; }
-      catch (e) { if (e && e.name === 'AbortError') return 'cancel'; }
+      try {
+        await navigator.share({ files: [file] });
+        return 'share'; // 用户在分享面板完成操作（含「存储图像/视频」）后 resolve
+      } catch (e) {
+        if (e && e.name === 'AbortError') return 'cancel';
+        throw new Error(e?.message || '分享保存失败，请重试');
+      }
     }
     // iOS 不支持分享文件：新标签打开，长按/分享按钮保存
     const url = URL.createObjectURL(blob);
@@ -82,13 +87,33 @@ function wireDownload(sh, meta, getBlob) {
   let confirmed = false;
   let ready = null; // iPhone：取回后需再点一次（分享面板必须由点击直接触发）
   const say = (t, bad) => { st.hidden = !t; st.textContent = t || ''; st.className = `small ${bad ? 'bad' : 'muted'}`; };
+  const kindLabel = meta.kind === 'video' ? '视频' : '图像';
   btn.onclick = async () => {
     const name = originalFileName(meta);
     if (ready) {
-      const how = await saveBlobToDevice(ready, name);
-      if (how === 'share') say('已打开分享面板：选「存储图像 / 存储视频」即可存到相册');
-      else if (how === 'open') say('已在新页面打开原件：点分享按钮或长按保存');
-      else if (how === 'cancel') say('已取消，可再点一次保存');
+      btn.disabled = true; btn.textContent = '保存中…';
+      try {
+        const how = await saveBlobToDevice(ready, name);
+        btn.disabled = false; btn.textContent = '📥 保存到手机相册';
+        if (how === 'share') {
+          say('保存成功：已存到系统相册（或你在分享面板里选的位置）');
+          toast('已保存', 2500);
+        } else if (how === 'open') {
+          say('已在新页面打开原件：点分享按钮或长按图片，选「存储到照片」');
+          toast('请在新页面里长按保存', 3500);
+        } else if (how === 'cancel') {
+          say('已取消，可再点一次保存');
+          toast('已取消保存', 2000);
+        } else if (how === 'download') {
+          say(`已下载 ${name}`);
+          toast('保存成功', 2500);
+        }
+      } catch (e) {
+        btn.disabled = false; btn.textContent = '📥 保存到手机相册';
+        const msg = friendlyDlError(e);
+        say(`保存失败：${msg}`, true);
+        toast(`保存失败：${msg}`, 4500);
+      }
       return;
     }
     if (meta.kind === 'video') {
@@ -114,16 +139,26 @@ function wireDownload(sh, meta, getBlob) {
       btn.disabled = false;
       if (isIOS()) {
         ready = blob;
-        btn.textContent = meta.kind === 'video' ? '📥 保存到手机相册' : '📥 保存到手机相册';
-        say(`原件已就绪（${fmtSize(blob.size)}），再点一次按钮，在分享面板选「存储${meta.kind === 'video' ? '视频' : '图像'}」`);
+        btn.textContent = '📥 保存到手机相册';
+        say(`原件已就绪（${fmtSize(blob.size)}），再点一次按钮，在分享面板选「存储${kindLabel}」`);
       } else {
-        await saveBlobToDevice(blob, name);
-        btn.textContent = label;
-        say(`已下载 ${name}（${fmtSize(blob.size)}），可在「文件 / 下载」里找到`);
+        try {
+          await saveBlobToDevice(blob, name);
+          btn.textContent = label;
+          say(`保存成功：已下载 ${name}（${fmtSize(blob.size)}），可在「文件 / 下载」里找到`);
+          toast('保存成功', 2500);
+        } catch (e2) {
+          btn.textContent = label;
+          const msg = friendlyDlError(e2);
+          say(`保存失败：${msg}`, true);
+          toast(`保存失败：${msg}`, 4500);
+        }
       }
     } catch (e) {
       btn.disabled = false; btn.textContent = label;
-      say(friendlyDlError(e), true);
+      const msg = friendlyDlError(e);
+      say(msg, true);
+      toast(`下载失败：${msg}`, 4500);
     }
   };
 }
