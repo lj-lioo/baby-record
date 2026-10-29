@@ -55,6 +55,13 @@ await page.evaluate(async (all) => {
   store.applyRemote({ upserts: all });
 }, all);
 await page.reload(); await page.waitForTimeout(800);
+const pend = await page.locator('#pendFold').innerText();
+await check('待完成分组 ' + pend.trim(), /待完成（\d+）/.test(pend));
+await check('待完成默认收起', await page.locator('#pendBody').isHidden());
+const df0 = page.locator('#doneFold');
+if (await df0.count()) await check('已完成默认收起', await page.locator('#doneFoldBody').isHidden());
+await page.click('#pendFold'); await page.waitForTimeout(300);
+await check('点标题展开待完成', await page.locator('#pendBody').isVisible());
 const withNote = page.locator('.item:has(.det-toggle)').first();
 await check('有「显示详情 ▾」', (await withNote.locator('.det-toggle').innerText()).includes('显示详情'));
 await check('详情默认隐藏', await withNote.locator('.idetails').isHidden());
@@ -67,15 +74,12 @@ const c2 = page.locator(`.item[data-id="${id}"]`);
 await check('点开显示详情', await c2.locator('.idetails').isVisible() && (await c2.locator('.det-toggle').innerText()).includes('收起'));
 await c2.locator('.det-toggle').click(); await page.waitForTimeout(300);
 await check('再点收起', await page.locator(`.item[data-id="${id}"] .idetails`).isHidden());
-const pend = await page.locator('#pendFold').innerText();
-await check('待完成分组 ' + pend.trim(), /待完成（\d+）/.test(pend));
-await check('待完成默认展开', await page.locator('#pendBody').isVisible());
 await page.click('#pendFold'); await page.waitForTimeout(300);
-await check('点标题收起待完成', await page.locator('#pendBody').isHidden());
+await check('再点标题收起待完成', await page.locator('#pendBody').isHidden());
 await page.click('#pendFold'); await page.waitForTimeout(300);
 const df = page.locator('#doneFold');
 if (await df.count()) {
-  await check('已完成（N）默认折叠', /已完成（\d+）/.test(await df.innerText()) && await page.locator('#doneFoldBody').isHidden());
+  await check('已完成（N）标题', /已完成（\d+）/.test(await df.innerText()));
 }
 // 近期提醒 → 详情面板
 const r = page.locator('.ritem').first();
