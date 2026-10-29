@@ -409,3 +409,6 @@ summary { font-weight: 700; cursor: pointer; }
 .album-video-box img { max-width: 100%; max-height: 70vh; display: block; opacity: 0.85; }
 .album-play-btn { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,0.35); }
 .album-progress { margin-bottom: 10px; }
+
+/* v1.10.1 名字后括号总天数 */
+.topbar h1 .title-days { font-size: 0.5em; font-weight: 600; margin-left: 2px; vertical-align: baseline; opacity: .85; }

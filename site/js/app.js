@@ -54,6 +54,12 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { ch
 
 // 跨天时刷新“今天/明天”
 let lastDay = new Date().getDate();
+// v1.10.1：定时到次日 0 点重算（天数/月龄），再加每分钟兜底
+function scheduleMidnight() {
+  const n = new Date(); const next = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 0, 0, 1);
+  setTimeout(() => { lastDay = new Date().getDate(); render(); scheduleMidnight(); }, next - n);
+}
+scheduleMidnight();
 setInterval(() => { if (new Date().getDate() !== lastDay) { lastDay = new Date().getDate(); render(); } }, 60000);
 
 if ('serviceWorker' in navigator) {

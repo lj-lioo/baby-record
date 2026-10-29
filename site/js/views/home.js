@@ -1,7 +1,7 @@
 // 首页：醒目的近期提醒卡片 + 月历（含接种窗口）+ 本月全部事项（按计划日期分组）
 import { store } from '../store.js';
 import { CATEGORIES } from '../categories.js';
-import { todayStr, addDays, ymd, parseYmd, cnDate, weekday, countdown, pad } from '../dates.js';
+import { daysBetween, todayStr, addDays, ymd, parseYmd, cnDate, weekday, countdown, pad } from '../dates.js';
 import { fireAtOf, reminderLabel } from '../reminders.js';
 import { esc, toast } from '../ui.js';
 import { openEditor } from './editor.js';
@@ -27,6 +27,7 @@ export function renderHome(root) {
   const st = store.state.settings;
   const babyName = (st.babyName || '').trim() || '宝宝记录';
   const age = ageOnDate(st.babyBirthday, today);
+  const totalDays = st.babyBirthday && st.babyBirthday <= today ? daysBetween(st.babyBirthday, today) + 1 : 0; // v1.10.1 出生当天＝第1天
   const ageBit = age ? `已出生${age}` : '点此设置生日';
   const sub = `${ageBit} · ${cnDate(today, true)} ${weekday(today)}`;
 
@@ -34,7 +35,7 @@ export function renderHome(root) {
     <header class="topbar">
       <button type="button" class="logo logo-btn" id="btnBabyProfile" aria-label="编辑宝宝名字和生日">
         <img src="icons/icon-192.png" alt="">
-        <div><h1>${esc(babyName)}</h1><div class="sub">${esc(sub)}</div></div>
+        <div><h1>${esc(babyName)}${totalDays ? `<span class="title-days" id="titleDays">（${totalDays}天）</span>` : ''}</h1><div class="sub">${esc(sub)}</div></div>
       </button>
     </header>
     <div id="pushBanner"></div>
