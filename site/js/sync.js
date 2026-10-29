@@ -64,6 +64,18 @@ function profileTime() {
   return st.profileUpdatedAt || (st.babyBirthday || st.babyName ? 1 : 0);
 }
 
+async function shrinkThumb(url, w, q) {
+  try {
+    if (typeof Image === 'undefined' || typeof document === 'undefined') return null;
+    const img = new Image(); img.src = url; await img.decode();
+    const k = Math.min(1, w / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', q);
+  } catch { return null; }
+}
+
 // 本机需要上传的变更
 async function collectChanges(enc) {
   const changes = [];
@@ -86,8 +98,14 @@ async function collectChanges(enc) {
     const rid = PH + ph.id;
     presentPh.add(rid);
     if (meta.acked[rid] !== ph.updatedAt) {
-      changes.push({ id: rid, updatedAt: ph.updatedAt, deleted: false,
-        data: await core.seal(enc, rid, ph.updatedAt, { type: 'photo', photo: ph }) });
+      let data = await core.seal(enc, rid, ph.updatedAt, { type: 'photo', photo: ph });
+      // 缩略图太大（超 32KB 单条上限）→ 再压缩一次缩略图后上传
+      for (const [w, q] of [[240, 0.6], [160, 0.5]]) {
+        if (data.length <= 30 * 1024 || !ph.thumbData) break;
+        const t = await shrinkThumb(ph.thumbData, w, q);
+        if (t) data = await core.seal(enc, rid, ph.updatedAt, { type: 'photo', photo: { ...ph, thumbData: t } });
+      }
+      changes.push({ id: rid, updatedAt: ph.updatedAt, deleted: false, data });
     }
   }
   for (const rid of Object.keys(meta.acked)) {
@@ -131,7 +149,20 @@ async function collectChanges(enc) {
     changes.push({ id: core.PROFILE_ID, updatedAt: pt, deleted: false,
       data: await core.seal(enc, core.PROFILE_ID, pt, { type: 'profile', profile: { babyName: st.babyName, babyBirthday: st.babyBirthday } }) });
   }
-  return changes.slice(0, 500);
+  return changes;
+}
+
+// v1.12.2：按字节/条数分批（Worker 限制：请求体 1MB、500 条、单条密文 32KB），留余量
+const BATCH_BYTES = 700 * 1024, BATCH_COUNT = 300, ITEM_MAX = 32 * 1024;
+export function takeBatch(changes, skipped = []) {
+  const batch = []; let bytes = 200;
+  for (const c of changes) {
+    const len = (c.data ? c.data.length : 0) + c.id.length + 80;
+    if (c.data && c.data.length > ITEM_MAX) { skipped.push(c.id); continue; }
+    if (batch.length >= BATCH_COUNT || bytes + len > BATCH_BYTES) return { batch, rest: true };
+    batch.push(c); bytes += len;
+  }
+  return { batch, rest: false };
 }
 
 // 应用服务器返回的记录（其他设备 / 盒子命令行的修改）
@@ -241,10 +272,14 @@ export function syncNow(reason = '') {
   running = (async () => {
     emit();
     try {
-      for (let round = 0; round < 10; round++) {
+      let skippedAll = [];
+      for (let round = 0; round < 200; round++) {
         again = false;
         const { token, enc } = await keys();
-        const changes = await collectChanges(enc);
+        const skipped = [];
+        const { batch: changes, rest } = takeBatch(await collectChanges(enc), skipped);
+        skippedAll = skipped;
+        if (rest) again = true;
         const res = await core.syncRequest(syncApiBase(), token, { since: meta.cursor || 0, changes });
         const sent = new Map(changes.map((c) => [c.id, c.updatedAt]));
         for (const id of res.accepted || []) meta.acked[id] = sent.get(id);
@@ -255,7 +290,7 @@ export function syncNow(reason = '') {
         if (!res.more && !again) break;
       }
       meta.lastSyncAt = Date.now();
-      meta.lastError = '';
+      meta.lastError = skippedAll.length ? `有 ${skippedAll.length} 条数据太大未上传（如缩略图），其余已同步` : '';
     } catch (e) {
       meta.lastError = e.message || String(e);
       console.warn('云同步失败', reason, e);
