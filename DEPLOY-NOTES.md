@@ -1,3 +1,9 @@
+## v1.12.14（相册时间轴「第X天」+ 亲友权限方案）
+- 相册分组标题：相对日/日期 +「第X天」（出生当天＝第1天），例「昨天 第42天」「10月27日 第41天」。
+- `photos.js`：`dayNumberOnDate` / `fmtAlbumDayTitle`；`album.js` 分组 h2 使用。
+- 亲友团身份+权限：仅方案文档 `docs/family-roles.md`，本版不写完整权限代码。
+- 版本：config / sw / settings → 1.12.14；测试 `test/album-day-ui.mjs`（屏蔽 SW）；截图 67/68。
+
 ## v1.12.13（照片服务：说清 HTTPS→HTTP 混合内容限制）
 - 根因：App 在 `https://lj-lioo.github.io`，`fetch(http://192.168.x.x:8789/health)` 被浏览器当混合内容拦截；Safari 顶栏打开同一 URL 正常。CORS、`/health` 路径无误；photo-server 已允许 GitHub Pages Origin。
 - 改动：`pingPhotoServer` 预判并提示；设置页文案；album 错误文案；photo-server README 纠正「填局域网 http 即可」。
