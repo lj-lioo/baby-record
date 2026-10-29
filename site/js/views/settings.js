@@ -10,13 +10,13 @@ import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 import { openPaidCatalog, catalogCounts } from './paidcat.js';
 import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../sync.js';
 import { extractSyncKey } from '../sync-core.js';
-import { pingPhotoServer, videoCacheInfo, clearVideoCache } from '../photos.js';
+import { pingPhotoServer, videoCacheInfo, clearVideoCache, legacyEncryptedPhotos, migrateLegacyToPlain } from '../photos.js';
 import {
   getRole, setRole, canEditDangerousSettings, canEditProfile,
   ROLES, ADMIN_ROLES, ELDER_ROLES, roleCapabilityText, openRolePicker, copyInviteFor,
 } from '../roles.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.13.7';
+export const APP_BUILD = '1.14.0';
 
 /** 编辑宝宝名字 + 生日（云同步 profile）；保存后触发 rerender */
 export function openBabyProfile({ onSaved } = {}) {
@@ -143,11 +143,12 @@ export function renderSettings(root) {
 
     <section class="card" id="photoCard">
       <h2>📷 照片服务（极空间）</h2>
-      <p class="small muted" style="margin-top:0">相册原图加密后存到你家极空间里的小服务；缩略图和说明走云同步。<b>注意：</b>App 本身在 HTTPS（GitHub Pages）上，浏览器禁止它去连局域网的 <span class="kbd">http://192.168.x.x</span>（Safari 地址栏直接打开可以，App 里会 Load failed）。照片服务地址必须是 <b>https://…</b>（买域名后用 Cloudflare Tunnel 指到极空间 8789）。</p>
+      <p class="small muted" style="margin-top:0">相册原图/视频以普通照片文件存到你家极空间（按 年/年-月 分文件夹，极空间相册可直接看）；缩略图和说明走云同步。<b>注意：</b>App 本身在 HTTPS（GitHub Pages）上，浏览器禁止它去连局域网的 <span class="kbd">http://192.168.x.x</span>（Safari 地址栏直接打开可以，App 里会 Load failed）。照片服务地址必须是 <b>https://…</b>（买域名后用 Cloudflare Tunnel 指到极空间 8789）。</p>
       <div class="field"><label for="photoApi">照片服务地址</label>
         <input id="photoApi" class="input" placeholder="https://photo.jiayouzhaozhao.cn" value="${esc(st.photoApi || window.BABY_CONFIG?.photoApi || '')}"></div>
       <div class="btn-row"><button class="btn secondary" id="btnPhotoTest">测试连接</button><button class="btn ghost" id="btnPhotoSave">保存</button></div>
       <p class="small muted" id="photoTestResult" style="margin-top:8px"></p>
+      <div id="migrateBox" style="margin-top:8px"></div>
       <h3 style="margin:14px 0 6px;font-size:15px">🎬 视频（省流量）</h3>
       <div class="field"><label for="videoMaxMB">视频大小上限（MB）</label>
         <input id="videoMaxMB" class="input" type="number" inputmode="numeric" min="10" max="2000" value="${esc(String(st.videoMaxMB || 200))}"></div>
@@ -245,6 +246,24 @@ export function renderSettings(root) {
   };
   showVC();
   q('#btnVideoCacheClear').onclick = async () => { await clearVideoCache(); toast('已清空本机视频缓存'); showVC(); };
+  const showMig = () => {
+    const box = q('#migrateBox'); if (!box) return;
+    const n = legacyEncryptedPhotos().length;
+    box.innerHTML = n ? `<p class="small">极空间里还有 <b>${n}</b> 个旧的加密文件（看着像代码）。</p><div class="btn-row"><button class="btn secondary" id="btnMigrate">转换成普通照片</button></div><p class="small muted" id="migrateMsg">需先在极空间更新照片服务。转换时请保持 App 在前台、屏幕常亮。</p>` : '';
+    const b = q('#btnMigrate');
+    if (b) b.onclick = async () => {
+      b.disabled = true;
+      const msg = q('#migrateMsg');
+      try {
+        const r = await migrateLegacyToPlain({ onProgress: (x) => { msg.textContent = `转换中 ${x.index}/${x.total}（成功 ${x.ok}，失败 ${x.fail}）…请别锁屏`; } });
+        toast(r.fail ? `转换完成：成功 ${r.ok}，失败 ${r.fail}` : `已转换 ${r.ok} 个`, 4000);
+        msg.textContent = r.fail ? `失败原因：${r.errors[0] || ''}（可再点一次重试）` : '全部转换完成';
+      } catch (e) { msg.textContent = '转换失败：' + (e.message || e); }
+      b.disabled = false;
+      if (!legacyEncryptedPhotos().length) showMig();
+    };
+  };
+  showMig();
   q('#btnPhotoTest').onclick = async () => {
     const url = q('#photoApi').value.trim().replace(/\/+$/, '');
     store.updateSettings({ photoApi: url });

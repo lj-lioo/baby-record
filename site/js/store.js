@@ -104,7 +104,9 @@ export function normalizePhoto(p) {
     duration: Number(p.duration) || 0,             // 视频秒数
     chunks: Number(p.chunks) || 0,                 // 视频密文分块数
     chunkSize: Number(p.chunkSize) || 0,           // 每块明文字节
-    remoteReady: !!p.remoteReady, // 原图密文是否已成功 PUT 到照片服务
+    remoteReady: !!p.remoteReady, // 原图是否已成功传到照片服务
+    storage: ['file', 'chunks'].includes(p.storage) ? p.storage : '', // v1.14.0：file=极空间普通文件；chunks/空=旧密文
+    ext: /^[a-z0-9]{2,5}$/.test(p.ext || '') ? p.ext : '',
     createdAt: p.createdAt || Date.now(),
     updatedAt: p.updatedAt || Date.now(),
   };

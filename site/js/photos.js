@@ -1,5 +1,6 @@
-// v1.8.0 相册：缩略图、本机缓存、加密上传到极空间照片服务
-// 原图 AES-GCM 加密后 PUT；元数据（含缩略图 data URL）走现有云同步。
+// v1.8.0 相册：缩略图、本机缓存、原图存极空间照片服务；元数据（含缩略图 data URL）走现有云同步。
+// v1.14.0 起原图/视频明文分块传到 /v1/file（极空间存成普通照片，按 年/年-月 分文件夹）；
+// 旧的 AES 密文（storage='chunks' 或整文件 /v1/photo）仍可读取，并可一键转换成普通照片。
 import { store, uid } from './store.js';
 import * as core from './sync-core.js';
 import { syncStatus } from './sync.js';
@@ -292,6 +293,7 @@ export async function addPhotoFromFile(file, { note = '', takenAt, onLocalReady,
     height,
     thumbData: dataUrl,
     remoteReady: false,
+    ext: extOf(file),
   });
   onLocalReady?.(photo);
   onProgress?.({ phase: willUpload ? 'upload' : 'local', id });
@@ -302,15 +304,10 @@ export async function addPhotoFromFile(file, { note = '', takenAt, onLocalReady,
   if (willUpload) {
     try {
       // 隧道慢上行：整文件 PUT 易超时；统一按 UPLOAD_CHUNK 分块走 /v1/video（与视频同协议）
-      chunks = await putPlainChunks(id, buf, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
+      const patch = await uploadOriginal(id, buf, { taken, ext: extOf(file), mime: file.type || 'image/jpeg' }, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
+      chunks = patch.chunks || 0;
       remoteReady = true;
-      photo = store.upsertPhoto({
-        ...store.getPhoto(id),
-        chunks,
-        chunkSize: UPLOAD_CHUNK,
-        storage: 'chunks',
-        remoteReady: true,
-      });
+      photo = store.upsertPhoto({ ...store.getPhoto(id), ...patch, remoteReady: true });
       trackPending(id, false);
       onProgress?.({ phase: 'done', id });
     } catch (e) {
@@ -449,6 +446,130 @@ async function putVideoChunks(id, blob, onProgress) {
   return putPlainChunks(id, blob, onProgress);
 }
 
+const EXT_BY_MIME = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/heif': 'heif', 'image/gif': 'gif', 'image/webp': 'webp', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/3gpp': '3gp', 'video/x-m4v': 'm4v' };
+export function extOf(fileOrMeta) {
+  const m = /\.([a-z0-9]{2,5})$/i.exec(fileOrMeta?.name || '');
+  if (m) return m[1].toLowerCase().replace(/^jpeg$/, 'jpg');
+  return EXT_BY_MIME[String(fileOrMeta?.type || fileOrMeta?.mime || '').toLowerCase()] || '';
+}
+
+/** v1.14.0：明文按 UPLOAD_CHUNK 分块 PUT /v1/file/:id/:n，服务端收齐后存成普通照片/视频。旧服务（无 /v1/file）抛 code=old_server */
+async function putRawChunks(id, plainOrBlob, { taken, ext, mime } = {}, onProgress) {
+  const base = photoApiBase();
+  if (!base) throw new Error('未配置照片服务地址');
+  const isU8 = plainOrBlob instanceof Uint8Array;
+  const size = isU8 ? plainOrBlob.byteLength : plainOrBlob.size;
+  const chunkSize = UPLOAD_CHUNK;
+  const chunks = Math.max(1, Math.ceil(size / chunkSize));
+  const qs = new URLSearchParams({ total: String(chunks), taken: String(Number(taken) || Date.now()), ext: ext || '', mime: mime || '' }).toString();
+  for (let n = 0; n < chunks; n++) {
+    const part = isU8
+      ? plainOrBlob.subarray(n * chunkSize, Math.min(size, (n + 1) * chunkSize))
+      : new Uint8Array(await plainOrBlob.slice(n * chunkSize, (n + 1) * chunkSize).arrayBuffer());
+    let res, lastErr;
+    for (let tryN = 0; tryN < 3; tryN++) {
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), 90000) : null;
+      try {
+        res = await fetch(`${base}/v1/file/${encodeURIComponent(id)}/${n}?${qs}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: part, signal: ctrl?.signal,
+        });
+        if (res.ok) break;
+        if (n === 0 && (res.status === 404 || res.status === 405)) {
+          const e = new Error('照片服务是旧版（不支持存普通照片），请在极空间更新 server.js 并重启容器');
+          e.code = 'old_server';
+          throw e;
+        }
+        lastErr = new Error(`照片服务返回 ${res.status}`);
+      } catch (e) {
+        if (e.code === 'old_server') throw e;
+        lastErr = e?.name === 'AbortError' ? new Error('分块上传超时，请检查隧道或稍后再补传') : e;
+        if (tryN === 2) throw lastErr;
+        await new Promise((r) => setTimeout(r, 800 * (tryN + 1)));
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
+    if (!res?.ok) throw lastErr || new Error(`照片服务返回 ${res?.status}`);
+    onProgress?.((n + 1) / chunks);
+  }
+  return chunks;
+}
+
+/** 上传原图/视频：优先存普通文件；旧服务回落到加密分块。返回要写进元数据的字段 */
+async function uploadOriginal(id, plainOrBlob, info, onProgress) {
+  try {
+    const chunks = await putRawChunks(id, plainOrBlob, info, onProgress);
+    return { storage: 'file', chunks: 0, chunkSize: UPLOAD_CHUNK, ext: info.ext || '', fileChunks: chunks };
+  } catch (e) {
+    if (e.code !== 'old_server') throw e;
+    const chunks = await putPlainChunks(id, plainOrBlob, onProgress);
+    return { storage: 'chunks', chunks, chunkSize: UPLOAD_CHUNK };
+  }
+}
+
+/** 下载普通文件（原样字节） */
+async function fetchPlainFile(id, mime, onProgress) {
+  const base = photoApiBase();
+  if (!base) throw new Error('未配置照片服务地址');
+  const res = await fetch(`${base}/v1/file/${encodeURIComponent(id)}`);
+  if (res.status === 404) throw new Error('照片服务上找不到这个原文件');
+  if (!res.ok) throw new Error(`照片服务返回 ${res.status}`);
+  const buf = await res.arrayBuffer();
+  onProgress?.(1);
+  return new Blob([buf], { type: mime || res.headers.get('content-type') || 'application/octet-stream' });
+}
+
+/** 需要转换的旧加密原图（已上传、但不是普通文件） */
+export function legacyEncryptedPhotos() {
+  return store.photos().filter((p) => p.remoteReady && p.storage !== 'file');
+}
+
+/** v1.14.0 迁移：逐个 拉密文→本机解密→明文回传 /v1/file→删旧密文。需在有同步密钥的手机前台运行 */
+export async function migrateLegacyToPlain({ onProgress } = {}) {
+  const base = photoApiBase();
+  if (!base) throw new Error('请先填写照片服务地址');
+  await getEncKey();
+  const list = legacyEncryptedPhotos();
+  let ok = 0, fail = 0;
+  const errors = [];
+  for (const [i, p] of list.entries()) {
+    onProgress?.({ index: i, total: list.length, ok, fail });
+    try {
+      let data;
+      if (p.kind === 'video') {
+        const cached = await idbGet(vkey(p.id)).catch(() => null);
+        if (cached?.blob) data = cached.blob;
+        else {
+          const enc = await getEncKey();
+          const parts = [];
+          for (let n = 0; n < p.chunks; n++) {
+            const res = await fetch(`${base}/v1/video/${encodeURIComponent(p.id)}/${n}`);
+            if (!res.ok) throw new Error(res.status === 404 ? '服务上找不到这个视频' : `照片服务返回 ${res.status}`);
+            parts.push(await core.unsealBytes(enc, `${p.id}:${n}`, new Uint8Array(await res.arrayBuffer())));
+          }
+          data = new Blob(parts, { type: p.mime || 'video/mp4' });
+        }
+      } else {
+        const cached = await idbGet(p.id).catch(() => null);
+        data = cached?.plain || await fetchLegacyPlain(p.id, p);
+      }
+      const ext = p.ext || EXT_BY_MIME[String(p.mime || '').toLowerCase()] || (p.kind === 'video' ? 'mp4' : 'jpg');
+      const patch = await uploadOriginal(p.id, data, { taken: p.takenAt, ext, mime: p.mime }, null);
+      if (patch.storage !== 'file') throw new Error('照片服务是旧版，请先在极空间更新');
+      store.upsertPhoto({ ...store.getPhoto(p.id), ...patch, remoteReady: true });
+      await fetch(`${base}/v1/legacy/${encodeURIComponent(p.id)}`, { method: 'DELETE' }).catch(() => {});
+      ok++;
+    } catch (e) {
+      fail++;
+      errors.push(e.message || String(e));
+      if (e.code === 'old_server' || /旧版/.test(e.message || '')) break;
+    }
+  }
+  onProgress?.({ index: list.length, total: list.length, ok, fail });
+  return { total: list.length, ok, fail, errors };
+}
+
 /** 选视频后入库：先封面+本机缓存立刻可见，再分块加密上传 */
 export async function addVideoFromFile(file, { note = '', takenAt, onLocalReady, onProgress } = {}) {
   if (!file || !String(file.type || '').startsWith('video/')) throw new Error('请选择视频文件');
@@ -467,16 +588,17 @@ export async function addVideoFromFile(file, { note = '', takenAt, onLocalReady,
   let photo = store.upsertPhoto({
     id, kind: 'video', takenAt: taken, uploadedAt: Date.now(), note, mime, size: file.size,
     width, height, duration: Math.round((duration || 0) * 10) / 10, chunks: estChunks, chunkSize: VIDEO_CHUNK,
-    thumbData: dataUrl, remoteReady: false,
+    thumbData: dataUrl, remoteReady: false, ext: extOf(file),
   });
   onLocalReady?.(photo);
 
   let remoteReady = false, uploadError = '', chunks = 0;
   if (willUpload) {
     try {
-      chunks = await putVideoChunks(id, file, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
+      const patch = await uploadOriginal(id, file, { taken, ext: extOf(file), mime }, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
+      chunks = patch.chunks || 0;
       remoteReady = true;
-      photo = store.upsertPhoto({ ...store.getPhoto(id), chunks, chunkSize: VIDEO_CHUNK, remoteReady: true });
+      photo = store.upsertPhoto({ ...store.getPhoto(id), ...patch, remoteReady: true });
       trackPending(id, false);
       onProgress?.({ phase: 'done', id });
     } catch (e) {
@@ -501,6 +623,11 @@ export async function loadVideoBlob(id, { onProgress } = {}) {
   const base = photoApiBase();
   if (!base) throw new Error('未配置照片服务地址，无法下载视频');
   if (!meta.remoteReady) throw new Error('这个视频还没上传到照片服务（需在上传的那台手机上补传）');
+  if (meta.storage === 'file') {
+    const blob = await fetchPlainFile(id, meta.mime || 'video/mp4', onProgress);
+    try { await idbPut(vkey(id), { blob, mime: meta.mime, size: blob.size, savedAt: Date.now(), kind: 'video' }); await evictVideoCache(id); } catch { /* ignore */ }
+    return { blob, source: 'remote' };
+  }
   const enc = await getEncKey();
   const parts = [];
   for (let n = 0; n < meta.chunks; n++) {
@@ -517,8 +644,8 @@ export async function loadVideoBlob(id, { onProgress } = {}) {
 async function retryVideoUpload(id, meta, onProgress) {
   const cached = await idbGet(vkey(id));
   if (!cached?.blob) throw new Error('本机没有这个视频的缓存，无法补传（需在上传的那台手机上操作）');
-  const chunks = await putVideoChunks(id, cached.blob, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
-  store.upsertPhoto({ ...store.getPhoto(id), chunks, chunkSize: VIDEO_CHUNK, remoteReady: true });
+  const patch = await uploadOriginal(id, cached.blob, { taken: meta.takenAt, ext: meta.ext, mime: meta.mime || cached.mime }, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
+  store.upsertPhoto({ ...store.getPhoto(id), ...patch, remoteReady: true });
 }
 
 /** 本机 IndexedDB 是否还有原图像素（删 App / 清站点数据后会没） */
@@ -559,6 +686,25 @@ export async function loadPhotoBlob(id) {
   }
 
   try {
+    let plain;
+    if (meta.storage === 'file') {
+      plain = new Uint8Array(await (await fetchPlainFile(id, meta.mime)).arrayBuffer());
+    } else {
+      plain = await fetchLegacyPlain(id, meta);
+    }
+    await idbPut(id, { plain, mime: meta.mime, savedAt: Date.now() });
+    return { blob: new Blob([plain], { type: meta.mime }), source: 'remote' };
+  } catch (e) {
+    if (meta.thumbData) {
+      const r = await fetch(meta.thumbData);
+      return { blob: await r.blob(), source: 'thumb', tip: e.message || '原图加载失败，暂显示缩略图' };
+    }
+    throw e;
+  }
+}
+
+/** 旧版密文（分块 /v1/video 或整文件 /v1/photo）→ 明文 Uint8Array */
+async function fetchLegacyPlain(id, meta) {
     const enc = await getEncKey();
     let plain;
     if (meta.chunks || meta.storage === 'chunks') {
@@ -579,15 +725,7 @@ export async function loadPhotoBlob(id) {
       const packed = await fetchEncryptedPhoto(id);
       plain = await core.unsealBytes(enc, id, packed);
     }
-    await idbPut(id, { plain, mime: meta.mime, savedAt: Date.now() });
-    return { blob: new Blob([plain], { type: meta.mime }), source: 'remote' };
-  } catch (e) {
-    if (meta.thumbData) {
-      const r = await fetch(meta.thumbData);
-      return { blob: await r.blob(), source: 'thumb', tip: e.message || '原图加载失败，暂显示缩略图' };
-    }
-    throw e;
-  }
+    return plain;
 }
 
 /** 删除：元数据 tombstone（同步层）、本机缓存、尽量删远程密文 */
@@ -596,11 +734,15 @@ export async function removePhoto(id) {
   if (meta?.kind === 'video') {
     await idbDel(vkey(id)).catch(() => {});
     const base = photoApiBase();
-    if (base) await fetch(`${base}/v1/video/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+    if (base) {
+      await fetch(`${base}/v1/file/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+      await fetch(`${base}/v1/video/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+    }
     store.deletePhoto(id);
     return;
   }
   await idbDel(id).catch(() => {});
+  if (photoApiBase()) await fetch(`${photoApiBase()}/v1/file/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
   await deleteRemotePhoto(id);
   // 分块存的照片走 /v1/video 目录
   if (meta?.chunks || meta?.storage === 'chunks') {
@@ -625,14 +767,8 @@ export async function retryUpload(id, { onProgress } = {}) {
     } else {
       const cached = await idbGet(id);
       if (!cached?.plain) throw new Error('本机没有原图缓存，无法补传。删过 App 后需删除这条，再从手机相册重新选图上传');
-      const chunks = await putPlainChunks(id, cached.plain, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
-      store.upsertPhoto({
-        ...store.getPhoto(id),
-        chunks,
-        chunkSize: UPLOAD_CHUNK,
-        storage: 'chunks',
-        remoteReady: true,
-      });
+      const patch = await uploadOriginal(id, cached.plain, { taken: meta.takenAt, ext: meta.ext, mime: meta.mime || cached.mime }, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
+      store.upsertPhoto({ ...store.getPhoto(id), ...patch, remoteReady: true });
     }
     trackPending(id, false);
     onProgress?.({ phase: 'done', id });
