@@ -188,12 +188,25 @@ export function renderHelp(root) {
       </ul>
     </section>
 
+    <section class="card" id="h-video">
+      <h2>🎬 视频与流量（v1.10.0）</h2>
+      <ul class="steps">
+        <li>「＋ 上传 → 从相册选择」可以选照片或视频；也可以「录视频」。视频同样用同步密钥加密后分块存到极空间。</li>
+        <li><b>省流量</b>：视频<b>不会自动下载、不会自动播放</b>。网格只显示封面和 ▶ 时长（封面是一张小图，走云同步）；点开后先显示「播放（约 xx MB）」，你点了才下载。</li>
+        <li>下载过的视频缓存在本机，再看不耗流量；缓存超过上限（默认 500MB）自动删最早的，也可在设置里一键清空。</li>
+        <li>单个视频默认上限 <b>200MB</b>（设置里可改）。超过会提示，请在 iPhone 相册里「编辑」剪短再传。</li>
+        <li>iPhone 从相册选视频时，Safari 一般会导出一份兼容格式（H.264），分辨率基本不变，<b>大小和原视频差不多</b>，不等于压缩。约 1 分钟 1080p 视频大约 100MB 左右；4K 更大。想省流量，拍摄前可在「设置 → 相机 → 录制视频」选 1080p 30fps。</li>
+        <li>用手机流量时请留意大小；在家 Wi‑Fi 下看最省心。</li>
+      </ul>
+    </section>
+
     <section class="card" id="h-nas">
       <h2>🗄️ 接极空间（照片服务）</h2>
       <ol class="steps">
         <li>在极空间 Docker 里运行仓库里的 <b>sync/photo-server</b>（把一个文件夹挂到容器的 <span class="kbd">/data</span>，端口 <span class="kbd">8789</span>）。详见该目录 README。</li>
         <li>手机连家里 Wi‑Fi，浏览器先打开 <span class="kbd">http://极空间局域网IP:8789/health</span> 确认能通。</li>
         <li>本 App「设置 → 📷 照片服务」填同一个地址，点「测试连接」。</li>
+        <li><b>v1.10.0 起支持视频</b>：极空间里需要用新代码重建一次容器（旧容器传视频会失败），/health 显示 version 1.10.0 即可。</li>
         <li><b>家里</b>：局域网直连即可上传/看原图。<b>外出</b>：需 VPN 连回家，或以后买域名 + Cloudflare Tunnel。</li>
         <li>疫苗等事项的云同步目前仍是 <span class="kbd">*.workers.dev</span>，国内常需 VPN；以后绑自己的域名后家人一般可直连。</li>
       </ol>
