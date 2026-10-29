@@ -10,6 +10,7 @@ function defaults() {
     version: SCHEMA_VERSION,
     events: [],          // 日程：疫苗 / 体检 / 其他重要事项
     photos: [],          // v1.8.0 相册元数据（原图密文在照片服务 / 本机缓存）
+    growth: [],          // v1.9.0 生长记录（身高/体重/头围）
     snoozes: [],         // 稍后提醒记录 {id, eventId, fireAt, label}
     fired: {},           // 已响铃/已确认的提醒 id -> 时间戳
     settings: {
@@ -21,7 +22,7 @@ function defaults() {
       sound: true,
       profileUpdatedAt: 0, // 宝宝资料的修改时间（云同步用）
     },
-    // growth: [], feeding: []   // 预留：以后的功能
+    // feeding: []   // 预留：以后的功能
   };
 }
 
@@ -46,6 +47,7 @@ function migrate(data) {
   const bday = out.settings.babyBirthday;
   out.events = (out.events || []).map((e) => normalizeEvent(fillWindow(e, bday)));
   out.photos = (out.photos || []).map(normalizePhoto);
+  out.growth = (out.growth || []).map(normalizeGrowth);
   out.version = SCHEMA_VERSION;
   return out;
 }
@@ -99,6 +101,25 @@ export function normalizePhoto(p) {
   };
 }
 
+// v1.9.0 生长记录
+export function normalizeGrowth(g) {
+  const n = (v) => {
+    if (v === '' || v == null) return null;
+    const x = Number(v);
+    return Number.isFinite(x) ? Math.round(x * 100) / 100 : null;
+  };
+  return {
+    id: g.id || uid(),
+    date: validYmd(g.date) || '',
+    height: n(g.height),
+    weight: n(g.weight),
+    head: n(g.head),
+    note: (g.note || '').trim().slice(0, 200),
+    createdAt: g.createdAt || Date.now(),
+    updatedAt: g.updatedAt || Date.now(),
+  };
+}
+
 function validYmd(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s || '') ? s : ''; }
 function bdayNow() { try { return state?.settings?.babyBirthday || ''; } catch (e) { return ''; } } // 加载期间 state 尚未赋值时也安全
 
@@ -126,6 +147,19 @@ export const store = {
   },
   deletePhoto(id) {
     state.photos = state.photos.filter((p) => p.id !== id);
+    save();
+  },
+  growth() { return state.growth; },
+  getGrowth(id) { return state.growth.find((g) => g.id === id); },
+  upsertGrowth(gr) {
+    const g = normalizeGrowth({ ...gr, updatedAt: Date.now() });
+    const i = state.growth.findIndex((x) => x.id === g.id);
+    if (i >= 0) state.growth[i] = g; else state.growth.push(g);
+    save();
+    return g;
+  },
+  deleteGrowth(id) {
+    state.growth = state.growth.filter((g) => g.id !== id);
     save();
   },
   eventsOn(date) {
@@ -199,8 +233,8 @@ export const store = {
     state.settings = { ...state.settings, ...patch }; save();
   },
   // 云同步：应用其他设备的修改（保留对方的 updatedAt，只保存一次）
-  applyRemote({ upserts = [], deletes = [], photosUpserts = [], photosDeletes = [], profile = null } = {}) {
-    if (!upserts.length && !deletes.length && !photosUpserts.length && !photosDeletes.length && !profile) return;
+  applyRemote({ upserts = [], deletes = [], photosUpserts = [], photosDeletes = [], growthUpserts = [], growthDeletes = [], profile = null } = {}) {
+    if (!upserts.length && !deletes.length && !photosUpserts.length && !photosDeletes.length && !growthUpserts.length && !growthDeletes.length && !profile) return;
     const del = new Set(deletes);
     state.events = state.events.filter((e) => !del.has(e.id));
     state.snoozes = state.snoozes.filter((x) => !del.has(x.eventId));
@@ -216,6 +250,13 @@ export const store = {
       const p = normalizePhoto(ph);
       const i = state.photos.findIndex((x) => x.id === p.id);
       if (i >= 0) state.photos[i] = p; else state.photos.push(p);
+    }
+    const gdel = new Set(growthDeletes);
+    if (gdel.size) state.growth = state.growth.filter((g) => !gdel.has(g.id));
+    for (const gr of growthUpserts) {
+      const g = normalizeGrowth(gr);
+      const i = state.growth.findIndex((x) => x.id === g.id);
+      if (i >= 0) state.growth[i] = g; else state.growth.push(g);
     }
     if (profile) state.settings = { ...state.settings, babyName: profile.babyName || '', babyBirthday: profile.babyBirthday || '', profileUpdatedAt: profile.updatedAt };
     save();

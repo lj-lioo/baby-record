@@ -74,6 +74,9 @@ export const PROFILE_ID = 'profile';
 // 相册元数据 ↔ 同步记录（原图密文另存照片服务）
 export const PHOTO_PREFIX = 'ph:';
 
+// 生长记录 ↔ 同步记录
+export const GROWTH_PREFIX = 'gr:';
+
 // 二进制 AES-GCM：iv(12) + ciphertext；AAD = id（防密文挪用）
 export async function sealBytes(enc, id, bytes) {
   const iv = crypto.getRandomValues(new Uint8Array(12));

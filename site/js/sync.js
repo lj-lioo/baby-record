@@ -7,6 +7,7 @@ import * as core from './sync-core.js';
 const LS = 'babyrecord.sync';
 const EV = core.EVENT_PREFIX;
 const PH = core.PHOTO_PREFIX;
+const GR = core.GROWTH_PREFIX;
 let meta = loadMeta();
 
 // 配对链接 https://…/baby-record/#pair=<密钥>：# 后面的内容浏览器不会发给服务器。
@@ -93,6 +94,21 @@ async function collectChanges(enc) {
     if (!meta.dels[rid]) meta.dels[rid] = Math.max(now, meta.acked[rid] + 1);
     if (meta.acked[rid] !== meta.dels[rid]) changes.push({ id: rid, updatedAt: meta.dels[rid], deleted: true, data: null });
   }
+  // 生长记录
+  const presentGr = new Set();
+  for (const gr of store.growth()) {
+    const rid = GR + gr.id;
+    presentGr.add(rid);
+    if (meta.acked[rid] !== gr.updatedAt) {
+      changes.push({ id: rid, updatedAt: gr.updatedAt, deleted: false,
+        data: await core.seal(enc, rid, gr.updatedAt, { type: 'growth', growth: gr }) });
+    }
+  }
+  for (const rid of Object.keys(meta.acked)) {
+    if (!rid.startsWith(GR) || presentGr.has(rid)) continue;
+    if (!meta.dels[rid]) meta.dels[rid] = Math.max(now, meta.acked[rid] + 1);
+    if (meta.acked[rid] !== meta.dels[rid]) changes.push({ id: rid, updatedAt: meta.dels[rid], deleted: true, data: null });
+  }
   const st = store.state.settings;
   const pt = profileTime();
   if (pt && meta.acked[core.PROFILE_ID] !== pt) {
@@ -106,9 +122,11 @@ async function collectChanges(enc) {
 async function applyRemote(records, enc) {
   const upserts = [], deletes = [];
   const photosUpserts = [], photosDeletes = [];
+  const growthUpserts = [], growthDeletes = [];
   let profile = null;
   const local = new Map(store.events().map((e) => [EV + e.id, e]));
   const localPh = new Map(store.photos().map((p) => [PH + p.id, p]));
+  const localGr = new Map(store.growth().map((g) => [GR + g.id, g]));
   for (const r of records) {
     if (r.id.startsWith(EV)) {
       const cur = local.get(r.id);
@@ -140,6 +158,21 @@ async function applyRemote(records, enc) {
         delete meta.dels[r.id];
       }
       meta.acked[r.id] = r.updatedAt;
+    } else if (r.id.startsWith(GR)) {
+      const cur = localGr.get(r.id);
+      const localT = cur ? cur.updatedAt : (meta.dels[r.id] || 0);
+      if (r.updatedAt <= localT) { if (r.updatedAt === localT) meta.acked[r.id] = r.updatedAt; continue; }
+      if (r.deleted) {
+        if (cur) growthDeletes.push(cur.id);
+        meta.dels[r.id] = r.updatedAt;
+      } else {
+        let obj;
+        try { obj = await core.unseal(enc, r.id, r.updatedAt, r.data); } catch (e) { console.warn('无法解密生长', r.id, e); continue; }
+        if (obj?.type !== 'growth' || !obj.growth) continue;
+        growthUpserts.push({ ...obj.growth, id: r.id.slice(GR.length), updatedAt: r.updatedAt });
+        delete meta.dels[r.id];
+      }
+      meta.acked[r.id] = r.updatedAt;
     } else if (r.id === core.PROFILE_ID && !r.deleted) {
       if (r.updatedAt <= profileTime()) { meta.acked[r.id] = Math.max(meta.acked[r.id] || 0, r.updatedAt); continue; }
       try {
@@ -150,8 +183,8 @@ async function applyRemote(records, enc) {
     }
   }
   applying = true;
-  try { store.applyRemote({ upserts, deletes, photosUpserts, photosDeletes, profile }); } finally { applying = false; }
-  return upserts.length + deletes.length + photosUpserts.length + photosDeletes.length + (profile ? 1 : 0);
+  try { store.applyRemote({ upserts, deletes, photosUpserts, photosDeletes, growthUpserts, growthDeletes, profile }); } finally { applying = false; }
+  return upserts.length + deletes.length + photosUpserts.length + photosDeletes.length + growthUpserts.length + growthDeletes.length + (profile ? 1 : 0);
 }
 
 // 两台设备各自「一键生成」了同一剂疫苗/同一次体检：只保留一条，其余删除（会同步到所有设备）。

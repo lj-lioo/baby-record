@@ -346,3 +346,23 @@ summary { font-weight: 700; cursor: pointer; }
 .album-note-dot { position: absolute; right: 4px; bottom: 4px; font-size: 12px; background: rgba(255,255,255,0.9); border-radius: 6px; padding: 1px 3px; }
 .album-viewer-img { background: #1a1215; border-radius: 14px; overflow: hidden; margin-bottom: 10px; min-height: 180px; display: flex; align-items: center; justify-content: center; }
 .album-viewer-img img { max-width: 100%; max-height: 70vh; display: block; }
+
+
+/* v1.9.0 生长记录 */
+.tabbar a { font-size: 11px; }
+.tabbar .ti { font-size: 20px; }
+.gr-tabs { display: flex; gap: 0; margin: 0 0 14px; border-bottom: 1.5px solid var(--line); overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.gr-tab { flex: none; border: 0; background: transparent; padding: 10px 12px; font-size: 14px; font-weight: 700; color: var(--muted); position: relative; white-space: nowrap; }
+.gr-tab.on { color: var(--ink); }
+.gr-tab.on::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -1.5px; height: 3px; border-radius: 2px; background: #F5C518; }
+.gr-card { cursor: pointer; padding: 14px 16px; }
+.gr-date { font-size: 14px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.gr-age { font-weight: 700; color: var(--ink); }
+.gr-tip { font-size: 13px; color: var(--checkup); font-weight: 600; margin-bottom: 10px; line-height: 1.4; }
+.gr-metrics { display: flex; gap: 8px; }
+.gr-m { flex: 1; background: #F7FBF9; border-radius: 12px; padding: 10px 8px; text-align: center; }
+.gr-ml { display: block; font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+.gr-mv { display: block; font-size: 16px; font-weight: 800; color: var(--checkup); }
+.gr-note { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.gr-chart-card { padding-bottom: 12px; }
+.gr-chart { margin: 4px -4px 0; }
