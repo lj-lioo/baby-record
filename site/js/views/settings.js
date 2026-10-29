@@ -16,7 +16,7 @@ import {
   ROLES, ADMIN_ROLES, ELDER_ROLES, roleCapabilityText, openRolePicker, copyInviteFor,
 } from '../roles.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.13.0';
+export const APP_BUILD = '1.13.1';
 
 /** 编辑宝宝名字 + 生日（云同步 profile）；保存后触发 rerender */
 export function openBabyProfile({ onSaved } = {}) {
@@ -145,7 +145,7 @@ export function renderSettings(root) {
       <h2>📷 照片服务（极空间）</h2>
       <p class="small muted" style="margin-top:0">相册原图加密后存到你家极空间里的小服务；缩略图和说明走云同步。<b>注意：</b>App 本身在 HTTPS（GitHub Pages）上，浏览器禁止它去连局域网的 <span class="kbd">http://192.168.x.x</span>（Safari 地址栏直接打开可以，App 里会 Load failed）。照片服务地址必须是 <b>https://…</b>（买域名后用 Cloudflare Tunnel 指到极空间 8789）。</p>
       <div class="field"><label for="photoApi">照片服务地址</label>
-        <input id="photoApi" class="input" placeholder="http://192.168.x.x:8789" value="${esc(st.photoApi || '')}"></div>
+        <input id="photoApi" class="input" placeholder="https://photo.jiayouzhaozhao.cn" value="${esc(st.photoApi || window.BABY_CONFIG?.photoApi || '')}"></div>
       <div class="btn-row"><button class="btn secondary" id="btnPhotoTest">测试连接</button><button class="btn ghost" id="btnPhotoSave">保存</button></div>
       <p class="small muted" id="photoTestResult" style="margin-top:8px"></p>
       <h3 style="margin:14px 0 6px;font-size:15px">🎬 视频（省流量）</h3>

@@ -11,7 +11,9 @@ const THUMB_MAX = 400;
 const THUMB_QUALITY = 0.72;
 
 export function photoApiBase() {
-  return String(store.state.settings.photoApi || '').trim().replace(/\/+$/, '');
+  const fromSettings = String(store.state.settings.photoApi || '').trim();
+  const fromConfig = String(typeof window !== 'undefined' && window.BABY_CONFIG?.photoApi || '').trim();
+  return (fromSettings || fromConfig).replace(/\/+$/, '');
 }
 
 function openDb() {
