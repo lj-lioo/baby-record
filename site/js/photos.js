@@ -73,6 +73,18 @@ export async function makeThumb(fileOrBlob, max = THUMB_MAX) {
   }
 }
 
+async function makeThumbViaImg(file, max = THUMB_MAX) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
+    const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale)), h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    return { dataUrl: c.toDataURL('image/jpeg', THUMB_QUALITY), width: img.naturalWidth, height: img.naturalHeight, tw: w, th: h };
+  } finally { URL.revokeObjectURL(url); }
+}
+
 async function getEncKey() {
   const st = syncStatus();
   if (!st.enabled || !st.key) throw new Error('请先开启云同步（相册原图用同步密钥加密）');
@@ -156,10 +168,14 @@ export async function pingPhotoServer(baseUrl) {
 
 /** 选图/拍照后入库：写元数据+缩略图，本机缓存原图，有照片服务则加密上传 */
 export async function addPhotoFromFile(file, { note = '', takenAt } = {}) {
-  if (!file || !String(file.type || '').startsWith('image/')) throw new Error('请选择图片文件');
+  const isImg = String(file?.type || '').startsWith('image/') || /\.(jpe?g|png|heic|heif|gif|webp)$/i.test(file?.name || '');
+  if (!file || !isImg) throw new Error('请选择图片文件');
   const id = uid();
   const taken = takenAt || (file.lastModified ? Number(file.lastModified) : Date.now());
-  const { dataUrl, width, height } = await makeThumb(file);
+  let thumb;
+  try { thumb = await makeThumb(file); }
+  catch { thumb = await makeThumbViaImg(file).catch(() => { throw new Error('这张图片格式无法读取（可在 iPhone 设置→相机→格式 选「兼容性最佳」）'); }); }
+  const { dataUrl, width, height } = thumb;
   const buf = new Uint8Array(await file.arrayBuffer());
   await idbPut(id, { plain: buf, mime: file.type || 'image/jpeg', savedAt: Date.now() });
 

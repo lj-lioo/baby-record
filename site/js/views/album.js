@@ -140,9 +140,6 @@ export function renderAlbum(root) {
     ${!api ? `<div class="banner album-tip"><div class="bt"><b>还没填照片服务地址</b>缩略图和说明可以先同步；填极空间照片服务地址后，全家才能看到原图。家里 Wi‑Fi 填局域网地址即可。</div>
       <button class="btn secondary" id="btnGoPhotoSet" style="flex:none">去设置</button></div>` : ''}
     ${api && !syncOn ? `<div class="banner album-tip"><div class="bt"><b>建议开启云同步</b>原图用同步密钥加密后上传；元数据也靠云同步共享给家人。</div></div>` : ''}
-    <input type="file" id="filePhotoAlbum" accept="image/*,video/*" multiple hidden>
-    <input type="file" id="filePhotoCamera" accept="image/*" capture="environment" hidden>
-    <input type="file" id="fileVideoCamera" accept="video/*" capture="environment" hidden>
     <div class="banner album-progress" id="albumProgress" hidden><div class="bt" id="albumProgressText">上传中…</div></div>
     ${groups.length === 0 ? `
       <section class="card album-empty">
@@ -172,11 +169,12 @@ export function renderAlbum(root) {
     const files = [...(e.target.files || [])];
     e.target.value = '';
     if (!files.length) return;
+    toast(`正在处理 ${files.length} 项…`, 2000);
     let ok = 0, fail = 0;
     const prog = q('#albumProgress'), progT = q('#albumProgressText');
     for (const [i, f] of files.entries()) {
       try {
-        const isVid = String(f.type || '').startsWith('video/');
+        const isVid = String(f.type || '').startsWith('video/') || /\.(mov|mp4|m4v)$/i.test(f.name || '');
         if (isVid) { prog.hidden = false; progT.textContent = `视频 ${i + 1}/${files.length}：准备中（约 ${fmtSize(f.size)}）…`; }
         const r = isVid
           ? await addVideoFromFile(f, { onProgress: (x) => { progT.textContent = `视频 ${i + 1}/${files.length}：加密上传 ${Math.round(x * 100)}%（约 ${fmtSize(f.size)}）`; } })
@@ -189,13 +187,14 @@ export function renderAlbum(root) {
         toast(err.message || '上传失败', 3500);
       }
     }
-    prog.hidden = true;
+    if (prog) prog.hidden = true;
     if (ok && !fail) toast(ok === 1 ? '已添加 1 项' : `已添加 ${ok} 项`);
-    renderAlbum(root);
+    if (location.hash.startsWith('#/album')) renderAlbum(albumRootRef || root);
   };
-  q('#filePhotoAlbum').onchange = onFiles;
-  q('#filePhotoCamera').onchange = onFiles;
-  q('#fileVideoCamera').onchange = onFiles;
+  // v1.13.2：file input 放在 body 上常驻。iOS 从相册返回会触发 visibilitychange/同步重渲染，
+  // 之前 input 在相册 DOM 里会被替换掉，change 事件丢失 → 选完照片什么都不出现
+  ensureFileInputs();
+  albumRootRef = root; onFilesRef = onFiles;
   root.querySelectorAll('.album-cell').forEach((btn) => {
     btn.onclick = () => openViewer(btn.dataset.id, root);
   });
@@ -217,15 +216,15 @@ function openAddPhotoSheet(albumRoot) {
     sh.querySelector('#pickAlbum').onclick = () => {
       closeSheet();
       // 等面板关掉后再点 file input，避免 iOS 手势链被打断
-      setTimeout(() => albumRoot.querySelector('#filePhotoAlbum')?.click(), 80);
+      setTimeout(() => document.getElementById('filePhotoAlbum')?.click(), 80);
     };
     sh.querySelector('#pickVideo').onclick = () => {
       closeSheet();
-      setTimeout(() => albumRoot.querySelector('#fileVideoCamera')?.click(), 80);
+      setTimeout(() => document.getElementById('fileVideoCamera')?.click(), 80);
     };
     sh.querySelector('#pickCamera').onclick = () => {
       closeSheet();
-      setTimeout(() => albumRoot.querySelector('#filePhotoCamera')?.click(), 80);
+      setTimeout(() => document.getElementById('filePhotoCamera')?.click(), 80);
     };
   });
 }
@@ -368,3 +367,17 @@ async function openVideoViewer(id, albumRoot) {
 
 // 设置页可调用：测试照片服务
 export { pingPhotoServer, photoApiBase };
+
+let albumRootRef = null, onFilesRef = null;
+function ensureFileInputs() {
+  const defs = [['filePhotoAlbum', 'image/*,video/*', true, false], ['filePhotoCamera', 'image/*', false, 'environment'], ['fileVideoCamera', 'video/*', false, 'environment']];
+  for (const [id, accept, multi, cap] of defs) {
+    if (document.getElementById(id)) continue;
+    const el = document.createElement('input');
+    el.type = 'file'; el.id = id; el.accept = accept; el.hidden = true;
+    if (multi) el.multiple = true;
+    if (cap) el.setAttribute('capture', cap);
+    el.addEventListener('change', (e) => onFilesRef && onFilesRef(e));
+    document.body.appendChild(el);
+  }
+}

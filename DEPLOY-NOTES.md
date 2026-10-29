@@ -1,3 +1,6 @@
+## v1.13.2（修：从相册选图后什么都不出现）
+- 根因：file input 在相册页 DOM 里；iOS 从照片选择器返回触发 visibilitychange/同步 → render() 重建相册 DOM，旧 input 被替换，change 处理丢失，静默无反应。服务端（Tunnel/CORS/PUT/GET）curl 验证正常。
+- 修：三个 file input 改为挂在 body 常驻；选完先 toast「正在处理」；HEIC/空 MIME 按扩展名识别；createImageBitmap 失败回落 <img> 解码并给出明确报错。
 ## v1.13.1（国内同步域名 + 照片 HTTPS 默认）
 - **背景**：域名 `jiayouzhaozhao.cn` 落在 Cloudflare 账号 4678aa04…（Google/Nbacba…）；旧 Worker+D1 在另一账号 aa62ab9c…（163）。自定义域名必须与 Worker 同账号，故在域名账号重建 Worker/D1 并迁数据。
 - **同步**：Worker `baby-record-sync`（新账号）+ D1 `b72d832b-751d-46cd-ab37-8c1d762112a3`；从旧 D1 迁入 169 条 records（两空间）。Workers 自定义域名 `sync.jiayouzhaozhao.cn`（自动 AAAA 100::）。`curl https://sync.jiayouzhaozhao.cn/v1/health` → 200。
