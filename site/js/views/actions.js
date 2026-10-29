@@ -1,5 +1,6 @@
 // 事项操作：设为 iPhone 闹钟提醒（快捷指令 → 紧急提醒事项）
 import { esc, openSheet, closeSheet, toast } from '../ui.js';
+import { requireAlarm } from '../roles.js';
 import { fmtDateTime } from '../dates.js';
 import { futureAlarms, alarmTitle, alarmUrl, alarmSig, shortcutName, deleteShortcutName, deleteAlarmUrl } from '../shortcuts.js';
 import { store } from '../store.js';
@@ -12,6 +13,7 @@ export function alarmState(ev) {
 const MANUAL_DEL = '打开「提醒事项」→ 点「宝宝」列表 → 在旧提醒上向左轻扫 → 点「删除」';
 
 export function openAlarmSheet(ev) {
+  if (!requireAlarm()) return;
   const list = futureAlarms(ev);
   const st = alarmState(ev);
   const tagged = ev.alarmAdded && ev.alarmTagged;

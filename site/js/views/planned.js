@@ -4,6 +4,7 @@ import { esc, openSheet, closeSheet, toast } from '../ui.js';
 import { todayStr, cnDate, weekday, addDays, parseYmd } from '../dates.js';
 import { windowOf, planOutside } from '../windows.js';
 import { maybeCascade } from './paidcat.js';
+import { requireEditEvents } from '../roles.js';
 
 const fmt = (d) => `${cnDate(d, d.slice(0, 4) !== todayStr().slice(0, 4))} ${weekday(d)}`;
 
@@ -18,6 +19,7 @@ function nextWeekend(from, n) {
 }
 
 export function openPlannedSheet(ev) {
+  if (!requireEditEvents()) return;
   const w = windowOf(ev, store.state.settings.babyBirthday);
   const noun = ev.category === 'checkup' ? '体检' : ev.category === 'other' ? '' : '接种';
   const base = w && w.earliest > todayStr() ? w.earliest : todayStr();

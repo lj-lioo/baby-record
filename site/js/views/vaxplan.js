@@ -8,6 +8,7 @@ import { defaultReminders } from '../reminders.js';
 import { planVaccines, NIP_SOURCE } from '../vaccines.js';
 import { planCheckups, CHECKUP_SOURCE } from '../checkups.js';
 import { openPaidCatalog } from './paidcat.js';
+import { requireEditEvents } from '../roles.js';
 
 const TIME = '09:00';
 export const DEFAULT_BIRTHDAY = '2026-09-17';
@@ -43,6 +44,7 @@ export function openCheckupPlan() { openPlan('checkup'); }
 export function openPaidPlan() { openPaidCatalog(); } // 旧版设置页按钮：打开「自费疫苗（待定）」目录
 
 export function openPlan(kind) {
+  if (!requireEditEvents('当前身份不能生成或修改计划')) return;
   const K = KINDS[kind];
   const st = store.state.settings;
   openSheet(`

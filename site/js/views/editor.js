@@ -9,6 +9,7 @@ import { openAlarmSheet, offerOldAlarmCleanup } from './actions.js';
 import { alarmSig } from '../shortcuts.js';
 import { windowOf } from '../windows.js';
 import { maybeCascade } from './paidcat.js';
+import { requireEditEvents, requireAlarm } from '../roles.js';
 
 const QUICK = {
   vaccine: ['打疫苗', '乙肝疫苗', '卡介苗', '脊灰疫苗', '百白破疫苗', '麻腮风疫苗', '流感疫苗'],
@@ -18,6 +19,7 @@ const QUICK = {
 };
 
 export function openEditor({ id = null, date = null } = {}) {
+  if (!requireEditEvents()) return;
   const existing = id ? store.getEvent(id) : null;
   const ev = existing ? JSON.parse(JSON.stringify(existing)) : {
     id: uid(), date, time: '', title: '', category: 'vaccine', note: '', done: false, reminders: defaultReminders(false),
