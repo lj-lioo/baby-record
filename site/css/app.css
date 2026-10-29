@@ -393,7 +393,7 @@ summary { font-weight: 700; cursor: pointer; }
 .gr-chart { margin: 4px -4px 0; }
 
 /* v1.9.2 已完成折叠 */
-.grp-done { margin-top: 16px; background: #F4F4F6; box-shadow: 0 0 0 6px #F4F4F6; }
+.grp-done { margin-top: 16px; } /* v1.12.12：去掉灰底，与待完成一致 */
 .done-fold { width: 100%; display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 10px 4px; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .done-fold-lab { flex: 1; font-size: 16px; font-weight: 800; color: #6E6070; }
 .done-fold-chev { font-size: 18px; color: #9A9A9A; font-weight: 700; }
