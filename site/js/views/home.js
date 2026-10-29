@@ -18,8 +18,12 @@ import { ageOnDate } from '../growth.js';
 import { openBabyProfile } from './settings.js';
 import { openVoice } from './voice.js';
 
-const ui = { month: null, selected: null, focus: null, scrollTo: null, pendOpen: false, doneOpen: false, details: new Set() }; // v1.12.7：待完成/已完成每次打开默认收起，不记忆
+const ui = { month: null, selected: null, focus: null, scrollTo: null, pendOpen: false, doneOpen: false, dayOpen: null, details: new Set() }; // v1.12.7：待完成/已完成每次打开默认收起，不记忆
 let repHints = new Map(); // v1.7.0：已计划的自费疫苗可替代的免费剂次
+// v1.12.9：被自费替代的免费剂次在日历/小框/近期提醒/月列表里完全不显示（只在免费疫苗合集卡里显示）
+const isRep = (e) => e.category === 'vaccine' && !e.done && !!repHints.get(e.scheduleId);
+const visEvents = () => store.events().filter((e) => !isRep(e));
+const visOn = (d) => store.eventsOn(d).filter((e) => !isRep(e));
 
 export function renderHome(root) {
   const today = todayStr();
@@ -75,7 +79,7 @@ function renderReminderCard(el) {
   const today = todayStr();
   const end = addDays(today, 7);
   const overdueFrom = addDays(today, -30);
-  const items = store.events()
+  const items = visEvents()
     .filter((e) => (e.date >= today && e.date <= end && !e.done) || (e.date < today && e.date >= overdueFrom && !e.done && e.category !== 'other'))
     .sort((a, b) => (a.date + (a.time || '99')).localeCompare(b.date + (b.time || '99')));
   const urgent = items.some((e) => e.date <= today);
@@ -164,7 +168,7 @@ function renderCalendar(el) {
   const today = todayStr();
   const bday = store.state.settings.babyBirthday;
   const byDate = {}, byEarly = {};
-  for (const e of store.events()) {
+  for (const e of visEvents()) {
     (byDate[e.date] ||= []).push(e);
     if (e.done) continue;
     const w = windowOf(e, bday);
@@ -208,25 +212,32 @@ function renderCalendar(el) {
     <div class="weekdays">${['日', '一', '二', '三', '四', '五', '六'].map((w) => `<div>${w}</div>`).join('')}</div>
     <div class="days">${cells}</div>
     <div class="legend"><span><i class="dot cat-vaccine"></i>疫苗</span><span><i class="dot cat-paidvax"></i>自费疫苗</span><span><i class="dot cat-checkup"></i>体检</span><span><i class="dot cat-other"></i>其他</span></div>
-    <div class="legend2"><span><i class="dot" style="background:var(--muted)"></i>计划日</span><span><i class="ring" style="border-color:var(--muted)"></i>最早可接种</span><span><i class="band"></i>窗口</span><span><b class="lb-mini">止</b>最迟</span><span><span class="vbadge-lg replaced">💉</span>已被自费替代可不打</span></div>
-    ${fe ? `<div class="focus-bar ${CATEGORIES[fcat].cls}"><span class="fb-txt">🪟 <b>${esc(fe.title)}</b>：${esc(winText(fw))}</span><button class="fb-x" id="fbX" aria-label="取消显示窗口">✕</button></div>` : '<div class="focus-hint">点日期或卡片上的「🪟 窗口」，在日历上看窗口</div>'}`;
+    <div class="legend2"><span><i class="dot" style="background:var(--muted)"></i>计划日</span><span><i class="ring" style="border-color:var(--muted)"></i>最早可接种</span><span><i class="band"></i>窗口</span><span><b class="lb-mini">止</b>最迟</span></div>
+    ${ui.dayOpen && (byDate[ui.dayOpen] || []).length ? dayPanel(ui.dayOpen, byDate[ui.dayOpen], bday) : fe ? `<div class="focus-bar ${CATEGORIES[fcat].cls}"><span class="fb-txt">🪟 <b>${esc(fe.title)}</b>：${esc(winText(fw))}</span><button class="fb-x" id="fbX" aria-label="取消显示窗口">✕</button></div>` : '<div class="focus-hint">点日期或卡片上的「🪟 窗口」，在日历上看窗口</div>'}`;
   el.querySelector('#prevM').onclick = () => shiftMonth(-1);
   el.querySelector('#nextM').onclick = () => shiftMonth(1);
   el.querySelector('#fbX')?.addEventListener('click', () => { ui.focus = null; rerender(); });
+  el.querySelector('#dpX')?.addEventListener('click', () => { ui.dayOpen = null; ui.focus = null; rerender(); });
+  el.querySelectorAll('[data-dp]').forEach((li) => { li.onclick = () => { const e = store.getEvent(li.dataset.dp); if (e) openEventDetail(e); }; });
   const tt = el.querySelector('#toToday');
-  if (tt) tt.onclick = () => { selectDate(todayStr()); rerender(); };
+  if (tt) tt.onclick = () => { const t = todayStr(); ui.selected = t; ui.month = t.slice(0, 7); ui.dayOpen = visOn(t).length ? t : null; rerender(); };
   el.querySelectorAll('.day').forEach((b) => {
     b.onclick = () => {
       const ds = b.dataset.date;
-      if (ds === ui.selected && !store.eventsOn(ds).length && !(byEarly[ds] || []).length) { openEditor({ date: ds }); return; }
+      const dayEvs = visOn(ds);
+      // v1.12.9：第一次点 → 只选中＋显示当天简介小框；再点同一天 → 有事项则展开分组并滚到该天，空白日则添加事项
+      if (ds === ui.selected) {
+        if (!dayEvs.length) { openEditor({ date: ds }); return; }
+        if (ui.dayOpen === ds) {
+          if (dayEvs.some((e) => !e.done)) ui.pendOpen = true; else ui.doneOpen = true;
+          ui.scrollTo = dayEvs.some((e) => !e.done) ? ds : `d-${ds}`;
+        } else ui.dayOpen = ds;
+        rerender(); return;
+      }
       ui.selected = ds;
       if (ds.slice(0, 7) !== ui.month) ui.month = ds.slice(0, 7);
       ui.focus = pickFocus(ds, byEarly[ds] || []);
-      // v1.9.2 / v1.12.7：点日历某天可临时展开对应分组（默认仍是收起）
-      const dayEvs = store.eventsOn(ds);
-      if (dayEvs.some((e) => !e.done)) ui.pendOpen = true;
-      if (dayEvs.some((e) => e.done)) ui.doneOpen = true;
-      ui.scrollTo = dayEvs.some((e) => !e.done) ? ds : (dayEvs.some((e) => e.done) ? `d-${ds}` : ds);
+      ui.dayOpen = dayEvs.length ? ds : null;
       rerender();
     };
   });
@@ -235,7 +246,7 @@ function renderCalendar(el) {
 // 点某天时选中显示窗口的事项：当天计划的第一个有窗口、未完成的事项；否则当天是其最早日的事项
 function pickFocus(ds, early) {
   const bday = store.state.settings.babyBirthday;
-  const cands = [...store.eventsOn(ds).filter((e) => !e.done), ...early]
+  const cands = [...visOn(ds).filter((e) => !e.done), ...early]
     .map((e) => ({ e, w: windowOf(e, bday) })).filter((x) => x.w);
   if (!cands.length) return null;
   // 优先显示有「最迟日期」、且最迟日期最近的事项（窗口最有参考价值）
@@ -249,10 +260,24 @@ function winText(w) {
   return w.latest ? `${cnDate(w.earliest, yr(w.earliest))} – ${cnDate(w.latest, yr(w.latest) || w.latest.slice(0, 4) !== w.earliest.slice(0, 4))}（最迟）` : `${cnDate(w.earliest, yr(w.earliest))} 起（未规定最迟）`;
 }
 
+// v1.12.9 当天事项简介小框（日历下方）
+function dayPanel(ds, evs, bday) {
+  const ord = (e) => (e.time || '99') + e.title;
+  const rows = [...evs].sort((a, b) => ord(a).localeCompare(ord(b))).map((e) => {
+    const c = CATEGORIES[e.category] || CATEGORIES.other;
+    const rep = !e.done && e.category === 'vaccine' && repHints.get(e.scheduleId);
+    const w = !e.done ? windowOf(e, bday) : null;
+    const st = e.done ? '<span class="dp-st ok">✅已完成</span>' : rep ? '<span class="dp-st rep">✕被替代</span>' : '';
+    return `<li class="dp-row" data-dp="${e.id}"><i class="dot ${c.cls}"></i><span class="dp-t">${c.icon} ${esc(e.title)}${w ? `<small class="dp-w">🪟 ${esc(winText(w))}</small>` : ''}</span><span class="dp-time">${e.time || '全天'}</span>${st}</li>`;
+  }).join('');
+  return `<div class="day-panel" id="dayPanel"><div class="dp-head"><b>${fmtD(ds)} · ${evs.length} 个事项</b><span class="dp-hint">再点该日期看详情</span><button class="fb-x" id="dpX" aria-label="关闭">✕</button></div><ul class="dp-list">${rows}</ul></div>`;
+}
+
 function shiftMonth(n) {
   const [y, m] = ui.month.split('-').map(Number);
   const d = new Date(y, m - 1 + n, 1);
   ui.month = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  ui.dayOpen = null;
   rerender();
 }
 const rerender = () => window.dispatchEvent(new CustomEvent('rerender'));
@@ -303,7 +328,7 @@ function renderMonthList(el) {
   const bday = store.state.settings.babyBirthday;
   const [y, m] = ui.month.split('-').map(Number);
   const monthStart = `${ui.month}-01`, monthEnd = ymd(new Date(y, m, 0));
-  const inMonth = store.events().filter((e) => e.date >= monthStart && e.date <= monthEnd);
+  const inMonth = visEvents().filter((e) => e.date >= monthStart && e.date <= monthEnd);
   const pending = inMonth.filter((e) => !e.done);
   const completed = inMonth.filter((e) => e.done).sort((a, b) => (a.date + (a.time || '99')).localeCompare(b.date + (b.time || '99')));
   repHints = replacementHints(store.events());
@@ -314,7 +339,7 @@ function renderMonthList(el) {
   dates.sort();
   const sortT = (a, b) => (a.time || '99').localeCompare(b.time || '99');
   const earlier = today.slice(0, 7) === ui.month
-    ? store.events().filter((e) => !e.done && e.date < monthStart && (e.category !== 'other' || e.date >= addDays(today, -30))).sort((a, b) => a.date.localeCompare(b.date))
+    ? visEvents().filter((e) => !e.done && e.date < monthStart && (e.category !== 'other' || e.date >= addDays(today, -30))).sort((a, b) => a.date.localeCompare(b.date))
     : [];
   const doneByDate = {};
   for (const e of completed) (doneByDate[e.date] ||= []).push(e);
