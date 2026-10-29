@@ -44,8 +44,8 @@ await page.evaluate(async (all) => {
 }, all);
 await page.reload(); await page.waitForTimeout(900);
 const day = (d) => page.locator(`.day[data-date="${d}"]`);
-const shot = async (n) => { await page.evaluate(() => { const p = document.getElementById('dayPanel'); if (p) window.scrollBy(0, p.getBoundingClientRect().bottom - window.innerHeight + 90); }); await page.waitForTimeout(200); await page.screenshot({ path: path.join(shotDir, n) }); };
-check(`版本 ${APP_V}`, APP_V === '1.12.9');
+const shot = async (n) => { await page.evaluate(() => { const p = document.getElementById('dayPanel'); if (p) window.scrollBy(0, p.getBoundingClientRect().bottom - window.innerHeight + 200); }); await page.waitForTimeout(200); await page.screenshot({ path: path.join(shotDir, n) }); };
+check(`版本 ${APP_V}`, APP_V === '1.12.10');
 // 1) 有事项（含黄色其他）第一次点 → 小框，不展开不滚
 await day('2026-10-30').scrollIntoViewIfNeeded(); const y0 = await page.evaluate(() => window.scrollY);
 await day('2026-10-30').evaluate((b) => b.click()); await page.waitForTimeout(400);
@@ -54,6 +54,14 @@ check('小框 2 条（K1+13价）', await page.locator('#dayPanel .dp-row').coun
 check('首点不展开待完成', await page.locator('#pendBody').isHidden());
 { const y1 = await page.evaluate(() => window.scrollY); check(`首点不滚动 ${y0}->${y1}`, Math.abs(y1 - y0) < 30); }
 await shot('61-daypanel-1030.png');
+{ const ds = await page.locator('#dayPanel .dp-row .dot').evaluateAll((a) => a.map((d) => { const r = d.getBoundingClientRect(); return { c: d.className, w: r.width, bg: getComputedStyle(d).backgroundColor }; }));
+  check(`10/30 每行色点都可见 ${JSON.stringify(ds.map((d) => d.w))}`, ds.length === 2 && ds.every((d) => d.w >= 7 && d.bg !== 'rgba(0, 0, 0, 0)'));
+  check('含自费疫苗色点', ds.some((d) => d.c.includes('cat-paidvax'))); }
+// 四类色点：注入长标题样例逐类检查宽度
+{ const r = await page.evaluate(() => { const box = document.createElement('ul'); box.className = 'dp-list'; box.style.width = '300px'; document.getElementById('dayPanel').appendChild(box);
+    box.innerHTML = ['vaccine', 'paidvax', 'checkup', 'other'].map((c) => `<li class="dp-row"><i class="dot cat-${c}"></i><span class="dp-t">很长很长的标题很长很长的标题很长很长的标题<small class="dp-w">🪟 2026年10月29日 – 2027年4月16日（最迟）</small></span><span class="dp-time">09:00</span><span class="dp-st ok">✅已完成</span></li>`).join('');
+    const out = [...box.querySelectorAll('.dot')].map((d) => d.getBoundingClientRect().width); box.remove(); return out; });
+  check(`四类色点长标题下宽度≥7 ${JSON.stringify(r)}`, r.every((w) => w >= 7)); }
 // 点某条 → 详情面板
 await page.locator('#dayPanel .dp-row').first().click(); await page.waitForTimeout(400);
 check('点条目弹出详情面板', await page.locator('#sheet .ev-detail').isVisible());

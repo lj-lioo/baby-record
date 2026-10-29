@@ -485,3 +485,5 @@ summary { font-weight: 700; cursor: pointer; }
 .dp-time { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .dp-st { font-size: 11px; white-space: nowrap; }
 .dp-st.rep { color: #c0392b; }
+/* v1.12.10：长标题/窗口行会把色点挤成 0 宽（flex 收缩），禁止收缩 */
+.dp-row .dot { flex: 0 0 8px; width: 8px; height: 8px; }
