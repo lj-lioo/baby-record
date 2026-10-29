@@ -12,12 +12,48 @@ import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../
 import { extractSyncKey } from '../sync-core.js';
 import { pingPhotoServer } from '../photos.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.9.2';
+export const APP_BUILD = '1.9.3';
+
+/** 编辑宝宝名字 + 生日（云同步 profile）；保存后触发 rerender */
+export function openBabyProfile({ onSaved } = {}) {
+  const st = store.state.settings;
+  openSheet(`
+    <h3>宝宝资料</h3>
+    <p class="small muted" style="margin-top:0">名字和生日会加密同步给全家；日龄与生长记录一致（出生当天＝第1天）。</p>
+    <div class="field"><label for="bp-name">宝宝名字 / 小名</label>
+      <input id="bp-name" class="input" maxlength="20" placeholder="例如：豆豆" value="${esc(st.babyName || '')}"></div>
+    <div class="field"><label for="bp-bday">出生日期</label>
+      <input id="bp-bday" type="date" class="input" value="${esc(st.babyBirthday || '')}" max="${todayStr()}"></div>
+    <div class="btn-row"><button class="btn ghost" data-a="cancel">取消</button><button class="btn" data-a="save">保存</button></div>
+  `, (sheet) => {
+    sheet.querySelector('[data-a=cancel]').onclick = () => closeSheet();
+    sheet.querySelector('[data-a=save]').onclick = () => {
+      const name = sheet.querySelector('#bp-name').value.trim().slice(0, 20);
+      const bday = sheet.querySelector('#bp-bday').value;
+      if (bday && !/^\d{4}-\d{2}-\d{2}$/.test(bday)) { toast('请选择正确的出生日期'); return; }
+      if (bday && bday > todayStr()) { toast('出生日期不能是未来'); return; }
+      store.updateSettings({ babyName: name, babyBirthday: bday || '' });
+      closeSheet();
+      toast(name ? `已保存「${name}」` : '已保存宝宝资料');
+      window.dispatchEvent(new CustomEvent('rerender'));
+      if (onSaved) onSaved();
+    };
+    setTimeout(() => sheet.querySelector('#bp-name')?.focus(), 50);
+  });
+}
 
 export function renderSettings(root) {
   const st = store.state.settings;
   root.innerHTML = `
     <header class="topbar"><h1>设置</h1></header>
+
+    <section class="card" id="babyProfileCard">
+      <h2>👶 宝宝资料</h2>
+      <p class="small muted" style="margin-top:0">左上角显示的名字和「已出生第几天」；修改后全家云同步可见。</p>
+      <div class="kv"><span>名字 / 小名</span><span>${st.babyName ? esc(st.babyName) : '<span class="muted">未设置（显示「宝宝记录」）</span>'}</span></div>
+      <div class="kv"><span>出生日期</span><span>${st.babyBirthday ? esc(cnDate(st.babyBirthday, true)) : '<span class="muted">未设置</span>'}</span></div>
+      <button class="btn block" id="btnBabyProfile" style="margin-top:10px">编辑名字和生日</button>
+    </section>
 
     <section class="card">
       <h2>⏰ iPhone 闹钟提醒（推荐）</h2>
@@ -107,6 +143,7 @@ export function renderSettings(root) {
   q('#btnTest60').onclick = async () => {
     try { await sendTestPush(60); toast('1分钟后会收到测试通知，现在可以回到主屏幕或锁屏'); } catch (e) { toast('设置失败：' + e.message, 4000); }
   };
+  q('#btnBabyProfile').onclick = () => openBabyProfile({ onSaved: () => renderSettings(root) });
   q('#btnVax').onclick = () => openVaxPlan();
   q('#btnChk').onclick = () => openCheckupPlan();
   q('#btnPaid').onclick = () => openPaidCatalog();

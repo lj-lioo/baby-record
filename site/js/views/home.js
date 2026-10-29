@@ -13,6 +13,8 @@ import { openPlannedSheet } from './planned.js';
 import { windowOf, windowStatus, planOutside } from '../windows.js';
 import { renderPaidCard, markDone } from './paidcat.js';
 import { replacementHints, priceBriefOfSid } from '../paidvax.js';
+import { ageOnDate } from '../growth.js';
+import { openBabyProfile } from './settings.js';
 
 const ui = { month: null, selected: null, focus: null, scrollTo: null };
 let repHints = new Map(); // v1.7.0：已计划的自费疫苗可替代的免费剂次
@@ -22,9 +24,18 @@ export function renderHome(root) {
   if (!ui.selected) ui.selected = today;
   if (!ui.month) ui.month = ui.selected.slice(0, 7);
 
+  const st = store.state.settings;
+  const babyName = (st.babyName || '').trim() || '宝宝记录';
+  const age = ageOnDate(st.babyBirthday, today);
+  const ageBit = age ? `已出生${age}` : '点此设置生日';
+  const sub = `${ageBit} · ${cnDate(today, true)} ${weekday(today)}`;
+
   root.innerHTML = `
     <header class="topbar">
-      <div class="logo"><img src="icons/icon-192.png" alt=""><div><h1>宝宝记录</h1><div class="sub">${cnDate(today, true)} ${weekday(today)}</div></div></div>
+      <button type="button" class="logo logo-btn" id="btnBabyProfile" aria-label="编辑宝宝名字和生日">
+        <img src="icons/icon-192.png" alt="">
+        <div><h1>${esc(babyName)}</h1><div class="sub">${esc(sub)}</div></div>
+      </button>
     </header>
     <div id="pushBanner"></div>
     <div id="vaxCta"></div>
@@ -34,6 +45,7 @@ export function renderHome(root) {
     <section class="card paid-card" id="paidCard"></section>
     <button class="fab" id="fab" aria-label="添加事项">＋</button>`;
 
+  root.querySelector('#btnBabyProfile').onclick = () => openBabyProfile();
   renderReminderCard(root.querySelector('#remindCard'));
   renderCalendar(root.querySelector('#calCard'));
   renderMonthList(root.querySelector('#dayCard'));
