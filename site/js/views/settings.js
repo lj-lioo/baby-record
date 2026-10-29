@@ -10,8 +10,9 @@ import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 import { openPaidCatalog, catalogCounts } from './paidcat.js';
 import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../sync.js';
 import { extractSyncKey } from '../sync-core.js';
+import { pingPhotoServer } from '../photos.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.7.2';
+export const APP_BUILD = '1.8.0';
 
 export function renderSettings(root) {
   const st = store.state.settings;
@@ -61,12 +62,22 @@ export function renderSettings(root) {
 
     ${syncAvailable() ? syncCardHtml() : ''}
 
+    <section class="card" id="photoCard">
+      <h2>📷 照片服务（极空间）</h2>
+      <p class="small muted" style="margin-top:0">相册原图加密后存到你家极空间里的小服务；缩略图和说明走云同步。家里 Wi‑Fi 填局域网地址（如 <span class="kbd">http://192.168.1.8:8789</span>）。外出需 VPN，或以后买域名 + Tunnel。</p>
+      <div class="field"><label for="photoApi">照片服务地址</label>
+        <input id="photoApi" class="input" placeholder="http://192.168.x.x:8789" value="${esc(st.photoApi || '')}"></div>
+      <div class="btn-row"><button class="btn secondary" id="btnPhotoTest">测试连接</button><button class="btn ghost" id="btnPhotoSave">保存</button></div>
+      <p class="small muted" id="photoTestResult" style="margin-top:8px"></p>
+      <p class="note small">部署说明见仓库 <code>sync/photo-server/README.md</code>（极空间 Docker 挂载文件夹、端口 8789）。未填地址时仍可本机选图预览，元数据可先同步，全家看原图需填地址。</p>
+    </section>
+
     <section class="card">
       <h2>💾 数据备份</h2>
       <p class="small muted" style="margin-top:0">${syncStatus().enabled ? '已开启云同步：数据保存在本机，并加密同步到云端。' : '数据只保存在这台手机的本App里（无需登录）。'}建议定期导出备份，换手机或清理Safari数据前一定要导出。</p>
       <div class="btn-row"><button class="btn secondary" id="btnExport">导出备份</button><button class="btn secondary" id="btnImport">导入备份</button></div>
       <input type="file" id="fileImport" accept="application/json,.json,text/plain" hidden>
-      <p class="small muted">当前共有 <b>${store.events().length}</b> 个事项。</p>
+      <p class="small muted">当前共有 <b>${store.events().length}</b> 个事项 · <b>${store.photos().length}</b> 张照片。</p>
     </section>
 
     <section class="card">
@@ -114,6 +125,19 @@ export function renderSettings(root) {
   q('#pushApi').onchange = (e) => { store.updateSettings({ pushApi: e.target.value.trim() }); toast('已保存'); refreshStatus(q('#pushStatus')); };
 
   if (syncAvailable()) bindSyncCard(root);
+
+  q('#btnPhotoSave').onclick = () => {
+    store.updateSettings({ photoApi: q('#photoApi').value.trim().replace(/\/+$/, '') });
+    toast('已保存照片服务地址');
+  };
+  q('#btnPhotoTest').onclick = async () => {
+    const url = q('#photoApi').value.trim().replace(/\/+$/, '');
+    store.updateSettings({ photoApi: url });
+    const el = q('#photoTestResult');
+    el.textContent = '测试中…';
+    const r = await pingPhotoServer(url);
+    el.innerHTML = r.ok ? `<span class="ok">连接成功：${esc(r.message)}</span>` : `<span class="bad">连不上：${esc(r.message)}</span>`;
+  };
 
   q('#btnExport').onclick = () => exportBackup();
   q('#btnImport').onclick = () => q('#fileImport').click();
