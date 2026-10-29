@@ -1,4 +1,4 @@
-// v1.8.0 相册页：按拍摄/上传时间分组的时间轴
+// v1.8.0 相册页：按拍摄/上传时间分组的时间轴（v1.9.1：上传可选相册或拍照）
 import { store } from '../store.js';
 import { esc, toast, confirmSheet, openSheet, closeSheet } from '../ui.js';
 import {
@@ -31,12 +31,13 @@ export function renderAlbum(root) {
     ${!api ? `<div class="banner album-tip"><div class="bt"><b>还没填照片服务地址</b>缩略图和说明可以先同步；填极空间照片服务地址后，全家才能看到原图。家里 Wi‑Fi 填局域网地址即可。</div>
       <button class="btn secondary" id="btnGoPhotoSet" style="flex:none">去设置</button></div>` : ''}
     ${api && !syncOn ? `<div class="banner album-tip"><div class="bt"><b>建议开启云同步</b>原图用同步密钥加密后上传；元数据也靠云同步共享给家人。</div></div>` : ''}
-    <input type="file" id="filePhoto" accept="image/*" capture="environment" multiple hidden>
+    <input type="file" id="filePhotoAlbum" accept="image/*" multiple hidden>
+    <input type="file" id="filePhotoCamera" accept="image/*" capture="environment" hidden>
     ${groups.length === 0 ? `
       <section class="card album-empty">
         <div style="font-size:48px;text-align:center">📷</div>
         <p style="text-align:center;margin:8px 0 4px;font-weight:700">还没有照片</p>
-        <p class="small muted" style="text-align:center;margin:0">点右上角「＋ 上传」，从相册选图或拍照。</p>
+        <p class="small muted" style="text-align:center;margin:0">点右上角「＋ 上传」，可选「从相册选择」或「拍照」。</p>
       </section>` : groups.map((g) => `
       <section class="card album-day">
         <h2 class="album-day-title">${esc(fmtDayTitle(g.day))}<span class="muted small" style="font-weight:600;margin-left:8px">${esc(g.day)} · ${g.items.length} 张</span></h2>
@@ -54,8 +55,8 @@ export function renderAlbum(root) {
 
   const q = (s) => root.querySelector(s);
   q('#btnGoPhotoSet') && (q('#btnGoPhotoSet').onclick = () => { location.hash = '#/settings'; });
-  q('#btnAddPhoto').onclick = () => q('#filePhoto').click();
-  q('#filePhoto').onchange = async (e) => {
+  q('#btnAddPhoto').onclick = () => openAddPhotoSheet(root);
+  const onFiles = async (e) => {
     const files = [...(e.target.files || [])];
     e.target.value = '';
     if (!files.length) return;
@@ -74,8 +75,34 @@ export function renderAlbum(root) {
     if (ok && !fail) toast(ok === 1 ? '已添加 1 张照片' : `已添加 ${ok} 张照片`);
     renderAlbum(root);
   };
+  q('#filePhotoAlbum').onchange = onFiles;
+  q('#filePhotoCamera').onchange = onFiles;
   root.querySelectorAll('.album-cell').forEach((btn) => {
     btn.onclick = () => openViewer(btn.dataset.id, root);
+  });
+}
+
+/** 「＋ 上传」：选从相册（可多选）或拍照（带 capture，走相机） */
+function openAddPhotoSheet(albumRoot) {
+  openSheet(`
+    <h3>添加照片</h3>
+    <p class="small muted" style="margin-top:0">从手机相册选图，或直接拍照。</p>
+    <div class="btn-row" style="flex-direction:column;gap:10px">
+      <button type="button" class="btn" id="pickAlbum">🖼 从相册选择</button>
+      <button type="button" class="btn secondary" id="pickCamera">📷 拍照</button>
+      <button type="button" class="btn ghost" id="pickCancel">取消</button>
+    </div>
+  `, (sh) => {
+    sh.querySelector('#pickCancel').onclick = closeSheet;
+    sh.querySelector('#pickAlbum').onclick = () => {
+      closeSheet();
+      // 等面板关掉后再点 file input，避免 iOS 手势链被打断
+      setTimeout(() => albumRoot.querySelector('#filePhotoAlbum')?.click(), 80);
+    };
+    sh.querySelector('#pickCamera').onclick = () => {
+      closeSheet();
+      setTimeout(() => albumRoot.querySelector('#filePhotoCamera')?.click(), 80);
+    };
   });
 }
 
