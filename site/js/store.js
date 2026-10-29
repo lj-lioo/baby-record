@@ -9,6 +9,7 @@ function defaults() {
   return {
     version: SCHEMA_VERSION,
     events: [],          // 日程：疫苗 / 体检 / 其他重要事项
+    photos: [],          // v1.8.0 相册元数据（原图密文在照片服务 / 本机缓存）
     snoozes: [],         // 稍后提醒记录 {id, eventId, fireAt, label}
     fired: {},           // 已响铃/已确认的提醒 id -> 时间戳
     settings: {
@@ -16,6 +17,7 @@ function defaults() {
       babyBirthday: '', // 宝宝生日 YYYY-MM-DD（用于一键生成疫苗计划）
       shortcutName: '宝宝闹钟',
       pushApi: '',       // 为空时使用 config.js 中的默认推送服务地址
+      photoApi: '',      // v1.8.0 极空间照片服务地址（本机设置，不同步；如 http://192.168.1.8:8789）
       sound: true,
       profileUpdatedAt: 0, // 宝宝资料的修改时间（云同步用）
     },
@@ -43,6 +45,7 @@ function migrate(data) {
   // 注意：这里在模块加载时（state 还没赋值）就会运行，只能用传进来的 data，不能访问 state
   const bday = out.settings.babyBirthday;
   out.events = (out.events || []).map((e) => normalizeEvent(fillWindow(e, bday)));
+  out.photos = (out.photos || []).map(normalizePhoto);
   out.version = SCHEMA_VERSION;
   return out;
 }
@@ -78,6 +81,24 @@ export function normalizeEvent(e) {
   };
 }
 
+// v1.8.0 相册元数据（不含原图像素；缩略图可放 thumbData 小 JPEG data URL）
+export function normalizePhoto(p) {
+  return {
+    id: p.id || uid(),
+    takenAt: Number(p.takenAt) || Number(p.uploadedAt) || Date.now(),
+    uploadedAt: Number(p.uploadedAt) || Date.now(),
+    note: (p.note || '').trim(),
+    mime: p.mime || 'image/jpeg',
+    size: Number(p.size) || 0,
+    width: Number(p.width) || 0,
+    height: Number(p.height) || 0,
+    thumbData: typeof p.thumbData === 'string' ? p.thumbData : '', // data:image/jpeg;base64,… 最长边约 400
+    remoteReady: !!p.remoteReady, // 原图密文是否已成功 PUT 到照片服务
+    createdAt: p.createdAt || Date.now(),
+    updatedAt: p.updatedAt || Date.now(),
+  };
+}
+
 function validYmd(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s || '') ? s : ''; }
 function bdayNow() { try { return state?.settings?.babyBirthday || ''; } catch (e) { return ''; } } // 加载期间 state 尚未赋值时也安全
 
@@ -94,6 +115,19 @@ export const store = {
   get state() { return state; },
   subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   events() { return state.events; },
+  photos() { return state.photos; },
+  getPhoto(id) { return state.photos.find((p) => p.id === id); },
+  upsertPhoto(ph) {
+    const p = normalizePhoto({ ...ph, updatedAt: Date.now() });
+    const i = state.photos.findIndex((x) => x.id === p.id);
+    if (i >= 0) state.photos[i] = p; else state.photos.push(p);
+    save();
+    return p;
+  },
+  deletePhoto(id) {
+    state.photos = state.photos.filter((p) => p.id !== id);
+    save();
+  },
   eventsOn(date) {
     return state.events.filter((e) => e.date === date)
       .sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
@@ -165,8 +199,8 @@ export const store = {
     state.settings = { ...state.settings, ...patch }; save();
   },
   // 云同步：应用其他设备的修改（保留对方的 updatedAt，只保存一次）
-  applyRemote({ upserts = [], deletes = [], profile = null } = {}) {
-    if (!upserts.length && !deletes.length && !profile) return;
+  applyRemote({ upserts = [], deletes = [], photosUpserts = [], photosDeletes = [], profile = null } = {}) {
+    if (!upserts.length && !deletes.length && !photosUpserts.length && !photosDeletes.length && !profile) return;
     const del = new Set(deletes);
     state.events = state.events.filter((e) => !del.has(e.id));
     state.snoozes = state.snoozes.filter((x) => !del.has(x.eventId));
@@ -175,6 +209,13 @@ export const store = {
       const e = normalizeEvent(fillWindow(ev, bday)); // 旧版本同步来的事项没有窗口字段：本机按 scheduleId 补上（不改 updatedAt）
       const i = state.events.findIndex((x) => x.id === e.id);
       if (i >= 0) state.events[i] = e; else state.events.push(e);
+    }
+    const pdel = new Set(photosDeletes);
+    if (pdel.size) state.photos = state.photos.filter((p) => !pdel.has(p.id));
+    for (const ph of photosUpserts) {
+      const p = normalizePhoto(ph);
+      const i = state.photos.findIndex((x) => x.id === p.id);
+      if (i >= 0) state.photos[i] = p; else state.photos.push(p);
     }
     if (profile) state.settings = { ...state.settings, babyName: profile.babyName || '', babyBirthday: profile.babyBirthday || '', profileUpdatedAt: profile.updatedAt };
     save();
