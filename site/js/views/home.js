@@ -42,8 +42,9 @@ export function renderHome(root) {
   renderVaxCta(root.querySelector('#vaxCta'));
   root.querySelector('#fab').onclick = () => openEditor({ date: ui.selected });
   if (ui.scrollTo) {
-    const g = root.querySelector(`#g-${ui.scrollTo}`);
+    const key = ui.scrollTo;
     ui.scrollTo = null;
+    const g = root.querySelector(key.startsWith('d-') ? `#g${key}` : `#g-${key}`); // d-YYYY-MM-DD → #gd-...
     if (g) { g.classList.add('flash'); requestAnimationFrame(() => g.scrollIntoView({ behavior: 'smooth', block: 'start' })); setTimeout(() => g.classList.remove('flash'), 1600); }
   }
 }
@@ -167,7 +168,10 @@ function renderCalendar(el) {
       ui.selected = ds;
       if (ds.slice(0, 7) !== ui.month) ui.month = ds.slice(0, 7);
       ui.focus = pickFocus(ds, byEarly[ds] || []);
-      ui.scrollTo = ds;
+      // v1.9.2：该日若有已完成项，展开折叠栏并优先滚到已完成分组
+      const dayEvs = store.eventsOn(ds);
+      if (dayEvs.some((e) => e.done)) ui.doneOpen = true;
+      ui.scrollTo = dayEvs.some((e) => !e.done) ? ds : (dayEvs.some((e) => e.done) ? `d-${ds}` : ds);
       rerender();
     };
   });
@@ -230,16 +234,19 @@ function itemCard(e, today, bday) {
   </div>`;
 }
 
-// 日历下方：当前月份的全部事项，按计划日期分组；本月还会在最上面列出之前没完成的事项
+// 日历下方：当前月份事项；未完成按计划日分组在上，已完成整段默认折叠在下（v1.9.2）
 function renderMonthList(el) {
   const today = todayStr();
   const bday = store.state.settings.babyBirthday;
   const [y, m] = ui.month.split('-').map(Number);
   const monthStart = `${ui.month}-01`, monthEnd = ymd(new Date(y, m, 0));
   const inMonth = store.events().filter((e) => e.date >= monthStart && e.date <= monthEnd);
+  const pending = inMonth.filter((e) => !e.done);
+  const completed = inMonth.filter((e) => e.done).sort((a, b) => (a.date + (a.time || '99')).localeCompare(b.date + (b.time || '99')));
+  if (ui.doneOpen == null) ui.doneOpen = false;
   repHints = replacementHints(store.events());
   const byDate = {};
-  for (const e of inMonth) (byDate[e.date] ||= []).push(e);
+  for (const e of pending) (byDate[e.date] ||= []).push(e);
   const dates = Object.keys(byDate);
   if (ui.selected >= monthStart && ui.selected <= monthEnd && !byDate[ui.selected]) dates.push(ui.selected);
   dates.sort();
@@ -247,9 +254,17 @@ function renderMonthList(el) {
   const earlier = today.slice(0, 7) === ui.month
     ? store.events().filter((e) => !e.done && e.date < monthStart && (e.category !== 'other' || e.date >= addDays(today, -30))).sort((a, b) => a.date.localeCompare(b.date))
     : [];
+  const doneByDate = {};
+  for (const e of completed) (doneByDate[e.date] ||= []).push(e);
+  const doneDates = Object.keys(doneByDate).sort();
+  const doneBody = doneDates.map((ds) => {
+    const list = doneByDate[ds].sort(sortT);
+    return `<div class="grp-sub muted-sub" id="gd-${ds}">${esc(fmtD(ds))}</div>${list.map((e) => itemCard(e, today, bday)).join('')}`;
+  }).join('');
+  const emptyMonth = !pending.length && !completed.length && !dates.length;
   el.innerHTML = `
     <div class="day-panel-head">
-      <h2 style="margin:0">📋 ${m}月的事项 <span class="muted small" style="font-weight:500">共 ${inMonth.length} 个</span></h2>
+      <h2 style="margin:0">📋 ${m}月的事项 <span class="muted small" style="font-weight:500">共 ${inMonth.length} 个${completed.length ? ` · 未完成 ${pending.length}` : ''}</span></h2>
       <button class="btn secondary" id="addHere" style="padding:8px 14px;font-size:15px">＋ 添加</button>
     </div>
     ${earlier.length ? `<div class="grp grp-overdue" id="g-earlier"><div class="grp-head"><h2>⚠️ 之前未完成 <span class="pill lvl-overdue" style="animation:none">${earlier.length} 个</span></h2></div>
@@ -257,14 +272,28 @@ function renderMonthList(el) {
     ${dates.length ? dates.map((ds) => {
       const cd = countdown(ds);
       const list = (byDate[ds] || []).sort(sortT);
+      const onlyDoneHere = !list.length && (doneByDate[ds] || []).length;
       return `<div class="grp ${ds === ui.selected ? 'sel' : ''}" id="g-${ds}" data-date="${ds}">
         <div class="grp-head"><h2>${cnDate(ds)} ${weekday(ds)} <span class="pill lvl-${cd.level}" style="animation:none">${cd.text}</span></h2>
           ${list.length ? '' : `<button class="link-btn" data-add="${ds}">＋ 添加</button>`}</div>
-        ${list.length ? list.map((e) => itemCard(e, today, bday)).join('') : '<p class="muted small" style="margin:4px 0 2px">这一天还没有安排。</p>'}
+        ${list.length ? list.map((e) => itemCard(e, today, bday)).join('')
+          : onlyDoneHere ? `<p class="muted small" style="margin:4px 0 2px">这一天的事项已全部完成，见下方「已完成」。</p>`
+            : '<p class="muted small" style="margin:4px 0 2px">这一天还没有安排。</p>'}
       </div>`;
-    }).join('') : `<p class="muted" style="margin:12px 0 2px">这个月还没有安排。点「＋ 添加」记录疫苗、体检等事项。</p>`}`;
+    }).join('') : (emptyMonth ? `<p class="muted" style="margin:12px 0 2px">这个月还没有安排。点「＋ 添加」记录疫苗、体检等事项。</p>` : '')}
+    ${completed.length ? `<div class="grp grp-done" id="g-done">
+      <button type="button" class="done-fold" id="doneFold" aria-expanded="${ui.doneOpen ? 'true' : 'false'}">
+        <span class="done-fold-lab">已完成 · ${completed.length} 项</span>
+        <span class="done-fold-chev" aria-hidden="true">${ui.doneOpen ? '▾' : '▸'}</span>
+      </button>
+      <div class="done-fold-body" id="doneFoldBody" ${ui.doneOpen ? '' : 'hidden'}>${doneBody}</div>
+    </div>` : ''}`;
   el.querySelector('#addHere').onclick = () => openEditor({ date: ui.selected >= monthStart && ui.selected <= monthEnd ? ui.selected : (today.slice(0, 7) === ui.month ? today : monthStart) });
   el.querySelectorAll('[data-add]').forEach((b) => { b.onclick = () => openEditor({ date: b.dataset.add }); });
+  const fold = el.querySelector('#doneFold');
+  if (fold) {
+    fold.onclick = () => { ui.doneOpen = !ui.doneOpen; rerender(); };
+  }
   el.querySelectorAll('.item').forEach((card) => {
     const id = card.dataset.id;
     card.querySelectorAll('[data-act]').forEach((b) => {
