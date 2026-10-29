@@ -412,3 +412,15 @@ summary { font-weight: 700; cursor: pointer; }
 
 /* v1.10.1 名字后括号总天数 */
 .topbar h1 .title-days { font-size: 0.5em; font-weight: 600; margin-left: 2px; vertical-align: baseline; opacity: .85; }
+
+/* v1.11.0 一句话记事 */
+.voice-cta { display: flex; align-items: center; justify-content: center; gap: 8px; width: calc(100% - 24px); margin: 6px 12px 10px; padding: 14px; border: 0; border-radius: 16px; background: linear-gradient(135deg, #FF8F7A, #F0705A); color: #fff; font-size: 18px; font-weight: 800; box-shadow: 0 6px 16px rgba(240,112,90,0.35); }
+.voice-cta span { font-size: 13px; font-weight: 500; opacity: .9; }
+.v-text { width: 100%; font-size: 18px; min-height: 84px; resize: vertical; }
+.v-tip { margin: 6px 0 10px; }
+.v-hold { width: 100%; margin-bottom: 10px; user-select: none; -webkit-user-select: none; touch-action: none; }
+.v-hold.on { background: #E8590C; color: #fff; }
+.v-card { border: 1px solid #F3D9D2; border-radius: 14px; padding: 10px; margin: 8px 0; background: #FFF8F5; }
+.v-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+.v-row .input { flex: 1; min-width: 0; }
+.v-meta .v-when { flex: 1; text-align: right; }
