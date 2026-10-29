@@ -32,6 +32,16 @@ docker run -d --name baby-photo \
 3. 手机连家里 Wi‑Fi，浏览器打开 `http://极空间局域网IP:8789/health`，应看到 `{"ok":true,"service":"baby-record-photo",...}`。
 4. 打开宝宝记录 App → **设置 → 📷 照片服务** → 填 `http://极空间局域网IP:8789` → 点「测试连接」。
 
+## v1.10.0 升级：支持视频（需重建容器）
+
+App v1.10.0 加了视频，照片服务也要更新到 1.10.0，否则上传视频会失败（照片不受影响）：
+
+1. 把新版 `sync/photo-server` 目录拷到极空间（覆盖旧的 `server.js`）。
+2. 极空间 Docker：**停止并删除旧容器 `baby-photo` → 重新 `docker build` 镜像 → 用同样的 `docker run` 参数（同一个 `/data` 挂载文件夹）重建**。已存照片都在挂载文件夹里，不会丢。
+3. 打开 `http://极空间IP:8789/health`，看到 `"version":"1.10.0"` 就好了。
+
+视频按 4MB 一块分别加密，存在 `/data/v_<id>/0.bin, 1.bin …`；每块上限 9MB，所以不需要调大内存。
+
 ## 环境变量
 
 | 变量 | 默认 | 说明 |
@@ -47,6 +57,9 @@ docker run -d --name baby-photo \
 - `PUT /v1/photo/:id` → 上传密文（body = `iv(12)+ciphertext`）
 - `GET /v1/photo/:id` → 下载密文
 - `DELETE /v1/photo/:id` → 删除密文
+- `GET /v1/photo/:id` 和视频块都支持 `Range: bytes=a-b`（206），流式读盘
+- `PUT /v1/video/:id/:n` → 上传视频第 n 块密文（每块 `iv(12)+ciphertext`，AAD=`id:n`，≤9MB，超出 413）
+- `GET /v1/video/:id/:n` → 下载第 n 块；`GET /v1/video/:id` → `{chunks}`；`DELETE /v1/video/:id` → 删整个视频
 
 `:id` 仅允许 `[0-9a-zA-Z_-]{6,64}`。
 

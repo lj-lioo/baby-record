@@ -64,6 +64,31 @@ try {
     assert.equal(res.status, 204);
     assert.equal(res.headers.get('access-control-allow-origin'), 'https://lj-lioo.github.io');
   });
+  await test('照片 Range 读取', async () => {
+    const id = 'rng123xyz';
+    await req('PUT', `/v1/photo/${id}`, Buffer.from([0,1,2,3,4,5,6,7,8,9]));
+    const r = await req('GET', `/v1/photo/${id}`, undefined, { Range: 'bytes=2-5' });
+    assert.equal(r.status, 206);
+    assert.deepEqual([...r.buf], [2,3,4,5]);
+  });
+
+  await test('视频分块 PUT/GET/列出/DELETE', async () => {
+    const id = 'vid123xyz';
+    for (let n = 0; n < 3; n++) {
+      const put = await req('PUT', `/v1/video/${id}/${n}`, Buffer.alloc(1000 + n, n));
+      assert.equal(put.status, 200);
+    }
+    assert.equal((await req('GET', `/v1/video/${id}`)).json().chunks, 3);
+    const g = await req('GET', `/v1/video/${id}/2`);
+    assert.equal(g.buf.length, 1002); assert.equal(g.buf[0], 2);
+    assert.equal((await req('DELETE', `/v1/video/${id}`)).status, 200);
+    assert.equal((await req('GET', `/v1/video/${id}/0`)).status, 404);
+  });
+
+  await test('视频块过大 413', async () => {
+    const r = await req('PUT', '/v1/video/big123xyz/0', Buffer.alloc(10 * 1024 * 1024));
+    assert.equal(r.status, 413);
+  });
 } finally {
   child.kill('SIGTERM');
   try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch { /* ignore */ }

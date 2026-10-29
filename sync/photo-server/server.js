@@ -48,8 +48,9 @@ function setCors(req, res) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Range');
     res.setHeader('Access-Control-Max-Age', '86400');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
   }
 }
 
@@ -77,16 +78,41 @@ function readBody(req, limit = 40 * 1024 * 1024) {
     let n = 0;
     req.on('data', (c) => {
       n += c.length;
-      if (n > limit) {
-        reject(new Error('body too large'));
-        req.destroy();
-        return;
-      }
+      if (n > limit) { chunks.length = 0; return; } // 丢弃剩余数据，读完再回 413
       chunks.push(c);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('end', () => (n > limit ? reject(new Error('body too large')) : resolve(Buffer.concat(chunks))));
     req.on('error', reject);
   });
+}
+
+const CHUNK_LIMIT = 9 * 1024 * 1024; // 客户端每块明文 4MB，留余量
+const MAX_CHUNKS = 2000;
+
+function sendJson(res, code, obj) {
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(obj));
+}
+
+// 流式返回文件，支持 Range（bytes=a-b），不把大文件读进内存
+function sendFile(req, res, fp) {
+  let st;
+  try { st = fs.statSync(fp); } catch { return sendJson(res, 404, { error: 'not_found' }); }
+  const size = st.size;
+  const base = { 'Content-Type': 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=3600' };
+  const r = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+  if (r && (r[1] || r[2])) {
+    let start = r[1] ? Number(r[1]) : Math.max(0, size - Number(r[2]));
+    let end = r[1] && r[2] ? Math.min(Number(r[2]), size - 1) : size - 1;
+    if (start >= size || start > end) {
+      res.writeHead(416, { 'Content-Range': `bytes */${size}` });
+      return res.end();
+    }
+    res.writeHead(206, { ...base, 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${size}` });
+    return fs.createReadStream(fp, { start, end }).pipe(res);
+  }
+  res.writeHead(200, { ...base, 'Content-Length': size });
+  fs.createReadStream(fp).pipe(res);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -101,8 +127,44 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ ok: true, service: 'baby-record-photo', version: '1.8.0' }));
+    res.end(JSON.stringify({ ok: true, service: 'baby-record-photo', version: '1.10.0', features: ['photo', 'video-chunks', 'range'] }));
     return;
+  }
+
+  // v1.10.0 视频：分块密文 /v1/video/:id/:n（每块单独 AES-GCM），DELETE /v1/video/:id 删整段
+  const vm = /^\/v1\/video\/([^/]+)(?:\/(\d{1,5}))?\/?$/.exec(url.pathname);
+  if (vm) {
+    const vid = safeId(decodeURIComponent(vm[1]));
+    if (!vid) return sendJson(res, 400, { error: 'bad_id' });
+    if (!checkAuth(req, res)) return;
+    const dir = path.join(DATA_DIR, `v_${vid}`);
+    try {
+      if (vm[2] == null) {
+        if (req.method === 'DELETE') { fs.rmSync(dir, { recursive: true, force: true }); return sendJson(res, 200, { ok: true, id: vid }); }
+        if (req.method === 'GET') {
+          const n = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^\d+\.bin$/.test(f)).length : 0;
+          return sendJson(res, n ? 200 : 404, { id: vid, chunks: n });
+        }
+        return sendJson(res, 405, { error: 'method_not_allowed' });
+      }
+      const n = Number(vm[2]);
+      if (n > MAX_CHUNKS) return sendJson(res, 400, { error: 'too_many_chunks' });
+      const fp = path.join(dir, `${n}.bin`);
+      if (req.method === 'PUT') {
+        fs.mkdirSync(dir, { recursive: true });
+        const body = await readBody(req, CHUNK_LIMIT);
+        if (!body.length) return sendJson(res, 400, { error: 'empty' });
+        fs.writeFileSync(fp + '.tmp', body);
+        fs.renameSync(fp + '.tmp', fp);
+        return sendJson(res, 200, { ok: true, id: vid, n, bytes: body.length });
+      }
+      if (req.method === 'GET') return sendFile(req, res, fp);
+      return sendJson(res, 405, { error: 'method_not_allowed' });
+    } catch (e) {
+      console.error(e);
+      if (e.message === 'body too large') return sendJson(res, 413, { error: 'too_large' });
+      return sendJson(res, 500, { error: 'server_error', message: String(e.message || e) });
+    }
   }
 
   const m = /^\/v1\/photo\/([^/]+)\/?$/.exec(url.pathname);
@@ -134,21 +196,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true, id, bytes: body.length }));
       return;
     }
-    if (req.method === 'GET') {
-      if (!fs.existsSync(fp)) {
-        res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'not_found' }));
-        return;
-      }
-      const buf = fs.readFileSync(fp);
-      res.writeHead(200, {
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': buf.length,
-        'Cache-Control': 'private, max-age=3600',
-      });
-      res.end(buf);
-      return;
-    }
+    if (req.method === 'GET') return sendFile(req, res, fp);
     if (req.method === 'DELETE') {
       if (fs.existsSync(fp)) fs.unlinkSync(fp);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
