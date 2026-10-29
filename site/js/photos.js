@@ -166,6 +166,155 @@ export async function addPhotoFromFile(file, { note = '', takenAt } = {}) {
   return { photo, uploadError, needsPhotoApi: !photoApiBase() };
 }
 
+// ───────── v1.10.0 视频 ─────────
+export const VIDEO_CHUNK = 4 * 1024 * 1024; // 每块明文 4MB，单独 AES-GCM（AAD = id:n），iPhone 不用整段读进内存
+export function videoMaxBytes() { return Math.max(10, Number(store.state.settings.videoMaxMB) || 200) * 1024 * 1024; }
+export function videoCacheBytes() { return Math.max(50, Number(store.state.settings.videoCacheMB) || 500) * 1024 * 1024; }
+const vkey = (id) => `v:${id}`;
+
+/** 用 <video>+canvas 取首帧做封面；失败则给一张深色占位图 */
+export function makeVideoThumb(file, max = THUMB_MAX) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    v.setAttribute('playsinline', ''); v.setAttribute('muted', '');
+    let done = false;
+    const finish = (r) => { if (done) return; done = true; clearTimeout(timer); URL.revokeObjectURL(url); v.removeAttribute('src'); v.load?.(); resolve(r); };
+    const fallback = () => {
+      const c = document.createElement('canvas'); c.width = 320; c.height = 320;
+      const x = c.getContext('2d'); x.fillStyle = '#2a1f24'; x.fillRect(0, 0, 320, 320);
+      x.fillStyle = '#fff'; x.font = 'bold 120px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('▶', 165, 165);
+      finish({ dataUrl: c.toDataURL('image/jpeg', THUMB_QUALITY), width: v.videoWidth || 0, height: v.videoHeight || 0, duration: Number.isFinite(v.duration) ? v.duration : 0 });
+    };
+    const timer = setTimeout(fallback, 10000);
+    v.onerror = fallback;
+    v.onloadedmetadata = () => { try { v.currentTime = Math.min(0.1, (v.duration || 1) / 2); } catch { /* ignore */ } };
+    v.onseeked = () => {
+      try {
+        const w0 = v.videoWidth, h0 = v.videoHeight;
+        if (!w0 || !h0) return fallback();
+        const scale = Math.min(1, max / Math.max(w0, h0));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(w0 * scale)); c.height = Math.max(1, Math.round(h0 * scale));
+        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+        finish({ dataUrl: c.toDataURL('image/jpeg', THUMB_QUALITY), width: w0, height: h0, duration: Number.isFinite(v.duration) ? v.duration : 0 });
+      } catch { fallback(); }
+    };
+    v.src = url;
+  });
+}
+
+async function idbAll() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const out = [];
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const r = tx.objectStore(IDB_STORE).openCursor();
+    r.onsuccess = () => { const c = r.result; if (c) { out.push([c.key, c.value]); c.continue(); } else resolve(out); };
+    r.onerror = () => reject(r.error);
+  });
+}
+
+/** 本机视频缓存占用 */
+export async function videoCacheInfo() {
+  const all = (await idbAll()).filter(([k]) => String(k).startsWith('v:'));
+  return { count: all.length, bytes: all.reduce((s, [, v]) => s + (v?.size || 0), 0) };
+}
+export async function clearVideoCache() {
+  // 还没上传成功的视频（只有本机有）不删，免得丢失
+  for (const [k] of (await idbAll()).filter(([k]) => String(k).startsWith('v:'))) {
+    if (store.getPhoto(String(k).slice(2))?.remoteReady === false) continue;
+    await idbDel(k);
+  }
+}
+/** 超上限时按最早缓存先删（keepId 不删） */
+async function evictVideoCache(keepId) {
+  const cap = videoCacheBytes();
+  const all = (await idbAll()).filter(([k]) => String(k).startsWith('v:')).sort((a, b) => (a[1]?.savedAt || 0) - (b[1]?.savedAt || 0));
+  let total = all.reduce((s, [, v]) => s + (v?.size || 0), 0);
+  for (const [k, v] of all) {
+    if (total <= cap) break;
+    if (k === vkey(keepId) || store.getPhoto(String(k).slice(2))?.remoteReady === false) continue;
+    await idbDel(k); total -= v?.size || 0;
+  }
+}
+export async function hasLocalVideo(id) { return !!(await idbGet(vkey(id)).catch(() => null))?.blob; }
+
+async function putVideoChunks(id, blob, onProgress) {
+  const base = photoApiBase();
+  const enc = await getEncKey();
+  const chunks = Math.max(1, Math.ceil(blob.size / VIDEO_CHUNK));
+  for (let n = 0; n < chunks; n++) {
+    const part = new Uint8Array(await blob.slice(n * VIDEO_CHUNK, (n + 1) * VIDEO_CHUNK).arrayBuffer());
+    const packed = await core.sealBytes(enc, `${id}:${n}`, part);
+    let res;
+    for (let tryN = 0; tryN < 3; tryN++) {
+      try { res = await fetch(`${base}/v1/video/${encodeURIComponent(id)}/${n}`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: packed }); if (res.ok) break; } catch (e) { if (tryN === 2) throw e; }
+    }
+    if (!res?.ok) throw new Error(`照片服务返回 ${res?.status}（旧版服务不支持视频？请在极空间重建容器）`);
+    onProgress?.((n + 1) / chunks);
+  }
+  return chunks;
+}
+
+/** 选视频后入库：检查大小 → 取封面 → 本机缓存 → 分块加密上传 */
+export async function addVideoFromFile(file, { note = '', takenAt, onProgress } = {}) {
+  if (!file || !String(file.type || '').startsWith('video/')) throw new Error('请选择视频文件');
+  const max = videoMaxBytes();
+  if (file.size > max) {
+    throw new Error(`视频约 ${(file.size / 1048576).toFixed(0)}MB，超过上限 ${Math.round(max / 1048576)}MB。请先在 iPhone 相册里「编辑」剪短后再传，或在设置里调高上限。`);
+  }
+  const id = uid();
+  const taken = takenAt || (file.lastModified ? Number(file.lastModified) : Date.now());
+  const { dataUrl, width, height, duration } = await makeVideoThumb(file);
+  const mime = file.type || 'video/mp4';
+  try { await idbPut(vkey(id), { blob: file.slice(0, file.size, mime), mime, size: file.size, savedAt: Date.now(), kind: 'video' }); await evictVideoCache(id); } catch (e) { console.warn('视频本机缓存失败', e); }
+  let remoteReady = false, uploadError = '', chunks = 0;
+  if (photoApiBase()) {
+    try { chunks = await putVideoChunks(id, file, onProgress); remoteReady = true; }
+    catch (e) { uploadError = e.message || String(e); }
+  }
+  const photo = store.upsertPhoto({
+    id, kind: 'video', takenAt: taken, uploadedAt: Date.now(), note, mime, size: file.size,
+    width, height, duration: Math.round((duration || 0) * 10) / 10, chunks: chunks || Math.max(1, Math.ceil(file.size / VIDEO_CHUNK)), chunkSize: VIDEO_CHUNK,
+    thumbData: dataUrl, remoteReady,
+  });
+  return { photo, uploadError, needsPhotoApi: !photoApiBase() };
+}
+
+/** 播放：本机缓存 → 用户点了才分块下载解密（绝不自动调用） */
+export async function loadVideoBlob(id, { onProgress } = {}) {
+  const meta = store.getPhoto(id);
+  if (!meta || meta.kind !== 'video') throw new Error('视频不存在');
+  const cached = await idbGet(vkey(id)).catch(() => null);
+  if (cached?.blob) {
+    cached.savedAt = Date.now(); idbPut(vkey(id), cached).catch(() => {});
+    return { blob: cached.blob, source: 'local' };
+  }
+  const base = photoApiBase();
+  if (!base) throw new Error('未配置照片服务地址，无法下载视频');
+  if (!meta.remoteReady) throw new Error('这个视频还没上传到照片服务（需在上传的那台手机上补传）');
+  const enc = await getEncKey();
+  const parts = [];
+  for (let n = 0; n < meta.chunks; n++) {
+    const res = await fetch(`${base}/v1/video/${encodeURIComponent(id)}/${n}`);
+    if (!res.ok) throw new Error(res.status === 404 ? '照片服务上找不到这个视频' : `照片服务返回 ${res.status}`);
+    parts.push(await core.unsealBytes(enc, `${id}:${n}`, new Uint8Array(await res.arrayBuffer())));
+    onProgress?.((n + 1) / meta.chunks);
+  }
+  const blob = new Blob(parts, { type: meta.mime || 'video/mp4' });
+  try { await idbPut(vkey(id), { blob, mime: meta.mime, size: blob.size, savedAt: Date.now(), kind: 'video' }); await evictVideoCache(id); } catch { /* 存不下就只播不缓存 */ }
+  return { blob, source: 'remote' };
+}
+
+async function retryVideoUpload(id, meta) {
+  const cached = await idbGet(vkey(id));
+  if (!cached?.blob) throw new Error('本机没有这个视频的缓存，无法补传（需在上传的那台手机上操作）');
+  const chunks = await putVideoChunks(id, cached.blob);
+  store.upsertPhoto({ ...meta, chunks, chunkSize: VIDEO_CHUNK, remoteReady: true });
+}
+
 /** 打开大图：优先本机明文缓存 → 从照片服务拉密文解密 → 仅缩略图 */
 export async function loadPhotoBlob(id) {
   const meta = store.getPhoto(id);
@@ -193,6 +342,14 @@ export async function loadPhotoBlob(id) {
 
 /** 删除：元数据 tombstone（同步层）、本机缓存、尽量删远程密文 */
 export async function removePhoto(id) {
+  const meta = store.getPhoto(id);
+  if (meta?.kind === 'video') {
+    await idbDel(vkey(id)).catch(() => {});
+    const base = photoApiBase();
+    if (base) await fetch(`${base}/v1/video/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+    store.deletePhoto(id);
+    return;
+  }
   await idbDel(id).catch(() => {});
   await deleteRemotePhoto(id);
   store.deletePhoto(id);
@@ -203,6 +360,7 @@ export async function retryUpload(id) {
   const meta = store.getPhoto(id);
   if (!meta) throw new Error('照片不存在');
   if (!photoApiBase()) throw new Error('请先填写照片服务地址');
+  if (meta.kind === 'video') return retryVideoUpload(id, meta);
   const cached = await idbGet(id);
   if (!cached?.plain) throw new Error('本机没有原图缓存，无法补传（需在拍照的那台设备上操作）');
   const enc = await getEncKey();

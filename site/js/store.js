@@ -18,6 +18,8 @@ function defaults() {
       babyBirthday: '', // 宝宝生日 YYYY-MM-DD（用于一键生成疫苗计划）
       shortcutName: '宝宝闹钟',
       pushApi: '',       // 为空时使用 config.js 中的默认推送服务地址
+      videoMaxMB: 200,   // v1.10.0 单个视频大小上限（本机设置）
+      videoCacheMB: 500, // v1.10.0 本机视频缓存上限
       photoApi: '',      // v1.8.0 极空间照片服务地址（本机设置，不同步；如 http://192.168.1.8:8789）
       sound: true,
       profileUpdatedAt: 0, // 宝宝资料的修改时间（云同步用）
@@ -95,6 +97,10 @@ export function normalizePhoto(p) {
     width: Number(p.width) || 0,
     height: Number(p.height) || 0,
     thumbData: typeof p.thumbData === 'string' ? p.thumbData : '', // data:image/jpeg;base64,… 最长边约 400
+    kind: p.kind === 'video' ? 'video' : 'photo', // v1.10.0
+    duration: Number(p.duration) || 0,             // 视频秒数
+    chunks: Number(p.chunks) || 0,                 // 视频密文分块数
+    chunkSize: Number(p.chunkSize) || 0,           // 每块明文字节
     remoteReady: !!p.remoteReady, // 原图密文是否已成功 PUT 到照片服务
     createdAt: p.createdAt || Date.now(),
     updatedAt: p.updatedAt || Date.now(),

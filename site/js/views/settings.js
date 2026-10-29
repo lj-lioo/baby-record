@@ -10,9 +10,9 @@ import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 import { openPaidCatalog, catalogCounts } from './paidcat.js';
 import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../sync.js';
 import { extractSyncKey } from '../sync-core.js';
-import { pingPhotoServer } from '../photos.js';
+import { pingPhotoServer, videoCacheInfo, clearVideoCache } from '../photos.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.9.4';
+export const APP_BUILD = '1.10.0';
 
 /** 编辑宝宝名字 + 生日（云同步 profile）；保存后触发 rerender */
 export function openBabyProfile({ onSaved } = {}) {
@@ -105,6 +105,14 @@ export function renderSettings(root) {
         <input id="photoApi" class="input" placeholder="http://192.168.x.x:8789" value="${esc(st.photoApi || '')}"></div>
       <div class="btn-row"><button class="btn secondary" id="btnPhotoTest">测试连接</button><button class="btn ghost" id="btnPhotoSave">保存</button></div>
       <p class="small muted" id="photoTestResult" style="margin-top:8px"></p>
+      <h3 style="margin:14px 0 6px;font-size:15px">🎬 视频（省流量）</h3>
+      <div class="field"><label for="videoMaxMB">视频大小上限（MB）</label>
+        <input id="videoMaxMB" class="input" type="number" inputmode="numeric" min="10" max="2000" value="${esc(String(st.videoMaxMB || 200))}"></div>
+      <div class="field"><label for="videoCacheMB">本机视频缓存上限（MB）</label>
+        <input id="videoCacheMB" class="input" type="number" inputmode="numeric" min="50" max="5000" value="${esc(String(st.videoCacheMB || 500))}"></div>
+      <div class="btn-row"><button class="btn ghost" id="btnVideoCacheClear">清空本机视频缓存</button></div>
+      <p class="small muted" id="videoCacheInfo" style="margin-top:6px">本机视频缓存：计算中…</p>
+      <p class="note small">视频不会自动下载或播放；点开后显示大小，点「播放」才下载，下载过的存本机（超出缓存上限时先删最早的）。超过大小上限会拒绝，请在 iPhone 相册里剪短后再传。</p>
       <p class="note small">部署说明见仓库 <code>sync/photo-server/README.md</code>（极空间 Docker 挂载文件夹、端口 8789）。未填地址时仍可本机选图预览，元数据可先同步，全家看原图需填地址。</p>
     </section>
 
@@ -167,6 +175,16 @@ export function renderSettings(root) {
     store.updateSettings({ photoApi: q('#photoApi').value.trim().replace(/\/+$/, '') });
     toast('已保存照片服务地址');
   };
+  const clampMB = (v, lo, hi, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n > 0 ? Math.min(hi, Math.max(lo, n)) : d; };
+  q('#videoMaxMB').onchange = (e) => { const v = clampMB(e.target.value, 10, 2000, 200); e.target.value = v; store.updateSettings({ videoMaxMB: v }); toast(`视频上限 ${v}MB`); };
+  q('#videoCacheMB').onchange = (e) => { const v = clampMB(e.target.value, 50, 5000, 500); e.target.value = v; store.updateSettings({ videoCacheMB: v }); toast(`缓存上限 ${v}MB`); };
+  const showVC = async () => {
+    let t = '';
+    try { const i = await videoCacheInfo(); t = `本机视频缓存：${i.count} 个 · ${(i.bytes / 1048576).toFixed(1)}MB`; } catch { /* ignore */ }
+    const el = root.querySelector('#videoCacheInfo'); if (el) el.textContent = t; // 页面可能已切走
+  };
+  showVC();
+  q('#btnVideoCacheClear').onclick = async () => { await clearVideoCache(); toast('已清空本机视频缓存'); showVC(); };
   q('#btnPhotoTest').onclick = async () => {
     const url = q('#photoApi').value.trim().replace(/\/+$/, '');
     store.updateSettings({ photoApi: url });
