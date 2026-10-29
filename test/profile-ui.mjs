@@ -51,7 +51,7 @@ async function check(name, cond, extra = '') {
 await page.goto(`http://127.0.0.1:${APP_PORT}/`);
 await page.waitForTimeout(500);
 
-await check('版本 1.9.3', APP_V === '1.9.3');
+await check(`版本 ${APP_V}`, !!APP_V);
 await check('未设置时标题占位「宝宝记录」', (await page.locator('#btnBabyProfile h1').innerText()) === '宝宝记录');
 await check('未设置提示点此设置生日', (await page.locator('#btnBabyProfile .sub').innerText()).includes('点此设置生日'));
 
@@ -73,7 +73,7 @@ await page.waitForTimeout(400);
 await check('设置页资料卡', await page.locator('#babyProfileCard').count() === 1);
 await check('设置显示名字', (await page.locator('#babyProfileCard').innerText()).includes('豆豆'));
 await check('设置显示生日', (await page.locator('#babyProfileCard').innerText()).includes('2026'));
-await check('页脚版本', (await page.locator('#appVer').innerText()).includes('v1.9.3'));
+await check('页脚版本', (await page.locator('#appVer').innerText()).includes(`v${APP_V}`));
 await page.screenshot({ path: path.join(shotDir, '44-settings-baby-profile.png'), fullPage: false });
 
 // 出生当天＝第1天

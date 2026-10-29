@@ -126,6 +126,12 @@ await page.waitForTimeout(200);
 await page.screenshot({ path: SHOTS + '33-paid-item-price.png' });
 
 ok('日历 11-17 同时有紫色和蓝色圆点', (await page.locator('.day[data-date="2026-11-17"] .dot.cat-vaccine').count()) >= 1 && (await page.locator('.day[data-date="2026-11-17"] .dot.cat-paidvax').count()) === 1);
+ok('日历 11-17 紫针带红叉（百白破/脊灰已被五联替代）', (await page.locator('.day[data-date="2026-11-17"] .vbadge.replaced').count()) === 1
+  && (await page.locator('.day[data-date="2026-11-17"].has-replaced').count()) === 1);
+ok('图例含「已被自费替代可不打」', (await page.locator('.legend2').innerText()).includes('已被自费替代可不打'));
+await hideToast();
+await page.evaluate(() => { document.getElementById('calCard').scrollIntoView({ block: 'start' }); window.scrollBy(0, -8); }); await page.waitForTimeout(300);
+await page.screenshot({ path: SHOTS + '45-cal-replaced-vbadge.png' });
 
 // —— 5. 其他疫苗的间隔/月龄 ——
 // 五价轮状：先试晚于最迟
@@ -244,6 +250,8 @@ await page.click('#pcClose');
 await page.goto(BASE + '#/'); await page.waitForTimeout(300);
 await page.evaluate(() => window.dispatchEvent(new CustomEvent('select-date', { detail: '2026-11-17' }))); await page.waitForTimeout(400);
 ok('移出五联后，免费百白破/脊灰卡片不再提示', (await page.locator('#dayCard .irep').count()) === 0);
+ok('移出五联后日历 11-17 针标不再有红叉', (await page.locator('.day[data-date="2026-11-17"] .vbadge.replaced').count()) === 0
+  && (await page.locator('.day[data-date="2026-11-17"] .vbadge').count()) === 1);
 const tomb = await page.evaluate(async () => { const { store } = await import('./js/store.js'); return store.events().filter((e) => (e.scheduleId || '').startsWith('paid:penta')).length; });
 ok('本机数据里没有五联（同步时会发删除标记）', tomb === 0);
 
