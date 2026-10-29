@@ -1,4 +1,4 @@
-// v1.12.14 相册分组标题：相对日/日期 +「第X天」；屏蔽 SW，仅本机数据，不写云端、不打印密钥
+// v1.12.15 相册分组：主标题日期 + 次要「第X天」，无 N 项；屏蔽 SW，不写云端、不打印密钥
 import { chromium } from 'playwright';
 import { createServer } from 'http';
 import fs from 'fs';
@@ -84,15 +84,24 @@ check(`分组标题含第42天 (${joined})`, titles.some((t) => t.includes('第4
 check('分组标题含第41天', titles.some((t) => t.includes('第41天')));
 check('昨天+第42天同组', titles.some((t) => /昨天\s*第42天/.test(t)));
 check('10月27日+第41天', titles.some((t) => /10月27日\s*第41天/.test(t)));
-check(`版本 ${APP_V}`, APP_V === '1.12.14');
+check('无「N 项」计数', !titles.some((t) => /\d+\s*项/.test(t)));
+const ageCls = await page.locator('.album-day-age').count();
+check(`第X天用次要样式 .album-day-age (${ageCls})`, ageCls >= 2);
+const ageSmall = await page.locator('.album-day-age').first().evaluate((el) => {
+  const s = getComputedStyle(el);
+  const h2 = getComputedStyle(el.parentElement);
+  return { ageFs: parseFloat(s.fontSize), titleFs: parseFloat(h2.fontSize), muted: s.color !== h2.color || el.classList.contains('muted') };
+});
+check(`第X天字号小于标题 (${ageSmall.ageFs}<${ageSmall.titleFs})`, ageSmall.ageFs < ageSmall.titleFs && ageSmall.muted);
+check(`版本 ${APP_V}`, APP_V === '1.12.15');
 
-await page.screenshot({ path: path.join(shotDir, '67-album-day-age.png'), fullPage: true });
+await page.screenshot({ path: path.join(shotDir, '69-album-day-age-small.png'), fullPage: true });
 
 await page.goto(`http://127.0.0.1:${APP_PORT}/#/settings`);
 await page.waitForTimeout(500);
 const ver = await page.locator('#appVer').innerText();
-check(`设置页版本 ${ver}`, ver.includes('v1.12.14'));
-await page.screenshot({ path: path.join(shotDir, '68-settings-v1.12.14.png'), fullPage: true });
+check(`设置页版本 ${ver}`, ver.includes('v1.12.15'));
+await page.screenshot({ path: path.join(shotDir, '70-settings-v1.12.15.png'), fullPage: true });
 
 check('无页面 JS 错误', errors.length === 0);
 if (errors.length) console.log(errors);
