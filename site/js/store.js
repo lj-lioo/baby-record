@@ -139,6 +139,8 @@ export function normalizeMed(m) {
     dose: String(m.dose || '').trim().slice(0, 80),
     start, end,
     note: String(m.note || '').trim().slice(0, 200),
+    // v1.12.3 关联日历事项系列（scheduleId 前缀，例如 vitk → vitk:1…vitk:N），用于药丸进度
+    series: String(m.series || '').trim().slice(0, 40),
     createdAt: m.createdAt || Date.now(),
     updatedAt: m.updatedAt || Date.now(),
   };

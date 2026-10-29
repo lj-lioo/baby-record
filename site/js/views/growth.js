@@ -4,18 +4,18 @@ import { esc, toast, confirmSheet, openSheet, closeSheet } from '../ui.js';
 import { openBabyProfile } from './settings.js';
 import { todayStr } from '../dates.js';
 import {
-  ageOnDate, growthSorted, medsSorted, medPeriod, deltaTip, validateGrowth, chartSvg, seriesFor,
+  ageOnDate, growthSorted, medsSorted, medPeriod, medDoses, deltaTip, validateGrowth, chartSvg, seriesFor,
   HEIGHT_MIN, HEIGHT_MAX, WEIGHT_MIN, WEIGHT_MAX, HEAD_MIN, HEAD_MAX,
 } from '../growth.js';
 
 const TABS = [
-  { id: 'list', label: '记录列表' },
   { id: 'height', label: '身高曲线' },
   { id: 'weight', label: '体重曲线' },
   { id: 'head', label: '头围曲线' },
+  { id: 'list', label: '记录列表' },
 ];
 
-let activeTab = 'list';
+let activeTab = 'height'; // v1.12.3 默认第一个标签
 
 export function renderGrowth(root) {
   const bday = store.state.settings.babyBirthday || '';
@@ -151,8 +151,16 @@ function medRow(m, on) {
     <div class="md-top"><span class="md-name">${esc(m.name)}</span>${on ? '<span class="md-tag">在用</span>' : ''}</div>
     ${m.dose ? `<div class="md-dose">${esc(m.dose)}</div>` : ''}
     <div class="md-period">${esc(medPeriod(m))}</div>
+    ${pillsHtml(m)}
     ${m.note ? `<div class="md-note">${esc(m.note)}</div>` : ''}
   </div>`;
+}
+function pillsHtml(m) {
+  const d = medDoses(m);
+  if (!d) return '';
+  return `<div class="md-pills" aria-label="已用 ${d.done}/共 ${d.total} 次">
+    <span class="md-pill-row">${d.list.map((e) => `<span class="md-pill${e.done ? ' on' : ''}" title="${esc(e.date)}${e.done ? ' 已用' : ''}"></span>`).join('')}</span>
+    <span class="md-pill-txt">已用 ${d.done}/共 ${d.total} 次</span></div>`;
 }
 function renderMeds() {
   const { active, past } = medsSorted();
@@ -190,7 +198,7 @@ function openMedEditor(id, growthRoot) {
   `, (sh) => {
     const v = (s) => sh.querySelector(s).value;
     const save = (patch = {}) => {
-      const p = { id: existing?.id, createdAt: existing?.createdAt, name: v('#md-name'), dose: v('#md-dose'), start: v('#md-start'), end: v('#md-end'), note: v('#md-note'), ...patch };
+      const p = { id: existing?.id, createdAt: existing?.createdAt, series: existing?.series || '', name: v('#md-name'), dose: v('#md-dose'), start: v('#md-start'), end: v('#md-end'), note: v('#md-note'), ...patch };
       const errEl = sh.querySelector('#mdErr');
       const err = !p.name.trim() ? '请填写药品' : !/^\d{4}-\d{2}-\d{2}$/.test(p.start) ? '请选择开始日期' : (p.end && p.end < p.start ? '结束日期不能早于开始日期' : '');
       if (err) { errEl.hidden = false; errEl.textContent = err; return; }

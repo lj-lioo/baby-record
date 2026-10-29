@@ -141,10 +141,29 @@ export function seriesFor(metric) {
 
 // v1.12.0 用药记录：在用（无结束日或结束日≥今天）排上面，按开始日倒序
 export function medActive(m, today = todayStr()) { return !m.end || m.end >= today; }
+// v1.12.3 频次：每日 0 → 未知 1 → 每周 2 → 每月 3；在用列表按频次排，同频次按开始日先后
+export function medFreqRank(m) {
+  const f = String(m.freq || '');
+  const t = f || `${m.dose || ''} ${m.name || ''}`;
+  if (/月/.test(f) || (!f && /(一|每|1)\s*个?月|月\s*[一1]\s*次|每月/.test(t))) return 3;
+  if (/周/.test(f) || (!f && /(一|每|1)\s*(周|星期|礼拜)|周\s*[一1]\s*次|每周/.test(t))) return 2;
+  if (/[日天]/.test(f) || (!f && /(一|每|1)\s*[天日]|每[天日]|[天日]\s*[一二两三1-9]/.test(t))) return 0;
+  return 1;
+}
 export function medsSorted(list = store.meds(), today = todayStr()) {
   const by = (a, b) => b.start.localeCompare(a.start) || b.updatedAt - a.updatedAt;
+  const byFreq = (a, b) => medFreqRank(a) - medFreqRank(b) || a.start.localeCompare(b.start) || b.updatedAt - a.updatedAt;
   const all = [...list];
-  return { active: all.filter((m) => medActive(m, today)).sort(by), past: all.filter((m) => !medActive(m, today)).sort(by) };
+  return { active: all.filter((m) => medActive(m, today)).sort(byFreq), past: all.filter((m) => !medActive(m, today)).sort(by) };
+}
+// v1.12.3 药丸进度：药品 series 关联日历里 scheduleId 为「series:序号」的事项；总数＝事项数，已用＝已完成数
+export function medDoses(m, events = store.events()) {
+  if (!m || !m.series) return null;
+  const pre = m.series + ':';
+  const list = events.filter((e) => String(e.scheduleId || '').startsWith(pre))
+    .sort((a, b) => (Number(a.scheduleId.slice(pre.length)) || 0) - (Number(b.scheduleId.slice(pre.length)) || 0) || a.date.localeCompare(b.date));
+  if (!list.length) return null;
+  return { total: list.length, done: list.filter((e) => e.done).length, list };
 }
 export function medPeriod(m, today = todayStr()) {
   const md = (d) => `${Number(d.slice(5, 7))}月${Number(d.slice(8))}日`;
