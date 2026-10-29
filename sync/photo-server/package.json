@@ -1,0 +1,15 @@
+{
+  "name": "baby-record-photo-server",
+  "version": "1.8.0",
+  "private": true,
+  "type": "module",
+  "description": "极空间 Docker 里跑的宝宝记录加密照片服务（只存密文）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
