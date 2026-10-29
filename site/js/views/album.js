@@ -4,7 +4,7 @@ import { esc, toast, confirmSheet, openSheet, closeSheet } from '../ui.js';
 import { canDeleteAlbum } from '../roles.js';
 import {
   photosByDay, fmtDayTitle, dayNumberOnDate, addPhotoFromFile, loadPhotoBlob, removePhoto,
-  retryUpload, photoApiBase, pingPhotoServer, isUploading,
+  retryUpload, photoApiBase, pingPhotoServer, isUploading, hasLocalPhoto,
   addVideoFromFile, loadVideoBlob, hasLocalVideo,
 } from '../photos.js';
 import { syncStatus } from '../sync.js';
@@ -305,6 +305,8 @@ async function openViewer(id, albumRoot) {
   const meta = store.getPhoto(id);
   if (!meta) return;
   if (meta.kind === 'video') return openVideoViewer(id, albumRoot);
+  const localOk = await hasLocalPhoto(id).catch(() => false);
+  const needReselect = !meta.remoteReady && !localOk;
   openSheet(`
     <h3>照片</h3>
     <div class="album-viewer">
@@ -314,7 +316,7 @@ async function openViewer(id, albumRoot) {
       <div class="kv"><span>原图</span><span>${meta.remoteReady ? '<span class="ok">已上传到照片服务</span>' : '<span class="bad">仅本机 / 未上传</span>'}</span></div>
       <div class="field"><label for="avNote">说明</label>
         <input id="avNote" class="input" value="${esc(meta.note)}" placeholder="可选：一句话说明"></div>
-      <p class="small muted" id="avTip" hidden></p>
+      <p class="small muted" id="avTip" ${needReselect ? '' : 'hidden'}>${needReselect ? '本机原图已不在（删过 App 会清掉）。请删除这条，再点「＋上传」从手机相册重新选同一张。' : ''}</p>
       <p class="small muted" id="avDlState" hidden></p>
       <div class="btn-row" style="margin-top:10px">
         <button class="btn ghost" id="avClose">关闭</button>
@@ -322,7 +324,7 @@ async function openViewer(id, albumRoot) {
       </div>
       <div class="btn-row" style="margin-top:8px">
         <button class="btn" id="avDl">⬇ 下载原图</button>
-        ${!meta.remoteReady && photoApiBase() ? '<button class="btn secondary" id="avRetry">补传原图</button>' : ''}
+        ${!meta.remoteReady && photoApiBase() && localOk ? '<button class="btn secondary" id="avRetry">补传原图</button>' : ''}
         ${canDeleteAlbum() ? '<button class="btn danger" id="avDel">删除</button>' : ''}
       </div>
     </div>

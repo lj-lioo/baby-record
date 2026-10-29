@@ -388,7 +388,13 @@ async function retryVideoUpload(id, meta, onProgress) {
   store.upsertPhoto({ ...store.getPhoto(id), chunks, chunkSize: VIDEO_CHUNK, remoteReady: true });
 }
 
-/** 打开大图：优先本机明文缓存 → 从照片服务拉密文解密 → 仅缩略图 */
+/** 本机 IndexedDB 是否还有原图像素（删 App / 清站点数据后会没） */
+export async function hasLocalPhoto(id) {
+  const cached = await idbGet(id).catch(() => null);
+  return !!(cached && cached.plain);
+}
+
+/** 打开大图：优先本机明文缓存 →（已上传）从照片服务拉密文解密 → 仅缩略图 */
 export async function loadPhotoBlob(id) {
   const meta = store.getPhoto(id);
   if (!meta) throw new Error('照片不存在');
@@ -396,6 +402,19 @@ export async function loadPhotoBlob(id) {
   const cached = await idbGet(id);
   if (cached?.plain) {
     return { blob: new Blob([cached.plain], { type: cached.mime || meta.mime }), source: 'local' };
+  }
+
+  // 从未成功上传：别去服务端硬找（会误报「照片服务上找不到这张原图」）
+  if (!meta.remoteReady) {
+    if (meta.thumbData) {
+      const r = await fetch(meta.thumbData);
+      return {
+        blob: await r.blob(),
+        source: 'thumb',
+        tip: '原图还没传到照片服务。若刚删过 App，本机原图也没了——请删除这条后，从手机相册重新选图上传。',
+      };
+    }
+    throw new Error('原图未上传，且本机没有缓存。请删除后从手机相册重新上传。');
   }
 
   if (!photoApiBase()) {
@@ -406,11 +425,19 @@ export async function loadPhotoBlob(id) {
     throw new Error('本机没有这张图的缓存，且未配置照片服务');
   }
 
-  const enc = await getEncKey();
-  const packed = await fetchEncryptedPhoto(id);
-  const plain = await core.unsealBytes(enc, id, packed);
-  await idbPut(id, { plain, mime: meta.mime, savedAt: Date.now() });
-  return { blob: new Blob([plain], { type: meta.mime }), source: 'remote' };
+  try {
+    const enc = await getEncKey();
+    const packed = await fetchEncryptedPhoto(id);
+    const plain = await core.unsealBytes(enc, id, packed);
+    await idbPut(id, { plain, mime: meta.mime, savedAt: Date.now() });
+    return { blob: new Blob([plain], { type: meta.mime }), source: 'remote' };
+  } catch (e) {
+    if (meta.thumbData) {
+      const r = await fetch(meta.thumbData);
+      return { blob: await r.blob(), source: 'thumb', tip: e.message || '原图加载失败，暂显示缩略图' };
+    }
+    throw e;
+  }
 }
 
 /** 删除：元数据 tombstone（同步层）、本机缓存、尽量删远程密文 */
@@ -440,7 +467,7 @@ export async function retryUpload(id, { onProgress } = {}) {
       await retryVideoUpload(id, meta, onProgress);
     } else {
       const cached = await idbGet(id);
-      if (!cached?.plain) throw new Error('本机没有原图缓存，无法补传（需在拍照的那台设备上操作）');
+      if (!cached?.plain) throw new Error('本机没有原图缓存，无法补传。删过 App 后需删除这条，再从手机相册重新选图上传');
       const enc = await getEncKey();
       const packed = await core.sealBytes(enc, id, cached.plain);
       await putEncryptedPhoto(id, packed);
