@@ -317,7 +317,7 @@ async function main() {
     const now = Date.now();
     for (const r of rows) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(isG ? r.date : r.start)) throw new Error(`日期格式错误：${JSON.stringify(r)}`);
-      const hit = have.find((x) => isG ? x.item.date === r.date : (x.item.name === r.name && x.item.start === r.start));
+      const hit = have.find((x) => isG ? x.item.date === r.date : (r.id ? x.item.id === r.id : (x.item.name === r.name && x.item.start === r.start)));
       const fields = isG ? { date: r.date, height: r.height, weight: r.weight, head: r.head, note: r.note || '' }
         : { name: r.name, dose: r.dose || '', start: r.start, end: r.end || '', note: r.note || '', ...(r.series != null || hit?.item.series != null ? { series: r.series ?? hit?.item.series ?? '' } : {}) };
       if (hit && Object.keys(fields).every((k) => (hit.item[k] ?? null) === (fields[k] ?? null))) { stat.same++; continue; }
