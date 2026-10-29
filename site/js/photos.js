@@ -166,8 +166,15 @@ export async function pingPhotoServer(baseUrl) {
   }
 }
 
-/** 选图/拍照后入库：写元数据+缩略图，本机缓存原图，有照片服务则加密上传 */
-export async function addPhotoFromFile(file, { note = '', takenAt } = {}) {
+/** 本机「上传中」状态（不同步）：缩略图先入库后角标用 */
+const uploadingIds = new Set();
+export function isUploading(id) { return uploadingIds.has(id); }
+function markUploading(id, on) {
+  if (on) uploadingIds.add(id); else uploadingIds.delete(id);
+}
+
+/** 选图/拍照后入库：先写缩略图+本机缓存立刻可见，再后台加密上传原图 */
+export async function addPhotoFromFile(file, { note = '', takenAt, onLocalReady, onProgress } = {}) {
   const isImg = String(file?.type || '').startsWith('image/') || /\.(jpe?g|png|heic|heif|gif|webp)$/i.test(file?.name || '');
   if (!file || !isImg) throw new Error('请选择图片文件');
   const id = uid();
@@ -179,21 +186,10 @@ export async function addPhotoFromFile(file, { note = '', takenAt } = {}) {
   const buf = new Uint8Array(await file.arrayBuffer());
   await idbPut(id, { plain: buf, mime: file.type || 'image/jpeg', savedAt: Date.now() });
 
-  let remoteReady = false;
-  let uploadError = '';
-  if (photoApiBase()) {
-    try {
-      const enc = await getEncKey();
-      const packed = await core.sealBytes(enc, id, buf);
-      await putEncryptedPhoto(id, packed);
-      remoteReady = true;
-    } catch (e) {
-      uploadError = e.message || String(e);
-      console.warn('原图上传失败（元数据仍会同步）', core.keyFingerprint?.(syncStatus().key), e);
-    }
-  }
-
-  const photo = store.upsertPhoto({
+  // 先入库（remoteReady=false），时间轴立刻能看到缩略图；有照片服务则先标「上传中」
+  const willUpload = !!photoApiBase();
+  if (willUpload) markUploading(id, true);
+  let photo = store.upsertPhoto({
     id,
     takenAt: taken,
     uploadedAt: Date.now(),
@@ -203,9 +199,30 @@ export async function addPhotoFromFile(file, { note = '', takenAt } = {}) {
     width,
     height,
     thumbData: dataUrl,
-    remoteReady,
+    remoteReady: false,
   });
-  return { photo, uploadError, needsPhotoApi: !photoApiBase() };
+  onLocalReady?.(photo);
+  onProgress?.({ phase: willUpload ? 'upload' : 'local', id });
+
+  let remoteReady = false;
+  let uploadError = '';
+  if (willUpload) {
+    try {
+      const enc = await getEncKey();
+      const packed = await core.sealBytes(enc, id, buf);
+      await putEncryptedPhoto(id, packed);
+      remoteReady = true;
+      photo = store.upsertPhoto({ ...store.getPhoto(id), remoteReady: true });
+      onProgress?.({ phase: 'done', id });
+    } catch (e) {
+      uploadError = e.message || String(e);
+      console.warn('原图上传失败（元数据仍会同步）', core.keyFingerprint?.(syncStatus().key), e);
+      onProgress?.({ phase: 'error', id, error: uploadError });
+    } finally {
+      markUploading(id, false);
+    }
+  }
+  return { photo: store.getPhoto(id) || photo, uploadError, needsPhotoApi: !photoApiBase() };
 }
 
 // ───────── v1.10.0 视频 ─────────
@@ -300,8 +317,8 @@ async function putVideoChunks(id, blob, onProgress) {
   return chunks;
 }
 
-/** 选视频后入库：检查大小 → 取封面 → 本机缓存 → 分块加密上传 */
-export async function addVideoFromFile(file, { note = '', takenAt, onProgress } = {}) {
+/** 选视频后入库：先封面+本机缓存立刻可见，再分块加密上传 */
+export async function addVideoFromFile(file, { note = '', takenAt, onLocalReady, onProgress } = {}) {
   if (!file || !String(file.type || '').startsWith('video/')) throw new Error('请选择视频文件');
   const max = videoMaxBytes();
   if (file.size > max) {
@@ -312,17 +329,31 @@ export async function addVideoFromFile(file, { note = '', takenAt, onProgress } 
   const { dataUrl, width, height, duration } = await makeVideoThumb(file);
   const mime = file.type || 'video/mp4';
   try { await idbPut(vkey(id), { blob: file.slice(0, file.size, mime), mime, size: file.size, savedAt: Date.now(), kind: 'video' }); await evictVideoCache(id); } catch (e) { console.warn('视频本机缓存失败', e); }
-  let remoteReady = false, uploadError = '', chunks = 0;
-  if (photoApiBase()) {
-    try { chunks = await putVideoChunks(id, file, onProgress); remoteReady = true; }
-    catch (e) { uploadError = e.message || String(e); }
-  }
-  const photo = store.upsertPhoto({
+  const estChunks = Math.max(1, Math.ceil(file.size / VIDEO_CHUNK));
+  const willUpload = !!photoApiBase();
+  if (willUpload) markUploading(id, true);
+  let photo = store.upsertPhoto({
     id, kind: 'video', takenAt: taken, uploadedAt: Date.now(), note, mime, size: file.size,
-    width, height, duration: Math.round((duration || 0) * 10) / 10, chunks: chunks || Math.max(1, Math.ceil(file.size / VIDEO_CHUNK)), chunkSize: VIDEO_CHUNK,
-    thumbData: dataUrl, remoteReady,
+    width, height, duration: Math.round((duration || 0) * 10) / 10, chunks: estChunks, chunkSize: VIDEO_CHUNK,
+    thumbData: dataUrl, remoteReady: false,
   });
-  return { photo, uploadError, needsPhotoApi: !photoApiBase() };
+  onLocalReady?.(photo);
+
+  let remoteReady = false, uploadError = '', chunks = 0;
+  if (willUpload) {
+    try {
+      chunks = await putVideoChunks(id, file, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
+      remoteReady = true;
+      photo = store.upsertPhoto({ ...store.getPhoto(id), chunks, chunkSize: VIDEO_CHUNK, remoteReady: true });
+      onProgress?.({ phase: 'done', id });
+    } catch (e) {
+      uploadError = e.message || String(e);
+      onProgress?.({ phase: 'error', id, error: uploadError });
+    } finally {
+      markUploading(id, false);
+    }
+  }
+  return { photo: store.getPhoto(id) || photo, uploadError, needsPhotoApi: !photoApiBase() };
 }
 
 /** 播放：本机缓存 → 用户点了才分块下载解密（绝不自动调用） */
@@ -350,11 +381,11 @@ export async function loadVideoBlob(id, { onProgress } = {}) {
   return { blob, source: 'remote' };
 }
 
-async function retryVideoUpload(id, meta) {
+async function retryVideoUpload(id, meta, onProgress) {
   const cached = await idbGet(vkey(id));
   if (!cached?.blob) throw new Error('本机没有这个视频的缓存，无法补传（需在上传的那台手机上操作）');
-  const chunks = await putVideoChunks(id, cached.blob);
-  store.upsertPhoto({ ...meta, chunks, chunkSize: VIDEO_CHUNK, remoteReady: true });
+  const chunks = await putVideoChunks(id, cached.blob, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
+  store.upsertPhoto({ ...store.getPhoto(id), chunks, chunkSize: VIDEO_CHUNK, remoteReady: true });
 }
 
 /** 打开大图：优先本机明文缓存 → 从照片服务拉密文解密 → 仅缩略图 */
@@ -397,18 +428,31 @@ export async function removePhoto(id) {
   store.deletePhoto(id);
 }
 
-/** 有地址但 remoteReady=false 时，用本机缓存补传 */
-export async function retryUpload(id) {
+/** 有地址但 remoteReady=false 时，用本机缓存补传（失败抛错，不静默） */
+export async function retryUpload(id, { onProgress } = {}) {
   const meta = store.getPhoto(id);
   if (!meta) throw new Error('照片不存在');
   if (!photoApiBase()) throw new Error('请先填写照片服务地址');
-  if (meta.kind === 'video') return retryVideoUpload(id, meta);
-  const cached = await idbGet(id);
-  if (!cached?.plain) throw new Error('本机没有原图缓存，无法补传（需在拍照的那台设备上操作）');
-  const enc = await getEncKey();
-  const packed = await core.sealBytes(enc, id, cached.plain);
-  await putEncryptedPhoto(id, packed);
-  store.upsertPhoto({ ...meta, remoteReady: true });
+  markUploading(id, true);
+  onProgress?.({ phase: 'upload', id });
+  try {
+    if (meta.kind === 'video') {
+      await retryVideoUpload(id, meta, onProgress);
+    } else {
+      const cached = await idbGet(id);
+      if (!cached?.plain) throw new Error('本机没有原图缓存，无法补传（需在拍照的那台设备上操作）');
+      const enc = await getEncKey();
+      const packed = await core.sealBytes(enc, id, cached.plain);
+      await putEncryptedPhoto(id, packed);
+      store.upsertPhoto({ ...store.getPhoto(id), remoteReady: true });
+    }
+    onProgress?.({ phase: 'done', id });
+  } catch (e) {
+    onProgress?.({ phase: 'error', id, error: e.message || String(e) });
+    throw e;
+  } finally {
+    markUploading(id, false);
+  }
 }
 
 export function photosByDay(list = store.photos()) {

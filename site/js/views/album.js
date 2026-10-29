@@ -4,7 +4,7 @@ import { esc, toast, confirmSheet, openSheet, closeSheet } from '../ui.js';
 import { canDeleteAlbum } from '../roles.js';
 import {
   photosByDay, fmtDayTitle, dayNumberOnDate, addPhotoFromFile, loadPhotoBlob, removePhoto,
-  retryUpload, photoApiBase, pingPhotoServer,
+  retryUpload, photoApiBase, pingPhotoServer, isUploading,
   addVideoFromFile, loadVideoBlob, hasLocalVideo,
 } from '../photos.js';
 import { syncStatus } from '../sync.js';
@@ -154,7 +154,7 @@ export function renderAlbum(root) {
             <button type="button" class="album-cell" data-id="${esc(p.id)}" aria-label="${p.kind === 'video' ? '查看视频' : '查看照片'}">
               <img src="${esc(p.thumbData || '')}" alt="" loading="lazy">
               ${p.kind === 'video' ? `<span class="album-play">▶ ${esc(fmtDur(p.duration))}</span>` : ''}
-              ${p.remoteReady ? '' : '<span class="album-badge" title="原图尚未上传到照片服务">本地</span>'}
+              ${isUploading(p.id) ? '<span class="album-badge uploading" title="正在上传到照片服务">上传中</span>' : (p.remoteReady ? '' : '<span class="album-badge" title="原图尚未上传到照片服务">本地</span>')}
               ${p.note ? `<span class="album-note-dot" title="${esc(p.note)}">📝</span>` : ''}
             </button>`).join('')}
         </div>
@@ -169,27 +169,64 @@ export function renderAlbum(root) {
     const files = [...(e.target.files || [])];
     e.target.value = '';
     if (!files.length) return;
-    toast(`正在处理 ${files.length} 项…`, 2000);
-    let ok = 0, fail = 0;
-    const prog = q('#albumProgress'), progT = q('#albumProgressText');
+    const total = files.length;
+    let ok = 0, fail = 0, uploadFail = 0;
+    const lastErr = [];
+    const progressEls = () => {
+      const rootEl = albumRootRef || root;
+      return [rootEl.querySelector('#albumProgress'), rootEl.querySelector('#albumProgressText')];
+    };
+    const setProg = (t) => {
+      const [prog, progT] = progressEls();
+      if (!prog || !progT) return;
+      prog.hidden = false;
+      progT.textContent = t;
+    };
+    const refresh = () => {
+      if (location.hash.startsWith('#/album')) renderAlbum(albumRootRef || root);
+    };
+    setProg(`正在处理 0/${total}…`);
     for (const [i, f] of files.entries()) {
+      const n = i + 1;
       try {
         const isVid = String(f.type || '').startsWith('video/') || /\.(mov|mp4|m4v)$/i.test(f.name || '');
-        if (isVid) { prog.hidden = false; progT.textContent = `视频 ${i + 1}/${files.length}：准备中（约 ${fmtSize(f.size)}）…`; }
-        const r = isVid
-          ? await addVideoFromFile(f, { onProgress: (x) => { progT.textContent = `视频 ${i + 1}/${files.length}：加密上传 ${Math.round(x * 100)}%（约 ${fmtSize(f.size)}）`; } })
-          : await addPhotoFromFile(f);
+        setProg(isVid
+          ? `已处理 ${i}/${total}，准备视频 ${n}/${total}（约 ${fmtSize(f.size)}）…`
+          : `已处理 ${i}/${total}，处理中 ${n}/${total}…`);
+        const opts = {
+          onLocalReady: () => {
+            // 缩略图已入库：立刻刷新时间轴，角标显示「上传中」
+            refresh();
+            setProg(`已处理 ${n}/${total}，上传中…`);
+          },
+          onProgress: (ev) => {
+            if (ev?.phase === 'upload') {
+              const pct = ev.ratio != null ? ` ${Math.round(ev.ratio * 100)}%` : '';
+              setProg(isVid
+                ? `上传中 ${n}/${total}${pct}（约 ${fmtSize(f.size)}）`
+                : `上传中 ${n}/${total}…`);
+            } else if (ev?.phase === 'done') {
+              setProg(`已处理 ${n}/${total}` + (n < total ? '，继续…' : '，完成'));
+            }
+          },
+        };
+        const r = isVid ? await addVideoFromFile(f, opts) : await addPhotoFromFile(f, opts);
         ok++;
-        if (r.needsPhotoApi) toast('已保存到本机；填照片服务地址后全家才能看原图', 3500);
-        else if (r.uploadError) toast(`已添加，原图上传失败：${r.uploadError}`, 4000);
+        if (r.needsPhotoApi) lastErr.push('已保存到本机；填照片服务地址后全家才能看原图');
+        else if (r.uploadError) { uploadFail++; lastErr.push(r.uploadError); }
+        refresh();
       } catch (err) {
         fail++;
-        toast(err.message || '上传失败', 3500);
+        lastErr.push(err.message || '上传失败');
+        refresh();
       }
     }
-    if (prog) prog.hidden = true;
-    if (ok && !fail) toast(ok === 1 ? '已添加 1 项' : `已添加 ${ok} 项`);
-    if (location.hash.startsWith('#/album')) renderAlbum(albumRootRef || root);
+    const [pEnd] = progressEls();
+    if (pEnd) pEnd.hidden = true;
+    if (fail && !ok) toast(lastErr[0] || '上传失败', 4500);
+    else if (uploadFail) toast(`已添加 ${ok} 项，其中 ${uploadFail} 项原图上传失败：${lastErr[lastErr.length - 1]}。可点开后点「补传原图」`, 5500);
+    else if (ok && lastErr.length && !uploadFail) toast(lastErr[0], 4000);
+    else if (ok && !fail) toast(ok === 1 ? '已添加并上传 1 项' : `已添加并上传 ${ok} 项`);
   };
   // v1.13.2：file input 放在 body 上常驻。iOS 从相册返回会触发 visibilitychange/同步重渲染，
   // 之前 input 在相册 DOM 里会被替换掉，change 事件丢失 → 选完照片什么都不出现
@@ -265,9 +302,16 @@ async function openViewer(id, albumRoot) {
     };
     const retry = sh.querySelector('#avRetry');
     if (retry) retry.onclick = async () => {
-      retry.disabled = true;
-      try { await retryUpload(id); toast('原图已补传'); closeSheet(); renderAlbum(albumRoot); }
-      catch (e) { toast(e.message, 4000); retry.disabled = false; }
+      retry.disabled = true; retry.textContent = '补传中…';
+      try {
+        await retryUpload(id, { onProgress: (ev) => {
+          if (ev?.phase === 'upload') retry.textContent = '补传中…';
+        }});
+        toast('原图已补传'); closeSheet(); renderAlbum(albumRoot);
+      } catch (e) {
+        toast(`补传失败：${e.message || e}`, 4500);
+        retry.disabled = false; retry.textContent = '补传原图';
+      }
     };
     const delBtn = sh.querySelector('#avDel');
     if (delBtn) delBtn.onclick = async () => {
@@ -338,8 +382,16 @@ async function openVideoViewer(id, albumRoot) {
     const retry = sh.querySelector('#avRetry');
     if (retry) retry.onclick = async () => {
       retry.disabled = true; retry.textContent = '补传中…';
-      try { await retryUpload(id); toast('视频已补传'); cleanup(); closeSheet(); renderAlbum(albumRoot); }
-      catch (e) { toast(e.message, 4000); retry.disabled = false; retry.textContent = '补传视频'; }
+      try {
+        await retryUpload(id, { onProgress: (ev) => {
+          if (ev?.phase === 'upload' && ev.ratio != null) retry.textContent = `补传中 ${Math.round(ev.ratio * 100)}%`;
+          else if (ev?.phase === 'upload') retry.textContent = '补传中…';
+        }});
+        toast('视频已补传'); cleanup(); closeSheet(); renderAlbum(albumRoot);
+      } catch (e) {
+        toast(`补传失败：${e.message || e}`, 4500);
+        retry.disabled = false; retry.textContent = '补传视频';
+      }
     };
     const delBtn = sh.querySelector('#avDel');
     if (delBtn) delBtn.onclick = async () => {
