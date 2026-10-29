@@ -5,6 +5,7 @@ import { renderHome, selectDate } from './views/home.js';
 import { renderSettings } from './views/settings.js';
 import { renderHelp } from './views/help.js';
 import { renderAlbum } from './views/album.js';
+import { renderGrowth } from './views/growth.js';
 import { showAlarm, checkDueAlarms, alarmShowing } from './views/alarm.js';
 import { syncReminders, refreshOnLaunch } from './push.js';
 import { unlockAudio } from './sound.js';
@@ -12,7 +13,7 @@ import { initSync, syncAvailable, takePendingPairKey } from './sync.js';
 import { openPairSheet } from './views/settings.js';
 
 const view = document.getElementById('view');
-const routes = { home: renderHome, album: renderAlbum, settings: renderSettings, help: renderHelp };
+const routes = { home: renderHome, album: renderAlbum, growth: renderGrowth, settings: renderSettings, help: renderHelp };
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -40,7 +41,7 @@ window.addEventListener('rerender', () => { if (parseHash().path === 'home' || p
 window.addEventListener('select-date', (e) => { selectDate(e.detail); if (parseHash().path === 'home') renderHome(view); });
 store.subscribe(() => {
   const p = parseHash().path;
-  if (p === 'home' || p === 'alarm' || p === 'album' || p === 'settings') render();
+  if (p === 'home' || p === 'alarm' || p === 'album' || p === 'growth' || p === 'settings') render();
   syncReminders();
 });
 

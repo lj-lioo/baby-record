@@ -166,6 +166,18 @@ export function renderHelp(root) {
       </ul>
     </section>
 
+
+    <section class="card" id="h-growth">
+      <h2>📏 生长记录（v1.9.0）</h2>
+      <ul class="steps">
+        <li>底部「📏 生长」记录宝宝不同时期的<strong>身高、体重、头围</strong>；点右上角 <b>「添加」</b>。</li>
+        <li>列表按日期倒序，显示日龄/月龄（需在设置里填宝宝生日）；点某条可编辑或删除。</li>
+        <li>上方可切换 <b>身高曲线 / 体重曲线 / 头围曲线</b>（按测量日期折线）。</li>
+        <li>列表里「相对上次」增减只是算术对比，<b>非医疗建议</b>；生长发育请以儿保医生为准。</li>
+        <li>记录走云同步（与疫苗、相册同一把密钥），家人打开 App 或点「立即同步」即可对齐。</li>
+      </ul>
+    </section>
+
     <section class="card" id="h-album">
       <h2>📷 相册（v1.8.0）</h2>
       <ul class="steps">
