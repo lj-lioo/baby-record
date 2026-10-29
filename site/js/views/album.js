@@ -24,6 +24,103 @@ function fmtTime(ts) {
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+// v1.12.6 下载原片：取回极空间密文 → 解密 → iPhone 走分享面板「存储图像/视频」，安卓/鸿蒙走 <a download>
+const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/heif': 'heif', 'image/webp': 'webp', 'image/gif': 'gif', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm' };
+export function originalFileName(meta) {
+  const d = new Date(meta.takenAt || Date.now());
+  const p = (n) => String(n).padStart(2, '0');
+  const ext = EXT[String(meta.mime || '').toLowerCase()] || (meta.kind === 'video' ? 'mp4' : 'jpg');
+  return `朝朝_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}_${String(meta.id).slice(-4)}.${ext}`;
+}
+export function isIOS() {
+  const ua = navigator.userAgent || '';
+  return /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+export function friendlyDlError(e) {
+  const m = String(e?.message || e || '');
+  if (/failed to fetch|load failed|networkerror|network error|fetch/i.test(m) && !/照片服务/.test(m)) return '连不上极空间照片服务：请连家里 Wi‑Fi 或打开 VPN 后重试';
+  return m || '下载失败，请稍后重试';
+}
+function triggerAnchor(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.rel = 'noopener'; a.style.display = 'none';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+/** 把已解密的原件交给系统保存；返回采用的方式 */
+export async function saveBlobToDevice(blob, name) {
+  const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
+  if (isIOS() && navigator.canShare && navigator.share) {
+    let can = false; try { can = navigator.canShare({ files: [file] }); } catch { can = false; }
+    if (can) {
+      try { await navigator.share({ files: [file] }); return 'share'; }
+      catch (e) { if (e && e.name === 'AbortError') return 'cancel'; }
+    }
+    // iOS 不支持分享文件：新标签打开，长按/分享按钮保存
+    const url = URL.createObjectURL(blob);
+    const w = window.open(url, '_blank');
+    if (!w) triggerAnchor(blob, name);
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+    return 'open';
+  }
+  triggerAnchor(blob, name);
+  return 'download';
+}
+function wireDownload(sh, meta, getBlob) {
+  const btn = sh.querySelector('#avDl');
+  const st = sh.querySelector('#avDlState');
+  if (!btn) return;
+  const label = meta.kind === 'video' ? '⬇ 下载原视频' : '⬇ 下载原图';
+  let confirmed = false;
+  let ready = null; // iPhone：取回后需再点一次（分享面板必须由点击直接触发）
+  const say = (t, bad) => { st.hidden = !t; st.textContent = t || ''; st.className = `small ${bad ? 'bad' : 'muted'}`; };
+  btn.onclick = async () => {
+    const name = originalFileName(meta);
+    if (ready) {
+      const how = await saveBlobToDevice(ready, name);
+      if (how === 'share') say('已打开分享面板：选「存储图像 / 存储视频」即可存到相册');
+      else if (how === 'open') say('已在新页面打开原件：点分享按钮或长按保存');
+      else if (how === 'cancel') say('已取消，可再点一次保存');
+      return;
+    }
+    if (meta.kind === 'video') {
+      const local = await hasLocalVideo(meta.id);
+      if (!local && !confirmed) {
+        confirmed = true;
+        btn.textContent = `确认下载（约 ${fmtSize(meta.size)}）`;
+        say(`原视频约 ${fmtSize(meta.size)}，将从极空间下载；用手机流量时请注意流量消耗。确认后再点一次按钮。`);
+        return;
+      }
+    }
+    btn.disabled = true; btn.textContent = '准备中…'; say('正在从极空间取回并解密原件…');
+    try {
+      let blob;
+      if (meta.kind === 'video') {
+        ({ blob } = await loadVideoBlob(meta.id, { onProgress: (x) => { btn.textContent = `下载中 ${Math.round(x * 100)}%`; } }));
+      } else {
+        const r = await getBlob();
+        if (r.source === 'thumb') throw new Error('还取不到原图（只有缩略图）：请在设置里配置照片服务，并连家里 Wi‑Fi 或开 VPN');
+        blob = r.blob;
+      }
+      if (meta.mime && !blob.type) blob = new Blob([blob], { type: meta.mime });
+      btn.disabled = false;
+      if (isIOS()) {
+        ready = blob;
+        btn.textContent = meta.kind === 'video' ? '📥 保存到手机相册' : '📥 保存到手机相册';
+        say(`原件已就绪（${fmtSize(blob.size)}），再点一次按钮，在分享面板选「存储${meta.kind === 'video' ? '视频' : '图像'}」`);
+      } else {
+        await saveBlobToDevice(blob, name);
+        btn.textContent = label;
+        say(`已下载 ${name}（${fmtSize(blob.size)}），可在「文件 / 下载」里找到`);
+      }
+    } catch (e) {
+      btn.disabled = false; btn.textContent = label;
+      say(friendlyDlError(e), true);
+    }
+  };
+}
+
 export function renderAlbum(root) {
   const groups = photosByDay();
   const api = photoApiBase();
@@ -140,11 +237,13 @@ async function openViewer(id, albumRoot) {
       <div class="field"><label for="avNote">说明</label>
         <input id="avNote" class="input" value="${esc(meta.note)}" placeholder="可选：一句话说明"></div>
       <p class="small muted" id="avTip" hidden></p>
+      <p class="small muted" id="avDlState" hidden></p>
       <div class="btn-row" style="margin-top:10px">
         <button class="btn ghost" id="avClose">关闭</button>
         <button class="btn secondary" id="avSave">保存说明</button>
       </div>
       <div class="btn-row" style="margin-top:8px">
+        <button class="btn" id="avDl">⬇ 下载原图</button>
         ${!meta.remoteReady && photoApiBase() ? '<button class="btn secondary" id="avRetry">补传原图</button>' : ''}
         <button class="btn danger" id="avDel">删除</button>
       </div>
@@ -172,8 +271,11 @@ async function openViewer(id, albumRoot) {
       closeSheet();
       renderAlbum(albumRoot);
     };
+    let loading = null;
+    const getBlob = () => (loading ||= loadPhotoBlob(id).catch((e) => { loading = null; throw e; }));
+    wireDownload(sh, meta, getBlob);
     try {
-      const { blob, source, tip } = await loadPhotoBlob(id);
+      const { blob, source, tip } = await getBlob();
       const url = URL.createObjectURL(blob);
       const box = sh.querySelector('#avImg');
       box.innerHTML = `<img src="${url}" alt="宝宝照片">`;
@@ -206,11 +308,13 @@ async function openVideoViewer(id, albumRoot) {
       <div class="field"><label for="avNote">说明</label>
         <input id="avNote" class="input" value="${esc(meta.note)}" placeholder="可选：一句话说明"></div>
       <p class="small muted" id="avTip" hidden></p>
+      <p class="small muted" id="avDlState" hidden></p>
       <div class="btn-row" style="margin-top:10px">
         <button class="btn ghost" id="avClose">关闭</button>
         <button class="btn secondary" id="avSave">保存说明</button>
       </div>
       <div class="btn-row" style="margin-top:8px">
+        <button class="btn" id="avDl">⬇ 下载原视频</button>
         ${!meta.remoteReady && photoApiBase() ? '<button class="btn secondary" id="avRetry">补传视频</button>' : ''}
         <button class="btn danger" id="avDel">删除</button>
       </div>
@@ -234,6 +338,7 @@ async function openVideoViewer(id, albumRoot) {
       if (!ok) return;
       await removePhoto(id); cleanup(); toast('已删除'); closeSheet(); renderAlbum(albumRoot);
     };
+    wireDownload(sh, meta, null);
     const play = sh.querySelector('#avPlay');
     play.onclick = async () => {
       play.disabled = true; play.textContent = '下载中…';
