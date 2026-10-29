@@ -179,6 +179,31 @@ await page.waitForTimeout(300);
 ok('本月列表顶部「⚠️ 之前未完成」列出上个月没完成的事项', (await page.locator('#g-earlier .item[data-id="man-old"]').count()) === 1 && (await page.locator('#g-earlier').innerText()).includes('之前未完成'));
 ok('已过最迟：窗口行红色「已过最迟（超过19天）」', (await page.locator('.item[data-id="man-old"] .iwin.st-late').innerText()).includes('已过最迟（超过19天）'));
 
+// 4b) v1.9.2：已完成默认折叠、排在未完成下方
+await page.evaluate(async () => {
+  const { store } = await import('./js/store.js');
+  store.setDone('man-yb', true); // 10-09 办医保 → 已完成
+});
+await page.waitForTimeout(400);
+await selectDate('2026-09-29'); await page.waitForTimeout(300);
+await page.click('#nextM'); await page.waitForTimeout(400);
+ok('已完成折叠栏默认收起', (await page.locator('#doneFold').getAttribute('aria-expanded')) === 'false' && await page.locator('#doneFoldBody').isHidden());
+ok('折叠栏文案「已完成 · 1 项」', (await page.locator('#doneFold').innerText()).includes('已完成 · 1 项'));
+ok('未完成日期组仍在，已完成不在日期组里', (await page.locator('#g-2026-10-17 .item').count()) >= 1 && (await page.locator('#g-2026-10-09 .item').count()) === 0);
+ok('已完成区块在未完成分组之后', await page.evaluate(() => {
+  const pending = document.querySelector('#g-2026-10-17');
+  const done = document.querySelector('#g-done');
+  if (!pending || !done) return false;
+  return !!(pending.compareDocumentPosition(done) & Node.DOCUMENT_POSITION_FOLLOWING);
+}));
+await page.click('#doneFold'); await page.waitForTimeout(300);
+ok('点击折叠栏后展开，可见办医保', (await page.locator('#doneFold').getAttribute('aria-expanded')) === 'true' && (await page.locator('#doneFoldBody .item[data-id="man-yb"]').count()) === 1);
+await hideToast();
+await page.evaluate(() => { document.getElementById('g-done').scrollIntoView({ block: 'start' }); window.scrollBy(0, -8); }); await page.waitForTimeout(300);
+await page.screenshot({ path: SHOTS + '42-done-fold-expanded.png' });
+await page.click('#doneFold'); await page.waitForTimeout(200);
+ok('再点一次收起', (await page.locator('#doneFold').getAttribute('aria-expanded')) === 'false' && await page.locator('#doneFoldBody').isHidden());
+
 // 5) 兼容：旧版本（v1.5.0）同步来的事项没有窗口字段 → 按 scheduleId + 生日推算显示，不改 updatedAt
 const mod = await page.evaluate(() => {
   const s = JSON.parse(localStorage.getItem('babyrecord.v1'));

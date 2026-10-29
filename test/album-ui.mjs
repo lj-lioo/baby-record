@@ -88,7 +88,7 @@ await page.screenshot({ path: path.join(shotDir, '37-help-album-nas.png') });
   await page.goto(`http://127.0.0.1:${APP_PORT}/#/settings`);
   await page.waitForTimeout(400);
   const v = await page.locator('#appVer').innerText();
-  await check('设置页版本 1.9.1', v.includes('v1.9.1'));
+  await check('设置页版本 1.9.2', v.includes('v1.9.2'));
 }
 
 await check('无页面 JS 错误', errors.length === 0);
