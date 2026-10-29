@@ -36,10 +36,9 @@ export function validateGrowth({ date, height, weight, head }, birthday) {
   if (birthday && date < birthday) return '日期不能早于宝宝生日';
   if (date > todayStr()) return '日期不能是未来';
   const h = numOrNull(height), w = numOrNull(weight), hd = numOrNull(head);
-  if (h == null) return '请填写身高';
-  if (w == null) return '请填写体重';
-  if (h < HEIGHT_MIN || h > HEIGHT_MAX) return `身高请在 ${HEIGHT_MIN}–${HEIGHT_MAX} cm`;
-  if (w < WEIGHT_MIN || w > WEIGHT_MAX) return `体重请在 ${WEIGHT_MIN}–${WEIGHT_MAX} kg`;
+  if (h == null && w == null) return '身高、体重至少填一项';
+  if (h != null && (h < HEIGHT_MIN || h > HEIGHT_MAX)) return `身高请在 ${HEIGHT_MIN}–${HEIGHT_MAX} cm`;
+  if (w != null && w < WEIGHT_MIN || w != null && w > WEIGHT_MAX) return `体重请在 ${WEIGHT_MIN}–${WEIGHT_MAX} kg`;
   if (hd != null && (hd < HEAD_MIN || hd > HEAD_MAX)) return `头围请在 ${HEAD_MIN}–${HEAD_MAX} cm（可不填）`;
   return null;
 }
@@ -90,10 +89,11 @@ export function chartSvg(points, { unit = '', color = '#20A98B', w = 340, h = 22
   const xAt = (i) => padL + (points.length === 1 ? iw / 2 : (i / (points.length - 1)) * iw);
   const yAt = (v) => padT + ih - ((v - vmin) / (vmax - vmin)) * ih;
   const poly = points.map((p, i) => `${xAt(i).toFixed(1)},${yAt(p.value).toFixed(1)}`).join(' ');
+  const showLbl = (i) => points.length <= 12 || i === 0 || i === points.length - 1; // v1.12.0 点多时只标首尾
   const dots = points.map((p, i) => {
     const cx = xAt(i), cy = yAt(p.value);
-    return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4.5" fill="${color}" stroke="#fff" stroke-width="2"/>
-      <text x="${cx.toFixed(1)}" y="${(cy - 10).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${color}">${fmtVal(p.value)}${unit ? '' : ''}</text>`;
+    return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${points.length > 12 ? 3 : 4.5}" fill="${color}" stroke="#fff" stroke-width="2"/>
+      ${showLbl(i) ? '' : '<!--'}<text x="${cx.toFixed(1)}" y="${(cy - 10).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${color}">${fmtVal(p.value)}${unit ? '' : ''}</text>${showLbl(i) ? '' : '-->'}`;
   }).join('');
   // y 轴刻度 4 档
   const ticks = [0, 1, 2, 3].map((i) => {
@@ -137,4 +137,20 @@ export function seriesFor(metric) {
     .slice()
     .reverse() // 升序画线
     .map((g) => ({ date: g.date, value: g[key], id: g.id }));
+}
+
+// v1.12.0 用药记录：在用（无结束日或结束日≥今天）排上面，按开始日倒序
+export function medActive(m, today = todayStr()) { return !m.end || m.end >= today; }
+export function medsSorted(list = store.meds(), today = todayStr()) {
+  const by = (a, b) => b.start.localeCompare(a.start) || b.updatedAt - a.updatedAt;
+  const all = [...list];
+  return { active: all.filter((m) => medActive(m, today)).sort(by), past: all.filter((m) => !medActive(m, today)).sort(by) };
+}
+export function medPeriod(m, today = todayStr()) {
+  const md = (d) => `${Number(d.slice(5, 7))}月${Number(d.slice(8))}日`;
+  if (!m.start) return '';
+  if (m.end && m.end === m.start) return `${md(m.start)} · 单次`;
+  const days = daysBetween(m.start, m.end && m.end < today ? m.end : today) + 1;
+  if (!m.end) return `${md(m.start)} 起 · 至今（第${days}天）`;
+  return `${md(m.start)} – ${md(m.end)}${m.end >= today ? `（第${days}天）` : ` · 共${days}天`}`;
 }

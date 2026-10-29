@@ -77,6 +77,9 @@ export const PHOTO_PREFIX = 'ph:';
 // 生长记录 ↔ 同步记录
 export const GROWTH_PREFIX = 'gr:';
 
+// v1.12.0 用药记录 ↔ 同步记录
+export const MEDS_PREFIX = 'md:';
+
 // 二进制 AES-GCM：iv(12) + ciphertext；AAD = id（防密文挪用）
 export async function sealBytes(enc, id, bytes) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
