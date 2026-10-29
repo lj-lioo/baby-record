@@ -1,3 +1,12 @@
+## v1.13.1（国内同步域名 + 照片 HTTPS 默认）
+- **背景**：域名 `jiayouzhaozhao.cn` 落在 Cloudflare 账号 4678aa04…（Google/Nbacba…）；旧 Worker+D1 在另一账号 aa62ab9c…（163）。自定义域名必须与 Worker 同账号，故在域名账号重建 Worker/D1 并迁数据。
+- **同步**：Worker `baby-record-sync`（新账号）+ D1 `b72d832b-751d-46cd-ab37-8c1d762112a3`；从旧 D1 迁入 169 条 records（两空间）。Workers 自定义域名 `sync.jiayouzhaozhao.cn`（自动 AAAA 100::）。`curl https://sync.jiayouzhaozhao.cn/v1/health` → 200。
+- **App**：`site/config.js` syncApi → `https://sync.jiayouzhaozhao.cn`；默认 photoApi → `https://photo.jiayouzhaozhao.cn`（`photos.js` / 设置页回落）；版本 config/sw/settings → 1.13.1。亲友身份（v1.13.0）保留未回退。
+- **盒子**：`~/.config/baby-record/sync.env` 仅改 BABY_SYNC_URL（密钥未动）。
+- **照片 Tunnel**：MCP 无 Tunnel 写权限，**未**创建 cloudflared；步骤见 `docs/photo-tunnel.md`。DNS/connector 需用户在域名账号补齐；补齐前公网 photo HTTPS 不可用。
+- **旧 Worker**：`*.baby-record-e1lwbaby-record-e1lw.workers.dev` 仍存活（旧账号），可作备份；App 已切新域名。
+- **日后 wrangler**：需 `wrangler login` 到域名所在账号（4678aa04…），`wrangler.toml` database_id/routes 已指向新库与 sync 域名。
+
 ## v1.13.0（亲友身份 + 邀请链接一期）
 - 六种本机身份：爸爸/妈妈（管理员）· 爷爷/奶奶/姥姥/姥爷（亲友浏览+相册上传下载）。
 - 设置「亲友团」：管理员可切换身份、生成 `#/join?role=…&exp=…&sig=…` 邀请（约7天；**不含同步密钥**）；老人设置页只看身份说明。
