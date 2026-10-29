@@ -10,6 +10,7 @@ const MAX_BODY = 1024 * 1024;       // 单次请求最大 1MB
 const MAX_CHANGES = 500;            // 单次最多提交 500 条
 const MAX_DATA = 32 * 1024;         // 单条密文最大 32KB
 const MAX_RECORDS = 20000;          // 每个空间最多 20000 条记录
+const PAGE_BYTES = 2 * 1024 * 1024;
 const PAGE = 500;                   // 每次最多返回 500 条变更
 const ID_RE = /^[A-Za-z0-9_:.-]{1,80}$/;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
@@ -124,8 +125,12 @@ async function handleSync(req, env, cors) {
   const { results: rows } = await env.DB.prepare(
     'SELECT id, updated_at, deleted, data, seq FROM records WHERE space = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3',
   ).bind(space, since, PAGE + 1).all();
-  const more = rows.length > PAGE;
-  const page = rows.slice(0, PAGE).map(rowOut);
+  // v1.12.2：响应也按字节分页（约 2MB），避免一次返回几百张缩略图导致手机下载过大
+  let page = rows.slice(0, PAGE).map(rowOut);
+  let bytes = 0, cut = page.length;
+  for (let i = 0; i < page.length; i++) { bytes += (page[i].data ? page[i].data.length : 0) + 120; if (bytes > PAGE_BYTES && i > 0) { cut = i; break; } }
+  const more = rows.length > PAGE || cut < page.length;
+  page = page.slice(0, cut);
   let cursor = since;
   if (page.length) cursor = page[page.length - 1].seq;
   return json({ cursor, more, accepted, conflicts, changes: page, serverTime: Date.now() }, 200, cors);
