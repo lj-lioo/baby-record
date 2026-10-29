@@ -3,7 +3,7 @@ import { store } from '../store.js';
 import { CATEGORIES } from '../categories.js';
 import { daysBetween, todayStr, addDays, ymd, parseYmd, cnDate, weekday, countdown, pad } from '../dates.js';
 import { fireAtOf, reminderLabel } from '../reminders.js';
-import { esc, toast } from '../ui.js';
+import { esc, toast, openSheet, closeSheet } from '../ui.js';
 import { openEditor } from './editor.js';
 import { openAlarmSheet, alarmState } from './actions.js';
 import { openICS } from '../ics.js';
@@ -17,7 +17,7 @@ import { ageOnDate } from '../growth.js';
 import { openBabyProfile } from './settings.js';
 import { openVoice } from './voice.js';
 
-const ui = { month: null, selected: null, focus: null, scrollTo: null };
+const ui = { month: null, selected: null, focus: null, scrollTo: null, pendOpen: true, details: new Set() };
 let repHints = new Map(); // v1.7.0：已计划的自费疫苗可替代的免费剂次
 
 export function renderHome(root) {
@@ -66,7 +66,7 @@ export function renderHome(root) {
   }
 }
 
-export function selectDate(d) { ui.selected = d; ui.month = d.slice(0, 7); }
+export function selectDate(d) { ui.pendOpen = true; ui.selected = d; ui.month = d.slice(0, 7); }
 
 function renderReminderCard(el) {
   const today = todayStr();
@@ -94,13 +94,41 @@ function renderReminderCard(el) {
     li.onclick = (ev) => {
       if (ev.target.closest('[data-done]')) return;
       const e = store.getEvent(li.dataset.id);
-      selectDate(e.date);
-      window.dispatchEvent(new CustomEvent('rerender'));
-      openEditor({ id: e.id });
+      if (e) openEventDetail(e);
     };
   });
   el.querySelectorAll('[data-done]').forEach((b) => {
     b.onclick = () => markDone(b.dataset.done);
+  });
+}
+
+// v1.12.4：近期提醒点开 → 底部详情面板（完整信息 + 已完成 / 设为闹钟提醒；不放改日期）
+export function openEventDetail(e) {
+  const c = CATEGORIES[e.category];
+  const bday = store.state.settings.babyBirthday;
+  const w = windowOf(e, bday);
+  const noun = e.category === 'checkup' ? '体检' : e.category === 'other' ? '' : '接种';
+  const rems = (e.reminders || []).map((r) => ({ at: fireAtOf(e, r), label: reminderLabel(r) })).filter((x) => x.at != null).sort((a, b) => a.at - b.at);
+  const price = e.category === 'paidvax' ? priceBriefOfSid(e.scheduleId) : '';
+  const rep = !e.done ? replacementHints(store.events()).get(e.scheduleId) : '';
+  openSheet(`<div class="ev-detail">
+    <h3>${c.icon} ${esc(e.title)}</h3>
+    <div class="evd-row"><span class="tag ${c.cls}">${c.label}</span>${e.done ? ' <span class="tag done">已完成</span>' : ''}</div>
+    <div class="evd-row">📅 ${cnDate(e.date)} ${weekday(e.date)} ${esc(e.time || '全天')}</div>
+    ${w ? `<div class="evd-row">🪟 ${noun}窗口${w.ref ? '（参考）' : ''}：${esc(winText(w))} · <b>${esc(windowStatus(e, w, todayStr()).text)}</b></div>` : ''}
+    ${price ? `<div class="evd-row">💰 襄阳参考价 ${esc(price)}（以当地门诊为准）</div>` : ''}
+    <div class="evd-row">${rems.length ? `⏰ ${rems.map((x) => esc(x.label)).join('、')}` : '⏰ 未设置提醒'}</div>
+    ${rep ? `<div class="evd-small">💡 ${esc(rep)}</div>` : ''}
+    ${w && w.note ? `<div class="evd-small">ℹ️ ${esc(w.note)}</div>` : ''}
+    ${e.note ? `<div class="evd-small">📝 ${esc(e.note)}</div>` : ''}
+    <div class="btn-row" style="margin-top:14px">
+      ${e.done ? '' : '<button class="btn secondary" id="evdAlarm">⏰ 设为闹钟提醒</button><button class="btn" id="evdDone">✅ 已完成</button>'}
+      <button class="btn ghost" id="evdClose">关闭</button>
+    </div></div>`, (sh) => {
+    sh.querySelector('#evdClose').onclick = closeSheet;
+    const d = sh.querySelector('#evdDone'), a = sh.querySelector('#evdAlarm');
+    if (d) d.onclick = () => { closeSheet(); markDone(e.id); };
+    if (a) a.onclick = () => { closeSheet(); openAlarmSheet(store.getEvent(e.id)); };
   });
 }
 
@@ -237,16 +265,24 @@ function itemCard(e, today, bday) {
   const plan = w
     ? (w.earliest === e.date ? `📅 计划 ${fmtD(e.date)} ${time}<span class="muted">（最早可${noun || '安排'}日）</span>` : `📅 最早 ${fmtD(w.earliest)} · <b>计划 ${fmtD(e.date)} ${time}</b>`)
     : `🕒 ${time}`;
+  // v1.12.4：小字说明（替代提示 / 窗口说明 / 备注）默认折叠
+  const details = [
+    !e.done && repHints.get(e.scheduleId) ? `<div class="irep">💡 ${esc(repHints.get(e.scheduleId))}</div>` : '',
+    w && w.note && ui.focus !== e.id ? `<div class="inote">ℹ️ ${esc(w.note)}</div>` : '',
+    e.note ? `<div class="inote">📝 ${esc(e.note)}</div>` : '',
+  ].join('');
+  const dOpen = ui.details.has(e.id);
   return `<div class="item ${c.cls} ${e.done ? 'is-done' : ''} ${overdue ? 'is-overdue' : ''} ${ui.focus === e.id ? 'is-focus' : ''}" data-id="${e.id}">
     <div class="irow"><span style="font-size:20px">${c.icon}</span><span class="ititle">${esc(e.title)}</span>
       ${e.done ? '<span class="tag done">已完成</span>' : overdue ? '<span class="tag overdue">已过期未完成</span>' : `<span class="tag ${c.cls}">${c.label}</span>`}</div>
     <div class="iplan">${plan}</div>
     ${w ? `<button type="button" class="iwin st-${st.key}" data-act="focus">🪟 ${noun}窗口${w.ref ? '（参考）' : ''}：${esc(winText(w))} · <b>${esc(st.text)}</b></button>` : ''}
-    ${w && ui.focus === e.id && w.note ? `<div class="inote">ℹ️ ${esc(w.note)}</div>` : ''}
     ${e.category === 'paidvax' && priceBriefOfSid(e.scheduleId) ? `<div class="iprice">💰 襄阳参考价 ${esc(priceBriefOfSid(e.scheduleId))}（以当地门诊为准）</div>` : ''}
-    ${!e.done && repHints.get(e.scheduleId) ? `<div class="irep">💡 ${esc(repHints.get(e.scheduleId))}</div>` : ''}
     ${out === 'early' ? `<div class="iwarn">⚠️ 计划日早于最早${noun}日，请改计划日</div>` : out === 'late' ? `<div class="iwarn">⚠️ 计划日晚于最迟日期（逾期补种）</div>` : ''}
-    <div class="imeta">${e.note ? `📝 ${esc(e.note)}\n` : ''}${rems.length ? `⏰ ${rems.map((x) => esc(x.label)).join('、')}` : '⏰ 未设置提醒'}</div>
+    ${w && ui.focus === e.id && w.note ? `<div class="inote">ℹ️ ${esc(w.note)}</div>` : ''}
+    <div class="imeta">${rems.length ? `⏰ ${rems.map((x) => esc(x.label)).join('、')}` : '⏰ 未设置提醒'}</div>
+    ${details ? `<button type="button" class="det-toggle" data-act="details" aria-expanded="${dOpen}">${dOpen ? '收起 ▴' : '显示详情 ▾'}</button>
+    <div class="idetails" ${dOpen ? '' : 'hidden'}>${details}</div>` : ''}
     <div class="iactions">
       ${e.done ? '' : alarmBtn(e)}
       ${!e.done && (w || e.category !== 'other') ? `<button class="chip-btn" data-act="plan">📆 改计划日</button>` : ''}
@@ -284,12 +320,16 @@ function renderMonthList(el) {
     const list = doneByDate[ds].sort(sortT);
     return `<div class="grp-sub muted-sub" id="gd-${ds}">${esc(fmtD(ds))}</div>${list.map((e) => itemCard(e, today, bday)).join('')}`;
   }).join('');
+  const pendCount = pending.length + earlier.length;
   const emptyMonth = !pending.length && !completed.length && !dates.length;
   el.innerHTML = `
     <div class="day-panel-head">
       <h2 style="margin:0">📋 ${m}月的事项 <span class="muted small" style="font-weight:500">共 ${inMonth.length} 个${completed.length ? ` · 未完成 ${pending.length}` : ''}</span></h2>
       <button class="btn secondary" id="addHere" style="padding:8px 14px;font-size:15px">＋ 添加</button>
     </div>
+    ${pendCount ? `<button type="button" class="done-fold pend-fold" id="pendFold" aria-expanded="${ui.pendOpen}">
+      <span class="done-fold-lab">待完成（${pendCount}）</span><span class="done-fold-chev" aria-hidden="true">${ui.pendOpen ? '▾' : '▸'}</span></button>` : ''}
+    <div id="pendBody" ${pendCount && !ui.pendOpen ? 'hidden' : ''}>
     ${earlier.length ? `<div class="grp grp-overdue" id="g-earlier"><div class="grp-head"><h2>⚠️ 之前未完成 <span class="pill lvl-overdue" style="animation:none">${earlier.length} 个</span></h2></div>
       ${earlier.map((e) => `<div class="grp-sub">${esc(fmtD(e.date))}</div>${itemCard(e, today, bday)}`).join('')}</div>` : ''}
     ${dates.length ? dates.map((ds) => {
@@ -304,15 +344,18 @@ function renderMonthList(el) {
             : '<p class="muted small" style="margin:4px 0 2px">这一天还没有安排。</p>'}
       </div>`;
     }).join('') : (emptyMonth ? `<p class="muted" style="margin:12px 0 2px">这个月还没有安排。点「＋ 添加」记录疫苗、体检等事项。</p>` : '')}
+    </div>
     ${completed.length ? `<div class="grp grp-done" id="g-done">
       <button type="button" class="done-fold" id="doneFold" aria-expanded="${ui.doneOpen ? 'true' : 'false'}">
-        <span class="done-fold-lab">已完成 · ${completed.length} 项</span>
+        <span class="done-fold-lab">已完成（${completed.length}）</span>
         <span class="done-fold-chev" aria-hidden="true">${ui.doneOpen ? '▾' : '▸'}</span>
       </button>
       <div class="done-fold-body" id="doneFoldBody" ${ui.doneOpen ? '' : 'hidden'}>${doneBody}</div>
     </div>` : ''}`;
   el.querySelector('#addHere').onclick = () => openEditor({ date: ui.selected >= monthStart && ui.selected <= monthEnd ? ui.selected : (today.slice(0, 7) === ui.month ? today : monthStart) });
   el.querySelectorAll('[data-add]').forEach((b) => { b.onclick = () => openEditor({ date: b.dataset.add }); });
+  const pf = el.querySelector('#pendFold');
+  if (pf) pf.onclick = () => { ui.pendOpen = !ui.pendOpen; rerender(); };
   const fold = el.querySelector('#doneFold');
   if (fold) {
     fold.onclick = () => { ui.doneOpen = !ui.doneOpen; rerender(); };
@@ -323,6 +366,7 @@ function renderMonthList(el) {
       b.onclick = () => {
         const e = store.getEvent(id);
         const act = b.dataset.act;
+        if (act === 'details') { ui.details.has(id) ? ui.details.delete(id) : ui.details.add(id); rerender(); return; }
         if (act === 'edit') openEditor({ id });
         else if (act === 'ics') openICS(e);
         else if (act === 'alarm') openAlarmSheet(e);

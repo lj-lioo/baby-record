@@ -18,6 +18,10 @@ export function openSheet(html, onMount) {
   document.body.style.overflow = 'hidden';
   sheet.scrollTop = 0;
   bd.onclick = closeSheet;
+  // v1.12.4：在顶部下拉关闭
+  let y0 = null;
+  sheet.ontouchstart = (e) => { y0 = sheet.scrollTop <= 0 ? e.touches[0].clientY : null; };
+  sheet.ontouchend = (e) => { if (y0 != null && e.changedTouches[0].clientY - y0 > 90) closeSheet(); y0 = null; };
   if (onMount) onMount(sheet);
   return sheet;
 }

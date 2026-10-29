@@ -444,3 +444,10 @@ summary { font-weight: 700; cursor: pointer; }
 .md-pill.on { background: linear-gradient(90deg, #1E88FF 50%, #5CB2FF 50%); box-shadow: 0 0 4px rgba(30,136,255,.55); }
 .md-pill-txt { font-size: 12px; font-weight: 700; color: #1E6FD0; }
 .md-note { margin-top: 4px; font-size: 12px; color: var(--muted); }
+
+/* v1.12.4 详情折叠 + 详情面板 */
+.det-toggle { border: 0; background: transparent; color: #8A6FB0; font: inherit; font-size: 13px; font-weight: 700; padding: 4px 0; cursor: pointer; }
+.idetails { margin-top: 2px; }
+.ev-detail h3 { margin: 4px 0 8px; }
+.evd-row { font-size: 15px; margin: 6px 0; }
+.evd-small { font-size: 13px; color: #6E6070; margin: 8px 0; white-space: pre-wrap; line-height: 1.5; }
