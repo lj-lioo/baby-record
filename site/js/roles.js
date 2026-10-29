@@ -50,7 +50,7 @@ export function roleCapabilityText(role = getRole()) {
     return '爸爸/妈妈：全部权限（事项、疫苗/体检/生长/用药、相册、设置、邀请亲友）。';
   }
   if (ELDER_ROLES.includes(role)) {
-    return `${role}：可浏览全部板块；相册可上传、下载原片；不能新建/修改事项、改计划、设闹钟，也不能改宝宝资料、同步密钥与照片服务。`;
+    return `${role}：可浏览全部板块；相册可上传、保存缩略图到系统相册；不能新建/修改事项、改计划、设闹钟，也不能改宝宝资料、同步密钥与照片服务。`;
   }
   return '请选择身份。';
 }

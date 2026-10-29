@@ -27,13 +27,26 @@ function fmtTime(ts) {
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// v1.12.6 下载原片：取回极空间密文 → 解密 → iPhone 走分享面板「存储图像/视频」，安卓/鸿蒙走 <a download>
+// v1.14.2 「保存到相册」：只存本地缩略图（不再从极空间拉原片）；iPhone 走分享面板，安卓/鸿蒙走 <a download>
 const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/heif': 'heif', 'image/webp': 'webp', 'image/gif': 'gif', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm' };
 export function originalFileName(meta) {
   const d = new Date(meta.takenAt || Date.now());
   const p = (n) => String(n).padStart(2, '0');
-  const ext = EXT[String(meta.mime || '').toLowerCase()] || (meta.kind === 'video' ? 'mp4' : 'jpg');
-  return `朝朝_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}_${String(meta.id).slice(-4)}.${ext}`;
+  // 一律存缩略图 JPG（视频也只存封面）
+  return `朝朝_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}_${String(meta.id).slice(-4)}.jpg`;
+}
+/** dataURL / blobURL → Blob（缩略图） */
+async function thumbToBlob(meta) {
+  const src = meta?.thumbData;
+  if (!src) throw new Error('没有缩略图可保存');
+  if (String(src).startsWith('data:')) {
+    const r = await fetch(src);
+    return await r.blob();
+  }
+  // 少数情况可能是 http(s) 或 blob:
+  const r = await fetch(src);
+  const b = await r.blob();
+  return b.type ? b : new Blob([b], { type: 'image/jpeg' });
 }
 export function isIOS() {
   const ua = navigator.userAgent || '';
@@ -57,7 +70,7 @@ function triggerAnchor(blob, name) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
-/** 把已解密的原件交给系统保存；返回采用的方式：share|download|open|cancel */
+/** 把缩略图 Blob 交给系统保存；返回：share|download|open|cancel */
 export async function saveBlobToDevice(blob, name) {
   const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
   if (isIOS() && navigator.canShare && navigator.share) {
@@ -81,74 +94,58 @@ export async function saveBlobToDevice(blob, name) {
   triggerAnchor(blob, name);
   return 'download';
 }
-function wireDownload(sh, meta, getBlob) {
+/** 保存缩略图到系统相册（不再拉原片）；getBlob 保留兼容调用方，已不用 */
+function wireDownload(sh, meta, _getBlob) {
   const btn = sh.querySelector('#avDl');
   const st = sh.querySelector('#avDlState');
   if (!btn) return;
-  const label = meta.kind === 'video' ? '⬇ 下载原视频' : '⬇ 下载原图';
-  let confirmed = false;
-  let ready = null; // iPhone：取回后需再点一次（分享面板必须由点击直接触发）
+  const label = '📥 保存到相册';
+  btn.textContent = label;
+  let ready = null; // iPhone：缩略图就绪后需再点一次（分享面板必须由用户手势直接触发）
   const say = (t, bad) => { st.hidden = !t; st.textContent = t || ''; st.className = `small ${bad ? 'bad' : 'muted'}`; };
-  const kindLabel = meta.kind === 'video' ? '视频' : '图像';
   btn.onclick = async () => {
     const name = originalFileName(meta);
     if (ready) {
       btn.disabled = true; btn.textContent = '保存中…';
       try {
         const how = await saveBlobToDevice(ready, name);
-        btn.disabled = false; btn.textContent = '📥 保存到手机相册';
+        btn.disabled = false; btn.textContent = label;
         if (how === 'share') {
-          say('保存成功：已存到系统相册（或你在分享面板里选的位置）');
-          toast('已保存', 2500);
+          say('已保存缩略图到系统相册（或你在分享面板里选的位置）');
+          toast('已保存到相册', 2500);
         } else if (how === 'open') {
-          say('已在新页面打开原件：点分享按钮或长按图片，选「存储到照片」');
+          say('已在新页面打开缩略图：点分享或长按，选「存储到照片」');
           toast('请在新页面里长按保存', 3500);
         } else if (how === 'cancel') {
           say('已取消，可再点一次保存');
           toast('已取消保存', 2000);
         } else if (how === 'download') {
-          say(`已下载 ${name}`);
-          toast('保存成功', 2500);
+          say(`已保存缩略图 ${name}`);
+          toast('已保存到相册', 2500);
         }
       } catch (e) {
-        btn.disabled = false; btn.textContent = '📥 保存到手机相册';
+        btn.disabled = false; btn.textContent = label;
         const msg = friendlyDlError(e);
         say(`保存失败：${msg}`, true);
         toast(`保存失败：${msg}`, 4500);
       }
       return;
     }
-    if (meta.kind === 'video') {
-      const local = await hasLocalVideo(meta.id);
-      if (!local && !confirmed) {
-        confirmed = true;
-        btn.textContent = `确认下载（约 ${fmtSize(meta.size)}）`;
-        say(`原视频约 ${fmtSize(meta.size)}，将从极空间下载；用手机流量时请注意流量消耗。确认后再点一次按钮。`);
-        return;
-      }
-    }
-    btn.disabled = true; btn.textContent = '准备中…'; say('正在从极空间取回并解密原件…');
+    btn.disabled = true; btn.textContent = '准备中…'; say('正在准备缩略图…');
     try {
-      let blob;
-      if (meta.kind === 'video') {
-        ({ blob } = await loadVideoBlob(meta.id, { onProgress: (x) => { btn.textContent = `下载中 ${Math.round(x * 100)}%`; } }));
-      } else {
-        const r = await getBlob();
-        if (r.source === 'thumb') throw new Error('还取不到原图（只有缩略图）：请在设置里配置照片服务，并连家里 Wi‑Fi 或开 VPN');
-        blob = r.blob;
-      }
-      if (meta.mime && !blob.type) blob = new Blob([blob], { type: meta.mime });
+      let blob = await thumbToBlob(meta);
+      if (!blob.type || !String(blob.type).startsWith('image/')) blob = new Blob([blob], { type: 'image/jpeg' });
       btn.disabled = false;
       if (isIOS()) {
         ready = blob;
-        btn.textContent = '📥 保存到手机相册';
-        say(`原件已就绪（${fmtSize(blob.size)}），再点一次按钮，在分享面板选「存储${kindLabel}」`);
+        btn.textContent = label;
+        say(`缩略图已就绪（${fmtSize(blob.size)}），再点一次，在分享面板选「存储图像」`);
       } else {
         try {
           await saveBlobToDevice(blob, name);
           btn.textContent = label;
-          say(`保存成功：已下载 ${name}（${fmtSize(blob.size)}），可在「文件 / 下载」里找到`);
-          toast('保存成功', 2500);
+          say(`已保存缩略图 ${name}（${fmtSize(blob.size)}）`);
+          toast('已保存到相册', 2500);
         } catch (e2) {
           btn.textContent = label;
           const msg = friendlyDlError(e2);
@@ -160,7 +157,7 @@ function wireDownload(sh, meta, getBlob) {
       btn.disabled = false; btn.textContent = label;
       const msg = friendlyDlError(e);
       say(msg, true);
-      toast(`下载失败：${msg}`, 4500);
+      toast(`保存失败：${msg}`, 4500);
     }
   };
 }
@@ -399,7 +396,7 @@ async function openViewer(id, albumRoot) {
         <button class="btn secondary" id="avSave">保存说明</button>
       </div>
       <div class="btn-row" style="margin-top:8px">
-        <button class="btn" id="avDl">⬇ 下载原图</button>
+        <button class="btn" id="avDl">📥 保存到相册</button>
         ${!meta.remoteReady && photoApiBase() && localOk ? '<button class="btn secondary" id="avRetry">补传原图</button>' : ''}
         ${canDeleteAlbum() ? '<button class="btn danger" id="avDel">删除</button>' : ''}
       </div>
@@ -479,7 +476,7 @@ async function openVideoViewer(id, albumRoot) {
         <button class="btn secondary" id="avSave">保存说明</button>
       </div>
       <div class="btn-row" style="margin-top:8px">
-        <button class="btn" id="avDl">⬇ 下载原视频</button>
+        <button class="btn" id="avDl">📥 保存到相册</button>
         ${!meta.remoteReady && photoApiBase() ? '<button class="btn secondary" id="avRetry">补传视频</button>' : ''}
         ${canDeleteAlbum() ? '<button class="btn danger" id="avDel">删除</button>' : ''}
       </div>
