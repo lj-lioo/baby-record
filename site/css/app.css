@@ -48,6 +48,15 @@ a { color: var(--primary-dark); }
 .topbar .sub { color: var(--muted); font-size: 14px; }
 .logo { display: inline-flex; align-items: center; gap: 8px; }
 .logo img { width: 34px; height: 34px; border-radius: 10px; box-shadow: var(--shadow); }
+/* v1.9.3 点标题编辑宝宝名字/生日 */
+.logo-btn {
+  border: 0; background: transparent; padding: 0; margin: 0;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.logo-btn:active { opacity: 0.75; }
+.logo-btn h1 { font-size: 24px; margin: 0; letter-spacing: 0.5px; max-width: 70vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logo-btn .sub { color: var(--muted); font-size: 13px; line-height: 1.35; }
 
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-bottom: 16px; }
 .card h2 { font-size: 17px; margin: 0 0 10px; display: flex; align-items: center; gap: 6px; }

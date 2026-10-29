@@ -1,6 +1,7 @@
 // v1.9.0 生长记录页：列表 + 身高/体重/头围曲线
 import { store } from '../store.js';
 import { esc, toast, confirmSheet, openSheet, closeSheet } from '../ui.js';
+import { openBabyProfile } from './settings.js';
 import { todayStr } from '../dates.js';
 import {
   ageOnDate, growthSorted, deltaTip, validateGrowth, chartSvg, seriesFor,
@@ -34,7 +35,7 @@ export function renderGrowth(root) {
   `;
 
   const q = (s) => root.querySelector(s);
-  q('#btnGoSetBday') && (q('#btnGoSetBday').onclick = () => { location.hash = '#/settings'; });
+  q('#btnGoSetBday') && (q('#btnGoSetBday').onclick = () => openBabyProfile({ onSaved: () => renderGrowth(root) }));
   q('#btnAddGrowth').onclick = () => openEditor(null, root);
   root.querySelectorAll('.gr-tab').forEach((btn) => {
     btn.onclick = () => { activeTab = btn.dataset.tab; renderGrowth(root); };
