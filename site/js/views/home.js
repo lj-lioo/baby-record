@@ -12,12 +12,13 @@ import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 import { openPlannedSheet } from './planned.js';
 import { windowOf, windowStatus, planOutside } from '../windows.js';
 import { renderPaidCard, markDone } from './paidcat.js';
+import { renderFreeVaxCard } from './freevax.js';
 import { replacementHints, priceBriefOfSid } from '../paidvax.js';
 import { ageOnDate } from '../growth.js';
 import { openBabyProfile } from './settings.js';
 import { openVoice } from './voice.js';
 
-const ui = { month: null, selected: null, focus: null, scrollTo: null, pendOpen: true, details: new Set() };
+const ui = { month: null, selected: null, focus: null, scrollTo: null, pendOpen: false, doneOpen: false, details: new Set() }; // v1.12.7：待完成/已完成每次打开默认收起，不记忆
 let repHints = new Map(); // v1.7.0：已计划的自费疫苗可替代的免费剂次
 
 export function renderHome(root) {
@@ -45,6 +46,7 @@ export function renderHome(root) {
     <section class="card remind-card" id="remindCard"></section>
     <section class="card" id="calCard"></section>
     <section class="card" id="dayCard"></section>
+    <section class="card paid-card free-card" id="freeVaxCard"></section>
     <section class="card paid-card" id="paidCard"></section>
     <button class="fab" id="fab" aria-label="添加事项">＋</button>`;
 
@@ -54,6 +56,7 @@ export function renderHome(root) {
   renderReminderCard(root.querySelector('#remindCard'));
   renderCalendar(root.querySelector('#calCard'));
   renderMonthList(root.querySelector('#dayCard'));
+  renderFreeVaxCard(root.querySelector('#freeVaxCard'));
   renderPaidCard(root.querySelector('#paidCard'));
   renderPushBanner(root.querySelector('#pushBanner'));
   renderVaxCta(root.querySelector('#vaxCta'));
@@ -219,8 +222,9 @@ function renderCalendar(el) {
       ui.selected = ds;
       if (ds.slice(0, 7) !== ui.month) ui.month = ds.slice(0, 7);
       ui.focus = pickFocus(ds, byEarly[ds] || []);
-      // v1.9.2：该日若有已完成项，展开折叠栏并优先滚到已完成分组
+      // v1.9.2 / v1.12.7：点日历某天可临时展开对应分组（默认仍是收起）
       const dayEvs = store.eventsOn(ds);
+      if (dayEvs.some((e) => !e.done)) ui.pendOpen = true;
       if (dayEvs.some((e) => e.done)) ui.doneOpen = true;
       ui.scrollTo = dayEvs.some((e) => !e.done) ? ds : (dayEvs.some((e) => e.done) ? `d-${ds}` : ds);
       rerender();
@@ -302,7 +306,6 @@ function renderMonthList(el) {
   const inMonth = store.events().filter((e) => e.date >= monthStart && e.date <= monthEnd);
   const pending = inMonth.filter((e) => !e.done);
   const completed = inMonth.filter((e) => e.done).sort((a, b) => (a.date + (a.time || '99')).localeCompare(b.date + (b.time || '99')));
-  if (ui.doneOpen == null) ui.doneOpen = false;
   repHints = replacementHints(store.events());
   const byDate = {};
   for (const e of pending) (byDate[e.date] ||= []).push(e);

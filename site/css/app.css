@@ -451,3 +451,23 @@ summary { font-weight: 700; cursor: pointer; }
 .ev-detail h3 { margin: 4px 0 8px; }
 .evd-row { font-size: 15px; margin: 6px 0; }
 .evd-small { font-size: 13px; color: #6E6070; margin: 8px 0; white-space: pre-wrap; line-height: 1.5; }
+
+/* v1.12.7 免费疫苗合集（复用自费卡布局，紫色强调） */
+.free-card .pc-chev { color: var(--vaccine); }
+.free-card .pc-item { background: var(--vaccine-soft); border-color: #D5CCFF; }
+.free-card .pc-item > summary::after { color: var(--vaccine); }
+.pc-st.replaced { background: #FDE8E8; color: #B42318; }
+.fv-doses { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.fv-dose { display: block; width: 100%; text-align: left; border: 1px solid #E3DCFF; background: #fff; border-radius: 12px; padding: 8px 10px; font: inherit; color: inherit; }
+.fv-dose:active { background: #F4F0FF; }
+.fv-dose.done { opacity: 0.75; }
+.fv-dose.replaced { border-color: #F5C2C0; background: #FFF5F5; }
+.fv-dose.replaced .fv-dose-main b { color: #8A3A38; }
+.fv-dose.miss { border-style: dashed; color: var(--muted); }
+.fv-dose-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 15px; }
+.fv-dose-sub { display: block; margin-top: 2px; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.fv-st { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 8px; background: #EEE7EF; color: #6E6070; }
+.fv-st.done { background: var(--ok-soft, #DDF5E6); color: #1E7A45; }
+.fv-st.replaced { background: #FDE8E8; color: #B42318; }
+.fv-st.pend { background: var(--vaccine-soft); color: var(--vaccine); }
+.fv-st.miss { background: #F0EEF2; color: #8A8090; }
