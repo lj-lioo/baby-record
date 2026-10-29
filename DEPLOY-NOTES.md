@@ -1,3 +1,16 @@
+
+## v1.11.2（点一下说话 + 主屏幕名「家有朝朝」）
+- 语音按钮改为点按制：点一下开始识别，再点一下结束；文案「🎙️ 点一下说话」/「🔴 正在听…再点一下结束」。
+- 保留每次启动前 abort、15s 看门狗、结束后 1.5s 强制复位、连续失败 2 次降级键盘🎤、结果追加。
+- PWA 主屏幕名：manifest name/short_name、index title、apple-mobile-web-app-title →「家有朝朝」；帮助页注明 iOS 需删旧图标再添加。
+- 测试：voice.test / voice-hold-ui（5 次点开始→结束）/ voice-ui。
+
+## v1.10.0（相册视频 + 省流量）
+- 相册「从相册选择」accept image/*,video/*；新增「录视频」。视频 4MB/块分别 AES-GCM（AAD=id:n）→ photo-server `PUT /v1/video/:id/:n`；封面首帧+时长+大小走云同步元数据。
+- 视频绝不自动下载：点开显示「播放（约 xxMB）」，点了才分块下载解密；本机 IndexedDB 缓存 `v:<id>`，上限 videoCacheMB(500) 先删最早，未上传的不删；videoMaxMB(200) 超限拒绝。
+- photo-server 1.10.0：视频分块、Range、流式读；极空间需重建容器。测试 test/video-ui.mjs（需 /tmp/bv.webm，ffmpeg 生成）；截图 46–50。
+- 未做客户端压缩（WebCodecs 需额外 mp4 封装库且 iOS 可靠性存疑）。
+
 ## v1.9.4（日历：被自费替代的免费疫苗针标打红叉）
 - 已计划五联/流脑结合/甲肝灭活/乙脑灭活等时，对应免费剂次在月历紫针上叠小红叉（`.vbadge.replaced`）；移出计划后红叉消失。
 - 列表卡片「可不打此剂」提示保留；图例第二行加「已被自费替代可不打」。
@@ -193,3 +206,9 @@
 - 曲线：纯 SVG，无外部 chart CDN。
 - 版本：config / sw / settings APP_BUILD → 1.9.0；sw ASSETS 加 growth.js、views/growth.js。
 - 测试：`node test/growth.test.mjs`（14）、`node test/growth-ui.mjs`（12，截图 38–41）。
+
+## v1.11.0（一句话记事）
+- 首页顶部「🎤 说一句话记事」→ 弹层大输入框（自动聚焦，主靠键盘听写）；支持 Web Speech 的浏览器额外显示「按住说话」（zh-CN，出错即隐藏）。
+- `site/js/voice.js` 纯本地规则解析：日期/时间/中文数字/周X/下周X/X天后/月底/X号，已过取下一年（X号已过取下月），缺省今天；疫苗/体检/儿保/复查打分类；按 。！？；换行 拆多条。
+- `site/js/views/voice.js` 确认卡（标题/日期/时间/类别可改、可删）→ `store.addEvents`（默认提醒，走云同步）；帮助 `#h-voice`。
+- 测试：`node test/voice.test.mjs`（42）、`node test/voice-ui.mjs`（18，截图 52-voice-*）。提交 26f4bf0 → 71f116d。

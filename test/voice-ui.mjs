@@ -48,7 +48,7 @@ await page.screenshot({ path: path.join(shotDir, '52-voice-entry.png') });
 await page.click('#btnVoice'); await page.waitForTimeout(200);
 check('输入框自动聚焦', await page.evaluate(() => document.activeElement && document.activeElement.id === 'v-text'));
 check('提示键盘话筒', (await page.locator('#sheet').innerText()).includes('点键盘上的'));
-check('Chromium headless 支持 webkitSpeechRecognition 时显示按住说话（否则隐藏）', await page.evaluate(() => { const b = document.querySelector('#v-hold'); return !!(window.SpeechRecognition || window.webkitSpeechRecognition) === !b.hidden; }));
+check('Chromium headless 支持 webkitSpeechRecognition 时显示点一下说话（否则隐藏）', await page.evaluate(() => { const b = document.querySelector('#v-hold'); return !!(window.SpeechRecognition || window.webkitSpeechRecognition) === !b.hidden; }));
 await page.fill('#v-text', '11月5号买奶粉');
 await page.waitForTimeout(400);
 check('解析一张卡', await page.locator('.v-card').count() === 1);
@@ -73,7 +73,7 @@ check('保存疫苗 11/7 10:00', evs.some((e) => e[0] === '打疫苗' && e[1] ==
 check('只存 2 条', evs.length === 2);
 await page.goto(`http://127.0.0.1:${APP_PORT}/#help`); await page.waitForTimeout(400);
 const help = await page.locator('#h-voice').innerText().catch(() => '');
-check('帮助页说明', help.includes('启用听写') && help.includes('华为'));
+check('帮助页说明', help.includes('启用听写') && help.includes('华为') && help.includes('点一下说话'));
 await page.locator('#h-voice').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(shotDir, '52-voice-help.png') });
 await page.goto(`http://127.0.0.1:${APP_PORT}/#settings`); await page.waitForTimeout(300);
 check(`版本 ${APP_V}`, /^1\.1[1-9]\./.test(APP_V) && (await page.content()).includes(APP_V));
