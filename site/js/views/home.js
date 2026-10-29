@@ -51,8 +51,7 @@ export function renderHome(root) {
     <section class="card" id="calCard"></section>
     <section class="card" id="dayCard"></section>
     <section class="card paid-card free-card" id="freeVaxCard"></section>
-    <section class="card paid-card" id="paidCard"></section>
-    <button class="fab" id="fab" aria-label="添加事项">＋</button>`;
+    <section class="card paid-card" id="paidCard"></section>`;
 
   root.querySelector('#btnBabyProfile').onclick = () => openBabyProfile();
   root.querySelector('#btnVoice').onclick = () => openVoice();
@@ -64,7 +63,6 @@ export function renderHome(root) {
   renderPaidCard(root.querySelector('#paidCard'));
   renderPushBanner(root.querySelector('#pushBanner'));
   renderVaxCta(root.querySelector('#vaxCta'));
-  root.querySelector('#fab').onclick = () => openEditor({ date: ui.selected });
   if (ui.scrollTo) {
     const key = ui.scrollTo;
     ui.scrollTo = null;
@@ -335,7 +333,6 @@ function renderMonthList(el) {
   const byDate = {};
   for (const e of pending) (byDate[e.date] ||= []).push(e);
   const dates = Object.keys(byDate);
-  if (ui.selected >= monthStart && ui.selected <= monthEnd && !byDate[ui.selected]) dates.push(ui.selected);
   dates.sort();
   const sortT = (a, b) => (a.time || '99').localeCompare(b.time || '99');
   const earlier = today.slice(0, 7) === ui.month
