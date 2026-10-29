@@ -2,13 +2,12 @@
 
 在极空间（或任意 Docker 主机）里跑一个小服务：**只存客户端 AES-GCM 加密后的原图密文**，不接触明文、不持有同步密钥。
 
-App 设置里填「照片服务地址」，例如家里局域网：
+App 跑在 **HTTPS**（GitHub Pages）上时，浏览器**不允许**页面去 `fetch` 局域网的 `http://192.168.x.x`（混合内容拦截）。所以：
 
-```text
-http://192.168.1.8:8789
-```
+- Safari **地址栏直接打开** `http://极空间IP:8789/health` → 可以（用来确认服务活着）
+- App 设置里填同一个 `http://…` 点「测试连接」→ **会 Load failed**（不是地址写错，是浏览器安全策略）
 
-（把 IP 换成你极空间在路由器里的局域网地址。）
+真正给 App 用的地址必须是 **HTTPS**，例如买域名后用 Cloudflare Tunnel 把 `https://photo.你的域名` 指到极空间 `8789`，再在设置里填这个 https 地址。
 
 ## 极空间 Docker 怎么挂
 
@@ -29,8 +28,8 @@ docker run -d --name baby-photo \
   baby-record-photo
 ```
 
-3. 手机连家里 Wi‑Fi，浏览器打开 `http://极空间局域网IP:8789/health`，应看到 `{"ok":true,"service":"baby-record-photo",...}`。
-4. 打开宝宝记录 App → **设置 → 📷 照片服务** → 填 `http://极空间局域网IP:8789` → 点「测试连接」。
+3. 手机连家里 Wi‑Fi，浏览器打开 `http://极空间局域网IP:8789/health`，应看到 `{"ok":true,"service":"baby-record-photo",...}`（这只证明服务活着）。
+4. **不要**指望在 HTTPS 的 App 里填局域网 `http://…` 能测通。等域名 + Tunnel 配好 HTTPS 后，在 App → **设置 → 📷 照片服务** 填 `https://photo.你的域名` →「测试连接」。
 
 ## v1.10.0 升级：支持视频（需重建容器）
 
@@ -63,10 +62,11 @@ App v1.10.0 加了视频，照片服务也要更新到 1.10.0，否则上传视�
 
 `:id` 仅允许 `[0-9a-zA-Z_-]{6,64}`。
 
-## 访问说明（暂不买域名）
+## 访问说明
 
-- **家里 Wi‑Fi**：App 填局域网 `http://192.168.x.x:8789` 即可上传/查看原图。
-- **外出**：需手机开 VPN 连回家，或以后买域名 + Cloudflare Tunnel 再绑公网地址。
+- **服务自检（家里 Wi‑Fi）**：浏览器打开 `http://192.168.x.x:8789/health`。
+- **给 App 用**：必须 `https://…`（域名 + Cloudflare Tunnel → 家里 8789）。GitHub Pages 上的 PWA 无法直连局域网 http（混合内容）。
+- **不能**把 App 整站改成局域网 http 托管来绕过：同步加密依赖 `crypto.subtle`，需要安全上下文（HTTPS / localhost），`http://192.168.x.x` 上会坏掉。
 - 相册**元数据**（缩略图、说明、时间）仍走现有 Cloudflare 云同步；`*.workers.dev` 在国内常需 VPN。
 
 ## 安全

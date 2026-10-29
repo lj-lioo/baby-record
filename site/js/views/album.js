@@ -38,7 +38,13 @@ export function isIOS() {
 }
 export function friendlyDlError(e) {
   const m = String(e?.message || e || '');
-  if (/failed to fetch|load failed|networkerror|network error|fetch/i.test(m) && !/照片服务/.test(m)) return '连不上极空间照片服务：请连家里 Wi‑Fi 或打开 VPN 后重试';
+  if (/mixed_content|HTTPS→HTTP|HTTPS 的 App 不能连接局域网/i.test(m)) return m;
+  if (/failed to fetch|load failed|networkerror|network error|fetch/i.test(m) && !/照片服务/.test(m)) {
+    if (typeof location !== 'undefined' && location.protocol === 'https:' && /^http:\/\//i.test(String(photoApiBase() || ''))) {
+      return '连不上极空间照片服务：HTTPS 的 App 不能访问局域网 http，请改用 https:// 照片地址（域名 + Tunnel）';
+    }
+    return '连不上极空间照片服务：请连家里 Wi‑Fi 或打开 VPN 后重试';
+  }
   return m || '下载失败，请稍后重试';
 }
 function triggerAnchor(blob, name) {

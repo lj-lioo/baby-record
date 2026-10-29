@@ -1,3 +1,27 @@
+## v1.12.13（照片服务：说清 HTTPS→HTTP 混合内容限制）
+- 根因：App 在 `https://lj-lioo.github.io`，`fetch(http://192.168.x.x:8789/health)` 被浏览器当混合内容拦截；Safari 顶栏打开同一 URL 正常。CORS、`/health` 路径无误；photo-server 已允许 GitHub Pages Origin。
+- 改动：`pingPhotoServer` 预判并提示；设置页文案；album 错误文案；photo-server README 纠正「填局域网 http 即可」。
+- 可行方案：域名 + Cloudflare Tunnel 给照片服务 HTTPS 地址；不能靠「App 改挂局域网 http」（crypto.subtle 需要安全上下文）。
+- 版本：config / sw / settings APP_BUILD → 1.12.13。
+
+## v1.12.4（日程卡片精简 + 近期提醒详情面板 + 待完成/已完成分组）
+- home.js itemCard：💡替代提示 / ℹ️窗口说明 / 📝备注 折叠进「显示详情 ▾ / 收起 ▴」（ui.details）；点🪟窗口聚焦时窗口说明仍直接显示。
+- 近期提醒点击 → openEventDetail 底部面板（完整信息，⏰设为闹钟提醒 / ✅已完成 / 关闭；无改日期）；ui.js openSheet 支持顶部下拉关闭。
+- 事项列表「待完成（N）」默认展开可折叠（点日历日期自动展开），「已完成（N）」默认折叠。
+- 测试 home-compact-ui（16 项，SW 屏蔽）、window-ui 60/60、paidvax-ui 66/66；截图 55/56。commits 2104f98、f4a2b71。
+
+## v1.12.3（用药频次排序 + K1 药丸进度 + 益生菌合并 + 生长标签顺序）
+- 在用按频次：每日→未知→每周→每月（growth.js medFreqRank，可用 freq 字段覆盖），同频次按开始日先后。
+- 药品 series 字段关联日历 scheduleId「series:N」；medDoses 统计总数/已完成，药丸蓝=已用、灰=未用，「已用 X/共 N 次」；K1（口服）series=vitk。
+- 云端：益生菌合并为 10月5日起一天两袋（id …jucfay），删除 3 条碎片（tombstone）；备份 /tmp/meds-backup-1123.json。新增 CLI meds-delete。
+- 生长页标签：身高/体重/头围/记录列表，默认身高曲线。测试 meds-pills-ui（SW 屏蔽），截图 54。
+- commits 29198b8、571969a、a402d6a。
+
+## v1.12.1（生长/用药同步漏拉修复）
+- 根因：云端其实已有 33 条 gr: + 7 条 md:；手机若在认识这些前缀之前就把 sync cursor 推过去，之后再也不会重拉，生长页一直空。
+- 修复：版本升级时把 cursor 归零（保留 acked，已有记录不会重复覆盖错）；并重推 40 条抬高 updatedAt，让仍停在旧 cursor 的设备点「立即同步」也能收到。
+- 操作：关 App 再开到 v1.12.1 → 设置看云同步；若失败开 VPN 后点「立即同步」。
+
 
 ## v1.11.2（点一下说话 + 主屏幕名「家有朝朝」）
 - 语音按钮改为点按制：点一下开始识别，再点一下结束；文案「🎙️ 点一下说话」/「🔴 正在听…再点一下结束」。
@@ -212,3 +236,16 @@
 - `site/js/voice.js` 纯本地规则解析：日期/时间/中文数字/周X/下周X/X天后/月底/X号，已过取下一年（X号已过取下月），缺省今天；疫苗/体检/儿保/复查打分类；按 。！？；换行 拆多条。
 - `site/js/views/voice.js` 确认卡（标题/日期/时间/类别可改、可删）→ `store.addEvents`（默认提醒，走云同步）；帮助 `#h-voice`。
 - 测试：`node test/voice.test.mjs`（42）、`node test/voice-ui.mjs`（18，截图 52-voice-*）。提交 26f4bf0 → 71f116d。
+
+## v1.12.0（用药记录 + 月子中心生长数据）
+- 生长页曲线/列表下方新增「💊 用药记录」卡（md: 前缀同步，{name,dose,start,end,note}）；在用（无结束日或≥今天）排上，已停用/单次在下；可增删改、「今天停用」。
+- 生长记录：身高/体重至少填一项即可保存（出生记录只有体重）；曲线点多于 12 个时只标首尾数值。
+- add-item.js 新增 growth-list / growth-import CSV / meds-list / meds-import JSON（同日期 / 同药品+开始日更新不重复）。
+- 云端写入：生长 33 条（09-17 出生 2.81kg … 10-23 4.32kg），用药 7 条。测试 test/meds-ui.mjs；截图 53。
+
+## v1.12.2（修复同步 too_large）
+- 根因：collectChanges 一次最多 500 条，但 ph: 带缩略图单条可达 ~32KB，几十张照片即超过 Worker 1MB 请求体上限 → 413 too_large，整轮失败，连带拉取也不执行。
+- 前端 sync.js `takeBatch`：每批 ≤700KB 且 ≤300 条，循环最多 200 轮；单条 >32KB 先重压缩缩略图（240px/160px），仍超则跳过并提示「有 N 条数据太大未上传」。
+- Worker：响应按约 2MB 字节分页（more=true），已 wrangler deploy（Node22：PATH=$HOME/.local/node22/bin）。
+- 测试：test/sync-batch-ui.mjs（120 张缩略图共约 2MB + 33 gr + 7 md）。注意 Playwright 需 serviceWorkers:'block'，否则 SW 缓存的 config.js 绕过 route 打到生产。
+- test/sync-ui.mjs 有 3 项与本次无关的旧失败（体检事项数断言 12 vs 实际 11），v1.12.1 同样失败。
