@@ -2,6 +2,7 @@
 import { store } from '../store.js';
 import { esc, toast, confirmSheet, openSheet, closeSheet } from '../ui.js';
 import { openBabyProfile } from './settings.js';
+import { canEditGrowth, requireEditEvents } from '../roles.js';
 import { todayStr } from '../dates.js';
 import {
   ageOnDate, growthSorted, medsSorted, medPeriod, medDoses, deltaTip, validateGrowth, chartSvg, seriesFor,
@@ -23,7 +24,7 @@ export function renderGrowth(root) {
   root.innerHTML = `
     <header class="topbar">
       <h1>生长记录</h1>
-      <button class="btn" id="btnAddGrowth" style="padding:8px 14px">添加</button>
+      ${canEditGrowth() ? '<button class="btn" id="btnAddGrowth" style="padding:8px 14px">添加</button>' : ''}
     </header>
     ${!bday ? `<div class="banner"><div class="bt"><b>还没填宝宝生日</b>设置里填生日后，列表会显示日龄/月龄。</div>
       <button class="btn secondary" id="btnGoSetBday" style="flex:none">去设置</button></div>` : ''}
@@ -37,16 +38,24 @@ export function renderGrowth(root) {
 
   const q = (s) => root.querySelector(s);
   q('#btnGoSetBday') && (q('#btnGoSetBday').onclick = () => openBabyProfile({ onSaved: () => renderGrowth(root) }));
-  q('#btnAddGrowth').onclick = () => openEditor(null, root);
+  const bag = q('#btnAddGrowth');
+  if (bag) bag.onclick = () => { if (!requireEditEvents('当前身份不能添加生长记录')) return; openEditor(null, root); };
   root.querySelectorAll('.gr-tab').forEach((btn) => {
     btn.onclick = () => { activeTab = btn.dataset.tab; renderGrowth(root); };
   });
   root.querySelectorAll('[data-gid]').forEach((el) => {
-    el.onclick = () => openEditor(el.dataset.gid, root);
+    el.onclick = () => {
+      if (!canEditGrowth()) { /* 老人可看列表，点开只读：暂不进编辑 */ return; }
+      openEditor(el.dataset.gid, root);
+    };
   });
-  q('#btnAddMed').onclick = () => openMedEditor(null, root);
+  const bam = q('#btnAddMed');
+  if (bam) bam.onclick = () => { if (!requireEditEvents('当前身份不能添加用药')) return; openMedEditor(null, root); };
   root.querySelectorAll('[data-mid]').forEach((el) => {
-    el.onclick = () => openMedEditor(el.dataset.mid, root);
+    el.onclick = () => {
+      if (!canEditGrowth()) return;
+      openMedEditor(el.dataset.mid, root);
+    };
   });
 }
 
@@ -89,6 +98,7 @@ function renderChart(metric) {
 }
 
 function openEditor(id, growthRoot) {
+  if (!requireEditEvents('当前身份不能修改生长记录')) return;
   const existing = id ? store.getGrowth(id) : null;
   const bday = store.state.settings.babyBirthday || '';
   const g = existing || { date: todayStr(), height: '', weight: '', head: '', note: '' };
@@ -166,7 +176,7 @@ function renderMeds() {
   const { active, past } = medsSorted();
   return `<section class="card md-card" id="medsCard">
     <div class="md-head"><h2 style="margin:0">💊 用药记录</h2>
-      <button class="btn secondary" id="btnAddMed" style="padding:6px 12px;flex:none">添加</button></div>
+      ${canEditGrowth() ? '<button class="btn secondary" id="btnAddMed" style="padding:6px 12px;flex:none">添加</button>' : ''}</div>
     ${!active.length && !past.length ? '<p class="small muted" style="margin:8px 0 0">还没有用药记录，点「添加」记下药品、剂量和开始日期。</p>' : ''}
     ${active.length ? `<div class="md-sec">在用 · ${active.length}</div>${active.map((m) => medRow(m, true)).join('')}` : ''}
     ${past.length ? `<div class="md-sec">已停用 / 单次 · ${past.length}</div>${past.map((m) => medRow(m, false)).join('')}` : ''}
@@ -174,6 +184,7 @@ function renderMeds() {
 }
 
 function openMedEditor(id, growthRoot) {
+  if (!requireEditEvents('当前身份不能修改用药')) return;
   const existing = id ? store.getMed(id) : null;
   const m = existing || { name: '', dose: '', start: todayStr(), end: '', note: '' };
   openSheet(`

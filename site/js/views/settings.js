@@ -11,11 +11,16 @@ import { openPaidCatalog, catalogCounts } from './paidcat.js';
 import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../sync.js';
 import { extractSyncKey } from '../sync-core.js';
 import { pingPhotoServer, videoCacheInfo, clearVideoCache } from '../photos.js';
+import {
+  getRole, setRole, canEditDangerousSettings, canEditProfile,
+  ROLES, ADMIN_ROLES, ELDER_ROLES, roleCapabilityText, openRolePicker, copyInviteFor,
+} from '../roles.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.12.15';
+export const APP_BUILD = '1.13.0';
 
 /** 编辑宝宝名字 + 生日（云同步 profile）；保存后触发 rerender */
 export function openBabyProfile({ onSaved } = {}) {
+  if (!canEditProfile()) { toast('当前身份不能修改宝宝资料'); return; }
   const st = store.state.settings;
   openSheet(`
     <h3>宝宝资料</h3>
@@ -44,8 +49,46 @@ export function openBabyProfile({ onSaved } = {}) {
 
 export function renderSettings(root) {
   const st = store.state.settings;
+  const admin = canEditDangerousSettings();
+  const role = getRole();
+
+  const familyCard = `
+    <section class="card" id="familyCard">
+      <h2>👨‍👩‍👧 亲友团</h2>
+      <p class="small muted" style="margin-top:0">本机身份决定能改什么；全家数据仍靠同步密钥（密钥请口头/私聊告知，邀请链接里不会带密钥）。</p>
+      <div class="kv"><span>当前身份</span><span id="familyRoleLab"><b>${role ? esc(role) : '未选择'}</b>${role && ADMIN_ROLES.includes(role) ? ' · 管理员' : role && ELDER_ROLES.includes(role) ? ' · 亲友' : ''}</span></div>
+      <p class="small" style="margin:8px 0">${esc(roleCapabilityText(role))}</p>
+      ${admin ? `
+      <div class="field"><label for="familyRole">切换本机身份（六选一）</label>
+        <select id="familyRole" class="input">${ROLES.map((r) => `<option value="${esc(r)}" ${r === role ? 'selected' : ''}>${esc(r)}${ADMIN_ROLES.includes(r) ? '（管理员）' : ''}</option>`).join('')}${!role ? '<option value="" selected disabled>请选择</option>' : ''}</select></div>
+      <p class="small muted" style="margin-top:0">生成邀请链接发给对方，对方打开后写入对应身份（链接约 7 天有效，不含同步密钥）：</p>
+      <div class="btn-row" style="flex-wrap:wrap;gap:8px" id="inviteBtns">
+        ${ROLES.map((r) => `<button type="button" class="btn secondary" data-inv="${esc(r)}" style="padding:8px 10px;font-size:14px">邀请${esc(r)}</button>`).join('')}
+      </div>` : `
+      <p class="note small">如需改成爸爸/妈妈等其它身份，请让管理员重新发邀请链接，或在本机已是管理员时再切换。</p>
+      <button class="btn secondary block" id="btnPickRole" style="margin-top:8px">重新选择身份</button>`}
+    </section>`;
+
+  if (!admin) {
+    // 老人：只看身份说明 + 少量无害项
+    root.innerHTML = `
+      <header class="topbar"><h1>设置</h1></header>
+      ${familyCard}
+      <section class="card">
+        <h2>🔧 其他</h2>
+        <div class="kv"><span>提醒页铃声</span><label><input type="checkbox" id="soundOn" ${st.sound ? 'checked' : ''}> 开启</label></div>
+        <p class="small muted" style="text-align:center" id="appVer">宝宝记录 v${esc(APP_BUILD)}${(window.BABY_CONFIG?.appVersion || APP_BUILD) !== APP_BUILD ? ` · 正在更新到 v${esc(window.BABY_CONFIG.appVersion)}，请关闭后重新打开` : ''}</p>
+      </section>`;
+    const q = (s) => root.querySelector(s);
+    q('#soundOn').onchange = (e) => store.updateSettings({ sound: e.target.checked });
+    q('#btnPickRole') && (q('#btnPickRole').onclick = () => openRolePicker({ force: true, onDone: () => renderSettings(root) }));
+    return;
+  }
+
   root.innerHTML = `
     <header class="topbar"><h1>设置</h1></header>
+
+    ${familyCard}
 
     <section class="card" id="babyProfileCard">
       <h2>👶 宝宝资料</h2>
@@ -137,6 +180,23 @@ export function renderSettings(root) {
 
   const q = (s) => root.querySelector(s);
   refreshStatus(q('#pushStatus'));
+
+  const fr = q('#familyRole');
+  if (fr) fr.onchange = () => {
+    const r = fr.value;
+    if (!r) return;
+    setRole(r);
+    toast(`本机身份已设为「${r}」`);
+    renderSettings(root);
+    window.dispatchEvent(new CustomEvent('rerender'));
+  };
+  root.querySelectorAll('[data-inv]').forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try { await copyInviteFor(b.dataset.inv); } catch (e) { toast(e.message, 4000); }
+      b.disabled = false;
+    };
+  });
 
   q('#btnEnable').onclick = async () => {
     unlockAudio();

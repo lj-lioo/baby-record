@@ -5,6 +5,7 @@ import { daysBetween, todayStr, addDays, ymd, parseYmd, cnDate, weekday, countdo
 import { fireAtOf, reminderLabel } from '../reminders.js';
 import { esc, toast, openSheet, closeSheet } from '../ui.js';
 import { openEditor } from './editor.js';
+import { canEditEvents, requireEditEvents, requireAlarm } from '../roles.js';
 import { openAlarmSheet, alarmState } from './actions.js';
 import { openICS } from '../ics.js';
 import { isStandalone, isIOS } from '../push.js';
@@ -91,7 +92,7 @@ function renderReminderCard(el) {
         <div class="ricon" style="background:var(--${e.category}-soft)">${c.icon}</div>
         <div class="rbody"><div class="rtitle">${esc(e.title)}</div>
           <div class="rmeta">${cnDate(e.date)} ${weekday(e.date)}${e.time ? ' ' + e.time : ''} · ${c.label}${nextRemText(e)}${!past ? alarmMini(e) : ''}</div></div>
-        ${past || cd.level === 'today' ? `<button class="mini-btn" data-done="${e.id}">${past ? '已完成?' : '完成'}</button>` : ''}
+        ${canEditEvents() && (past || cd.level === 'today') ? `<button class="mini-btn" data-done="${e.id}">${past ? '已完成?' : '完成'}</button>` : ''}
         <span class="pill lvl-${cd.level}">${cd.text}</span>
       </li>`;
     }).join('')}</ul>` : '<div class="empty">🎈 未来7天没有安排，好好陪宝宝玩吧～</div>'}`;
@@ -103,7 +104,7 @@ function renderReminderCard(el) {
     };
   });
   el.querySelectorAll('[data-done]').forEach((b) => {
-    b.onclick = () => markDone(b.dataset.done);
+    b.onclick = () => { if (!requireEditEvents()) return; markDone(b.dataset.done); };
   });
 }
 
@@ -127,13 +128,13 @@ export function openEventDetail(e) {
     ${w && w.note ? `<div class="evd-small">ℹ️ ${esc(w.note)}</div>` : ''}
     ${e.note ? `<div class="evd-small">📝 ${esc(e.note)}</div>` : ''}
     <div class="btn-row" style="margin-top:14px">
-      ${e.done ? '' : '<button class="btn secondary" id="evdAlarm">⏰ 设为闹钟提醒</button><button class="btn" id="evdDone">✅ 已完成</button>'}
+      ${e.done || !canEditEvents() ? '' : '<button class="btn secondary" id="evdAlarm">⏰ 设为闹钟提醒</button><button class="btn" id="evdDone">✅ 已完成</button>'}
       <button class="btn ghost" id="evdClose">关闭</button>
     </div></div>`, (sh) => {
     sh.querySelector('#evdClose').onclick = closeSheet;
     const d = sh.querySelector('#evdDone'), a = sh.querySelector('#evdAlarm');
-    if (d) d.onclick = () => { closeSheet(); markDone(e.id); };
-    if (a) a.onclick = () => { closeSheet(); openAlarmSheet(store.getEvent(e.id)); };
+    if (d) d.onclick = () => { if (!requireEditEvents()) return; closeSheet(); markDone(e.id); };
+    if (a) a.onclick = () => { if (!requireAlarm()) return; closeSheet(); openAlarmSheet(store.getEvent(e.id)); };
   });
 }
 
@@ -225,7 +226,7 @@ function renderCalendar(el) {
       const dayEvs = visOn(ds);
       // v1.12.9：第一次点 → 只选中＋显示当天简介小框；再点同一天 → 有事项则展开分组并滚到该天，空白日则添加事项
       if (ds === ui.selected) {
-        if (!dayEvs.length) { openEditor({ date: ds }); return; }
+        if (!dayEvs.length) { if (!requireEditEvents()) return; openEditor({ date: ds }); return; }
         if (ui.dayOpen === ds) {
           if (dayEvs.some((e) => !e.done)) ui.pendOpen = true; else ui.doneOpen = true;
           ui.scrollTo = dayEvs.some((e) => !e.done) ? ds : `d-${ds}`;
@@ -311,11 +312,11 @@ function itemCard(e, today, bday) {
     ${details ? `<button type="button" class="det-toggle" data-act="details" aria-expanded="${dOpen}">${dOpen ? '收起 ▴' : '显示详情 ▾'}</button>
     <div class="idetails" ${dOpen ? '' : 'hidden'}>${details}</div>` : ''}
     <div class="iactions">
-      ${e.done ? '' : alarmBtn(e)}
-      ${!e.done && (w || e.category !== 'other') ? `<button class="chip-btn" data-act="plan">📆 改计划日</button>` : ''}
-      <button class="chip-btn" data-act="edit">✏️ 编辑</button>
+      ${canEditEvents() && !e.done ? alarmBtn(e) : ''}
+      ${canEditEvents() && !e.done && (w || e.category !== 'other') ? `<button class="chip-btn" data-act="plan">📆 改计划日</button>` : ''}
+      ${canEditEvents() ? '<button class="chip-btn" data-act="edit">✏️ 编辑</button>' : ''}
       <button class="chip-btn" data-act="ics">📅 苹果日历</button>
-      ${e.done ? '<button class="chip-btn" data-act="undone">↩︎ 取消完成</button>' : '<button class="chip-btn done-btn" data-act="done">✅ 已完成</button>'}
+      ${canEditEvents() ? (e.done ? '<button class="chip-btn" data-act="undone">↩︎ 取消完成</button>' : '<button class="chip-btn done-btn" data-act="done">✅ 已完成</button>') : ''}
     </div>
   </div>`;
 }
@@ -350,7 +351,7 @@ function renderMonthList(el) {
   el.innerHTML = `
     <div class="day-panel-head">
       <h2 style="margin:0">📋 ${m}月的事项 <span class="muted small" style="font-weight:500">共 ${inMonth.length} 个${completed.length ? ` · 未完成 ${pending.length}` : ''}</span></h2>
-      <button class="btn secondary" id="addHere" style="padding:8px 14px;font-size:15px">＋ 添加</button>
+      ${canEditEvents() ? '<button class="btn secondary" id="addHere" style="padding:8px 14px;font-size:15px">＋ 添加</button>' : ''}
     </div>
     ${pendCount ? `<button type="button" class="done-fold pend-fold" id="pendFold" aria-expanded="${ui.pendOpen}">
       <span class="done-fold-lab">待完成（${pendCount}）</span><span class="done-fold-chev" aria-hidden="true">${ui.pendOpen ? '▾' : '▸'}</span></button>` : ''}
@@ -363,7 +364,7 @@ function renderMonthList(el) {
       const onlyDoneHere = !list.length && (doneByDate[ds] || []).length;
       return `<div class="grp ${ds === ui.selected ? 'sel' : ''}" id="g-${ds}" data-date="${ds}">
         <div class="grp-head"><h2>${cnDate(ds)} ${weekday(ds)} <span class="pill lvl-${cd.level}" style="animation:none">${cd.text}</span></h2>
-          ${list.length ? '' : `<button class="link-btn" data-add="${ds}">＋ 添加</button>`}</div>
+          ${list.length || !canEditEvents() ? '' : `<button class="link-btn" data-add="${ds}">＋ 添加</button>`}</div>
         ${list.length ? list.map((e) => itemCard(e, today, bday)).join('')
           : onlyDoneHere ? `<p class="muted small" style="margin:4px 0 2px">这一天的事项已全部完成，见下方「已完成」。</p>`
             : '<p class="muted small" style="margin:4px 0 2px">这一天还没有安排。</p>'}
@@ -377,8 +378,9 @@ function renderMonthList(el) {
       </button>
       <div class="done-fold-body" id="doneFoldBody" ${ui.doneOpen ? '' : 'hidden'}>${doneBody}</div>
     </div>` : ''}`;
-  el.querySelector('#addHere').onclick = () => openEditor({ date: ui.selected >= monthStart && ui.selected <= monthEnd ? ui.selected : (today.slice(0, 7) === ui.month ? today : monthStart) });
-  el.querySelectorAll('[data-add]').forEach((b) => { b.onclick = () => openEditor({ date: b.dataset.add }); });
+  const ah = el.querySelector('#addHere');
+  if (ah) ah.onclick = () => { if (!requireEditEvents()) return; openEditor({ date: ui.selected >= monthStart && ui.selected <= monthEnd ? ui.selected : (today.slice(0, 7) === ui.month ? today : monthStart) }); };
+  el.querySelectorAll('[data-add]').forEach((b) => { b.onclick = () => { if (!requireEditEvents()) return; openEditor({ date: b.dataset.add }); }; });
   const pf = el.querySelector('#pendFold');
   if (pf) pf.onclick = () => { ui.pendOpen = !ui.pendOpen; rerender(); };
   const fold = el.querySelector('#doneFold');
@@ -392,17 +394,17 @@ function renderMonthList(el) {
         const e = store.getEvent(id);
         const act = b.dataset.act;
         if (act === 'details') { ui.details.has(id) ? ui.details.delete(id) : ui.details.add(id); rerender(); return; }
-        if (act === 'edit') openEditor({ id });
+        if (act === 'edit') { if (!requireEditEvents()) return; openEditor({ id }); }
         else if (act === 'ics') openICS(e);
-        else if (act === 'alarm') openAlarmSheet(e);
-        else if (act === 'plan') openPlannedSheet(e);
+        else if (act === 'alarm') { if (!requireAlarm()) return; openAlarmSheet(e); }
+        else if (act === 'plan') { if (!requireEditEvents()) return; openPlannedSheet(e); }
         else if (act === 'focus') {
           ui.focus = ui.focus === id ? null : id;
           rerender();
           if (ui.focus) document.getElementById('calCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
-        else if (act === 'done') markDone(id);
-        else if (act === 'undone') store.setDone(id, false);
+        else if (act === 'done') { if (!requireEditEvents()) return; markDone(id); }
+        else if (act === 'undone') { if (!requireEditEvents()) return; store.setDone(id, false); }
       };
     });
   });
@@ -420,6 +422,7 @@ async function renderPushBanner(el) {
 }
 // 还没有生成疫苗/体检计划时，在首页提示「一键生成」
 function renderVaxCta(el) {
+  if (!canEditEvents()) { el.innerHTML = ''; return; }
   const needV = !planCounts('vaccine') && localStorage.getItem('babyrecord.hideVaxCta') !== '1';
   const needC = !planCounts('checkup') && localStorage.getItem('babyrecord.hideChkCta') !== '1';
   if (!needV && !needC) { el.innerHTML = ''; return; }

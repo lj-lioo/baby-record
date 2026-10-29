@@ -1,6 +1,7 @@
 // v1.8.0 相册页：按拍摄/上传时间分组的时间轴（v1.9.1 上传可选；v1.12.14 第X天；v1.12.15 第X天次要字号、去掉 N 项）
 import { store } from '../store.js';
 import { esc, toast, confirmSheet, openSheet, closeSheet } from '../ui.js';
+import { canDeleteAlbum } from '../roles.js';
 import {
   photosByDay, fmtDayTitle, dayNumberOnDate, addPhotoFromFile, loadPhotoBlob, removePhoto,
   retryUpload, photoApiBase, pingPhotoServer,
@@ -251,7 +252,7 @@ async function openViewer(id, albumRoot) {
       <div class="btn-row" style="margin-top:8px">
         <button class="btn" id="avDl">⬇ 下载原图</button>
         ${!meta.remoteReady && photoApiBase() ? '<button class="btn secondary" id="avRetry">补传原图</button>' : ''}
-        <button class="btn danger" id="avDel">删除</button>
+        ${canDeleteAlbum() ? '<button class="btn danger" id="avDel">删除</button>' : ''}
       </div>
     </div>
   `, async (sh) => {
@@ -269,7 +270,9 @@ async function openViewer(id, albumRoot) {
       try { await retryUpload(id); toast('原图已补传'); closeSheet(); renderAlbum(albumRoot); }
       catch (e) { toast(e.message, 4000); retry.disabled = false; }
     };
-    sh.querySelector('#avDel').onclick = async () => {
+    const delBtn = sh.querySelector('#avDel');
+    if (delBtn) delBtn.onclick = async () => {
+      if (!canDeleteAlbum()) return;
       const ok = await confirmSheet('确定删除这张照片吗？其他家人同步后也会删掉。', '删除', true);
       if (!ok) return;
       await removePhoto(id);
@@ -322,7 +325,7 @@ async function openVideoViewer(id, albumRoot) {
       <div class="btn-row" style="margin-top:8px">
         <button class="btn" id="avDl">⬇ 下载原视频</button>
         ${!meta.remoteReady && photoApiBase() ? '<button class="btn secondary" id="avRetry">补传视频</button>' : ''}
-        <button class="btn danger" id="avDel">删除</button>
+        ${canDeleteAlbum() ? '<button class="btn danger" id="avDel">删除</button>' : ''}
       </div>
     </div>
   `, (sh) => {
@@ -339,7 +342,9 @@ async function openVideoViewer(id, albumRoot) {
       try { await retryUpload(id); toast('视频已补传'); cleanup(); closeSheet(); renderAlbum(albumRoot); }
       catch (e) { toast(e.message, 4000); retry.disabled = false; retry.textContent = '补传视频'; }
     };
-    sh.querySelector('#avDel').onclick = async () => {
+    const delBtn = sh.querySelector('#avDel');
+    if (delBtn) delBtn.onclick = async () => {
+      if (!canDeleteAlbum()) return;
       const ok = await confirmSheet('确定删除这个视频吗？其他家人同步后也会删掉。', '删除', true);
       if (!ok) return;
       await removePhoto(id); cleanup(); toast('已删除'); closeSheet(); renderAlbum(albumRoot);
