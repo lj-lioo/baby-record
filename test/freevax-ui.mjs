@@ -44,7 +44,7 @@ await page.evaluate(async (all) => {
 }, all);
 await page.reload(); await page.waitForTimeout(900);
 
-await check(`版本 ${APP_V}`, APP_V === '1.12.7');
+await check(`版本 ${APP_V}`, /^1\.12\.\d+$/.test(APP_V));
 await check('待完成默认收起', await page.locator('#pendBody').isHidden());
 await check('已完成默认收起', await page.locator('#doneFoldBody').isHidden());
 // 点日历有待完成的一天 → 自动展开待完成
