@@ -1,4 +1,4 @@
-// v1.11.0「🎤 说一句话记事」弹层
+// v1.11.0「🎤 说一句话记事」弹层（v1.11.2：点按说话）
 import { store } from '../store.js';
 import { CATEGORIES } from '../categories.js';
 import { todayStr, cnDate, weekday } from '../dates.js';
@@ -16,7 +16,7 @@ export function openVoice() {
     <h3>🎤 说一句话记事</h3>
     <textarea id="v-text" class="input v-text" rows="3" placeholder="例如：11月5号买奶粉&#10;下周六上午10点打疫苗"></textarea>
     <div class="muted small v-tip">👉 点键盘上的 <b>🎤 话筒</b> 说话；一次说几件事，中间说「句号」或换行即可。</div>
-    <button type="button" class="btn secondary v-hold" id="v-hold" hidden>🎙️ 按住说话</button>
+    <button type="button" class="btn secondary v-hold" id="v-hold" hidden>🎙️ 点一下说话</button>
     <div id="v-cards"></div>
     <div class="btn-row"><button class="btn ghost" id="v-cancel">取消</button><button class="btn" id="v-save" disabled>记上</button></div>`;
   openSheet(html, (s) => {
@@ -60,20 +60,22 @@ export function openVoice() {
       toast(added.length === 1 ? `已记上 ${cnDate(added[0].date)}${weekday(added[0].date)}「${added[0].title}」` : `已记上 ${added.length} 条`);
       window.dispatchEvent(new CustomEvent('select-date', { detail: added[0].date }));
     };
-    setupHold(q('#v-hold'), ta);
+    setupTap(q('#v-hold'), ta);
     setTimeout(() => ta.focus(), 50);
   });
 }
 
-// 增强：浏览器自带语音识别（v1.11.1：每次按下新建实例、状态必复位、看门狗、touch+pointer 双监听、连续失败降级）
-const HOLD_IDLE = '🎙️ 按住说话';
-const HOLD_ON = '🔴 正在听…松开结束';
+// v1.11.2 点按说话：点一下开始听，再点一下结束；每次启动前 abort 解绑旧实例；15s 看门狗；结束后 1.5s 强制复位；连续失败 2 次降级
+const HOLD_IDLE = '🎙️ 点一下说话';
+const HOLD_ON = '🔴 正在听…再点一下结束';
 export const HOLD_WATCHDOG_MS = 15000;
-function setupHold(btn, ta) {
+const TAP_DEBOUNCE_MS = 350;
+
+function setupTap(btn, ta) {
   if (!speechSupported()) return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   btn.hidden = false;
-  let rec = null, listening = false, gotText = false, fails = 0, watchdog = 0, endTimer = 0, base = '', lastDown = 0;
+  let rec = null, listening = false, gotText = false, fails = 0, watchdog = 0, endTimer = 0, base = '', lastTap = 0;
   const tip = document.createElement('div');
   tip.className = 'small v-hold-tip'; tip.id = 'v-hold-tip'; tip.hidden = true;
   btn.after(tip);
@@ -94,12 +96,7 @@ function setupHold(btn, ta) {
     }
   };
   const finish = (ok) => { if (ok) { fails = 0; } else fail(); reset(); };
-  const start = (e) => {
-    if (e) { if (e.cancelable) e.preventDefault(); }
-    // 同一次手指按下会先后触发 touchstart 和 pointerdown，只认第一个
-    const now = Date.now();
-    if (e && e.type === 'touchstart') lastDown = now;
-    else if (e && e.type === 'pointerdown' && e.pointerType === 'touch' && now - lastDown < 800) return;
+  const start = () => {
     reset(); // 不论之前状态如何，先彻底清掉旧实例
     let r;
     try {
@@ -120,19 +117,31 @@ function setupHold(btn, ta) {
       watchdog = setTimeout(() => { if (r === rec) finish(gotText); }, HOLD_WATCHDOG_MS);
     } catch { rec = null; detach(r); finish(false); }
   };
-  const release = (e) => {
+  const stop = () => {
     if (!rec) return;
-    if (e && e.cancelable && e.type.startsWith('touch')) e.preventDefault();
     listening = false;
     const r = rec;
     try { r.stop(); } catch { finish(gotText); return; }
     // 等最终结果；onend 不来则 1.5 秒后强制复位
     clearTimeout(endTimer); endTimer = setTimeout(() => { if (r === rec) finish(gotText); }, 1500);
   };
-  btn.addEventListener('touchstart', start, { passive: false });
-  btn.addEventListener('pointerdown', start);
-  ['touchend', 'touchcancel', 'pointerup', 'pointercancel'].forEach((t) => btn.addEventListener(t, release, { passive: false }));
+  const onTap = (e) => {
+    if (e) {
+      if (e.cancelable) e.preventDefault();
+      // 防误触双击 / iOS 上 click 前可能先到 pointerup，去重
+      const now = Date.now();
+      if (now - lastTap < TAP_DEBOUNCE_MS) return;
+      lastTap = now;
+    }
+    if (listening && rec) stop();
+    else start();
+  };
+  // 优先 click（点按制）；pointerup 仅作兜底且与 click 去重；不再用 press-and-hold
+  btn.addEventListener('click', onTap);
+  btn.addEventListener('pointerup', (e) => {
+    // 桌面鼠标会先 pointerup 再 click，都走 onTap 时靠 debounce 去重
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') onTap(e);
+  });
   btn.addEventListener('contextmenu', (e) => e.preventDefault());
-  // 弹层关闭时清理
   new MutationObserver((_, o) => { if (!btn.isConnected) { reset(); o.disconnect(); } }).observe(document.body, { childList: true, subtree: true });
 }
