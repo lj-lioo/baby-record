@@ -114,9 +114,23 @@ export async function deleteRemotePhoto(id) {
   }
 }
 
+/** HTTPS 页面（如 GitHub Pages）禁止 fetch 局域网 http，会直接 Load failed；Safari 顶栏打开 http 不受此限 */
+export function photoApiBlockedByMixedContent(baseUrl, pageProtocol) {
+  const base = String(baseUrl || photoApiBase() || '').trim();
+  const proto = pageProtocol != null ? pageProtocol : (typeof location !== 'undefined' ? location.protocol : '');
+  return proto === 'https:' && /^http:\/\//i.test(base);
+}
+
 export async function pingPhotoServer(baseUrl) {
   const base = String(baseUrl || photoApiBase()).replace(/\/+$/, '');
   if (!base) return { ok: false, message: '地址为空' };
+  if (photoApiBlockedByMixedContent(base)) {
+    return {
+      ok: false,
+      code: 'mixed_content',
+      message: '浏览器安全限制：HTTPS 的 App 不能连接局域网 http（Safari 直接打开可以，App 里不行）。照片服务需 HTTPS 地址（域名 + Cloudflare Tunnel 指到极空间），不能只用 http://192.168.x.x',
+    };
+  }
   try {
     const res = await fetch(`${base}/health`, { method: 'GET', cache: 'no-store' });
     if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
@@ -124,7 +138,16 @@ export async function pingPhotoServer(baseUrl) {
     try { j = await res.json(); } catch { /* ignore */ }
     return { ok: true, message: (j && j.service) || 'ok' };
   } catch (e) {
-    return { ok: false, message: e.message || '连不上' };
+    const m = e && e.message ? String(e.message) : '连不上';
+    if (/failed to fetch|load failed|networkerror|network error/i.test(m) && /^http:\/\//i.test(base)
+        && typeof location !== 'undefined' && location.protocol === 'https:') {
+      return {
+        ok: false,
+        code: 'mixed_content',
+        message: '连不上（多半是 HTTPS→HTTP 被浏览器拦截）。请给照片服务配 HTTPS（域名 + Tunnel），不要只用局域网 http',
+      };
+    }
+    return { ok: false, message: m };
   }
 }
 

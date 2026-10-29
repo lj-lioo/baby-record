@@ -12,7 +12,7 @@ import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../
 import { extractSyncKey } from '../sync-core.js';
 import { pingPhotoServer, videoCacheInfo, clearVideoCache } from '../photos.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.12.12';
+export const APP_BUILD = '1.12.13';
 
 /** 编辑宝宝名字 + 生日（云同步 profile）；保存后触发 rerender */
 export function openBabyProfile({ onSaved } = {}) {
@@ -100,7 +100,7 @@ export function renderSettings(root) {
 
     <section class="card" id="photoCard">
       <h2>📷 照片服务（极空间）</h2>
-      <p class="small muted" style="margin-top:0">相册原图加密后存到你家极空间里的小服务；缩略图和说明走云同步。家里 Wi‑Fi 填局域网地址（如 <span class="kbd">http://192.168.1.8:8789</span>）。外出需 VPN，或以后买域名 + Tunnel。</p>
+      <p class="small muted" style="margin-top:0">相册原图加密后存到你家极空间里的小服务；缩略图和说明走云同步。<b>注意：</b>App 本身在 HTTPS（GitHub Pages）上，浏览器禁止它去连局域网的 <span class="kbd">http://192.168.x.x</span>（Safari 地址栏直接打开可以，App 里会 Load failed）。照片服务地址必须是 <b>https://…</b>（买域名后用 Cloudflare Tunnel 指到极空间 8789）。</p>
       <div class="field"><label for="photoApi">照片服务地址</label>
         <input id="photoApi" class="input" placeholder="http://192.168.x.x:8789" value="${esc(st.photoApi || '')}"></div>
       <div class="btn-row"><button class="btn secondary" id="btnPhotoTest">测试连接</button><button class="btn ghost" id="btnPhotoSave">保存</button></div>
