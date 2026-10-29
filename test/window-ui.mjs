@@ -8,7 +8,7 @@ const results = [];
 const ok = (name, cond, extra = '') => { results.push({ name, pass: !!cond, extra }); console.log(cond ? '✅' : '❌', name, extra); };
 
 const browser = await chromium.launch({ executablePath: '/opt/google/chrome/chrome', headless: true });
-const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: 'zh-CN', timezoneId: 'Asia/Shanghai',
+const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: 'zh-CN', timezoneId: 'Asia/Shanghai',
   userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1' });
 const page = await ctx.newPage();
 await page.clock.setFixedTime(new Date('2026-09-29T16:30:00+08:00'));
@@ -100,7 +100,7 @@ const winDays = await page.locator('.day.win.win-checkup').evaluateAll((ds) => d
 ok('日历窗口底色：10月15日 ~ 10月29日（15天，体检绿色）', winDays.length === 15 && winDays[0] === '2026-10-15' && winDays.at(-1) === '2026-10-29', `${winDays[0]}..${winDays.at(-1)} n=${winDays.length}`);
 ok('最早日虚线圈（10月15日）、计划日实心（10月17日）、最迟日「止」（10月29日）', await page.locator('.day[data-date="2026-10-15"].early-focus').count() === 1 && await page.locator('.day[data-date="2026-10-17"].plan-focus').count() === 1 && (await page.locator('.day[data-date="2026-10-29"].late-focus .lbadge').innerText()) === '止');
 ok('日历下方显示「满月体检：10月15日 – 10月29日（最迟）」', (await page.locator('.focus-bar').innerText()).includes('满月体检：10月15日 – 10月29日（最迟）'));
-ok('满月体检卡片高亮并显示窗口说明', await page.locator(`.item[data-id="${m1.id}"].is-focus .inote`).count() === 1);
+ok('满月体检卡片高亮并显示窗口说明', await page.locator(`.item[data-id="${m1.id}"].is-focus > .inote`).count() === 1);
 await hideToast();
 await page.evaluate(() => { document.getElementById('calCard').scrollIntoView({ block: 'start' }); window.scrollBy(0, -8); }); await page.waitForTimeout(300);
 await page.screenshot({ path: SHOTS + '20-calendar-window-marks.png' });
@@ -188,7 +188,7 @@ await page.waitForTimeout(400);
 await selectDate('2026-09-29'); await page.waitForTimeout(300);
 await page.click('#nextM'); await page.waitForTimeout(400);
 ok('已完成折叠栏默认收起', (await page.locator('#doneFold').getAttribute('aria-expanded')) === 'false' && await page.locator('#doneFoldBody').isHidden());
-ok('折叠栏文案「已完成 · 1 项」', (await page.locator('#doneFold').innerText()).includes('已完成 · 1 项'));
+ok('折叠栏文案「已完成（1）」', (await page.locator('#doneFold').innerText()).includes('已完成（1）'));
 ok('未完成日期组仍在，已完成不在日期组里', (await page.locator('#g-2026-10-17 .item').count()) >= 1 && (await page.locator('#g-2026-10-09 .item').count()) === 0);
 ok('已完成区块在未完成分组之后', await page.evaluate(() => {
   const pending = document.querySelector('#g-2026-10-17');
