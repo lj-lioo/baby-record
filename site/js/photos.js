@@ -277,10 +277,8 @@ export async function addPhotoFromFile(file, { note = '', takenAt, onLocalReady,
   try { thumb = await makeThumb(file); }
   catch { thumb = await makeThumbViaImg(file).catch(() => { throw new Error('这张图片格式无法读取（可在 iPhone 设置→相机→格式 选「兼容性最佳」）'); }); }
   const { dataUrl, width, height } = thumb;
-  const buf = new Uint8Array(await file.arrayBuffer());
-  await idbPut(id, { plain: buf, mime: file.type || 'image/jpeg', savedAt: Date.now() });
 
-  // 先入库（remoteReady=false），时间轴立刻能看到缩略图；有照片服务则先标「上传中」
+  // 先入库缩略图（remoteReady=false），相册立刻可见；原图缓存/上传稍后
   const willUpload = !!photoApiBase();
   if (willUpload) markUploading(id, true);
   let photo = store.upsertPhoto({
@@ -289,7 +287,7 @@ export async function addPhotoFromFile(file, { note = '', takenAt, onLocalReady,
     uploadedAt: Date.now(),
     note,
     mime: file.type || 'image/jpeg',
-    size: buf.byteLength,
+    size: file.size || 0,
     width,
     height,
     thumbData: dataUrl,
@@ -298,6 +296,13 @@ export async function addPhotoFromFile(file, { note = '', takenAt, onLocalReady,
   });
   onLocalReady?.(photo);
   onProgress?.({ phase: (!upload || !willUpload) ? 'local' : 'upload', id });
+
+  // 缩略图已进相册后再读原图进本机缓存（供补传）
+  const buf = new Uint8Array(await file.arrayBuffer());
+  await idbPut(id, { plain: buf, mime: file.type || 'image/jpeg', savedAt: Date.now() });
+  if ((store.getPhoto(id)?.size || 0) !== buf.byteLength) {
+    photo = store.upsertPhoto({ ...store.getPhoto(id), size: buf.byteLength });
+  }
 
   // 只入库：缩略图已可见；原图由相册页统一排队上传（隧道串行）
   if (!upload || !willUpload) {
@@ -590,10 +595,10 @@ export async function addVideoFromFile(file, { note = '', takenAt, onLocalReady,
   const taken = takenAt || (file.lastModified ? Number(file.lastModified) : Date.now());
   const { dataUrl, width, height, duration } = await makeVideoThumb(file);
   const mime = file.type || 'video/mp4';
-  try { await idbPut(vkey(id), { blob: file.slice(0, file.size, mime), mime, size: file.size, savedAt: Date.now(), kind: 'video' }); await evictVideoCache(id); } catch (e) { console.warn('视频本机缓存失败', e); }
   const estChunks = Math.max(1, Math.ceil(file.size / VIDEO_CHUNK));
   const willUpload = !!photoApiBase();
   if (willUpload) markUploading(id, true);
+  // 封面先入库，相册立刻可见；大视频本机缓存稍后
   let photo = store.upsertPhoto({
     id, kind: 'video', takenAt: taken, uploadedAt: Date.now(), note, mime, size: file.size,
     width, height, duration: Math.round((duration || 0) * 10) / 10, chunks: estChunks, chunkSize: VIDEO_CHUNK,
@@ -601,6 +606,7 @@ export async function addVideoFromFile(file, { note = '', takenAt, onLocalReady,
   });
   onLocalReady?.(photo);
   onProgress?.({ phase: (!upload || !willUpload) ? 'local' : 'upload', id });
+  try { await idbPut(vkey(id), { blob: file.slice(0, file.size, mime), mime, size: file.size, savedAt: Date.now(), kind: 'video' }); await evictVideoCache(id); } catch (e) { console.warn('视频本机缓存失败', e); }
 
   if (!upload || !willUpload) {
     return { photo: store.getPhoto(id) || photo, uploadError: '', needsPhotoApi: !photoApiBase(), deferred: !!willUpload };

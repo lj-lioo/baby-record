@@ -207,7 +207,7 @@ export function renderAlbum(root) {
     try { e.target.value = ''; } catch { /* ignore */ }
     if (!files.length) { toast('没有选到照片'); return; }
     const total = files.length;
-    toast(total === 1 ? '正在加入相册…' : `正在把 ${total} 张加入相册…`, 2500);
+    toast(total === 1 ? '正在加入相册…' : `正在生成 ${total} 张缩略图并写入相册…`, 2800);
     if (total > BATCH_SOFT_LIMIT) {
       toast(`一次选了 ${total} 张，建议每次 ${BATCH_SOFT_LIMIT} 张左右分批传（原图会排队上传）。本次仍继续，请保持屏幕常亮。`, 5500);
     }
@@ -226,7 +226,7 @@ export function renderAlbum(root) {
     const wake = await requestAlbumWakeLock();
     try {
       // 阶段 1：尽快全部生成缩略图并入库（可小并发），用户几乎立刻看到整批
-      const LOCAL_CONCURRENCY = 3;
+      const LOCAL_CONCURRENCY = 8; // 缩略图优先齐：本地并发高一点；原图仍串行
       let cursor = 0;
       const runLocalOne = async (f) => {
         const isVid = String(f.type || '').startsWith('video/') || /\.(mov|mp4|m4v)$/i.test(f.name || '');
