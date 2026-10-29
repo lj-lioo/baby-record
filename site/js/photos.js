@@ -3,6 +3,7 @@
 import { store, uid } from './store.js';
 import * as core from './sync-core.js';
 import { syncStatus } from './sync.js';
+import { daysBetween } from './dates.js';
 
 const IDB_NAME = 'babyrecord.photos';
 const IDB_STORE = 'blobs';
@@ -419,4 +420,17 @@ export function fmtDayTitle(ymd) {
   if (ymd === ymdY) return '昨天';
   if (y === now.getFullYear()) return `${m}月${d}日`;
   return `${y}年${m}月${d}日`;
+}
+
+/** 出生当天＝第 1 天；生日未设或日期早于生日返回 null */
+export function dayNumberOnDate(birthday, dateStr) {
+  if (!birthday || !dateStr || dateStr < birthday) return null;
+  return daysBetween(birthday, dateStr) + 1;
+}
+
+/** 亲宝宝风格：相对日/日期 +「第X天」，如「昨天 第42天」「10月27日 第41天」 */
+export function fmtAlbumDayTitle(ymd, birthday) {
+  const base = fmtDayTitle(ymd);
+  const n = dayNumberOnDate(birthday, ymd);
+  return n != null ? `${base} 第${n}天` : base;
 }

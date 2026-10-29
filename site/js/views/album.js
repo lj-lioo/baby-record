@@ -1,8 +1,8 @@
-// v1.8.0 相册页：按拍摄/上传时间分组的时间轴（v1.9.1：上传可选相册或拍照）
+// v1.8.0 相册页：按拍摄/上传时间分组的时间轴（v1.9.1：上传可选相册或拍照；v1.12.14：分组标题「日期 第X天」）
 import { store } from '../store.js';
 import { esc, toast, confirmSheet, openSheet, closeSheet } from '../ui.js';
 import {
-  photosByDay, fmtDayTitle, addPhotoFromFile, loadPhotoBlob, removePhoto,
+  photosByDay, fmtDayTitle, fmtAlbumDayTitle, addPhotoFromFile, loadPhotoBlob, removePhoto,
   retryUpload, photoApiBase, pingPhotoServer,
   addVideoFromFile, loadVideoBlob, hasLocalVideo,
 } from '../photos.js';
@@ -150,7 +150,7 @@ export function renderAlbum(root) {
         <p class="small muted" style="text-align:center;margin:0">点右上角「＋ 上传」，可选「从相册选择」（照片/视频）、「拍照」或「录视频」。</p>
       </section>` : groups.map((g) => `
       <section class="card album-day">
-        <h2 class="album-day-title">${esc(fmtDayTitle(g.day))}<span class="muted small" style="font-weight:600;margin-left:8px">${esc(g.day)} · ${g.items.length} 项</span></h2>
+        <h2 class="album-day-title">${esc(fmtAlbumDayTitle(g.day, store.state.settings.babyBirthday))}<span class="muted small" style="font-weight:600;margin-left:8px"> · ${g.items.length} 项</span></h2>
         <div class="album-grid">
           ${g.items.map((p) => `
             <button type="button" class="album-cell" data-id="${esc(p.id)}" aria-label="${p.kind === 'video' ? '查看视频' : '查看照片'}">
