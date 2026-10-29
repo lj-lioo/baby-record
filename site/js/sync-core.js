@@ -70,3 +70,40 @@ export async function syncRequest(base, token, body, fetchImpl = globalThis.fetc
 // 事项 ↔ 同步记录
 export const EVENT_PREFIX = 'ev:';
 export const PROFILE_ID = 'profile';
+
+// 相册元数据 ↔ 同步记录（原图密文另存照片服务）
+export const PHOTO_PREFIX = 'ph:';
+
+// 二进制 AES-GCM：iv(12) + ciphertext；AAD = id（防密文挪用）
+export async function sealBytes(enc, id, bytes) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const ct = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: te.encode(String(id)) },
+    enc,
+    u8,
+  );
+  const out = new Uint8Array(12 + ct.byteLength);
+  out.set(iv, 0);
+  out.set(new Uint8Array(ct), 12);
+  return out;
+}
+export async function unsealBytes(enc, id, packed) {
+  const u8 = packed instanceof Uint8Array ? packed : new Uint8Array(packed);
+  if (u8.byteLength < 13) throw new Error('密文太短');
+  const iv = u8.subarray(0, 12);
+  const ct = u8.subarray(12);
+  const pt = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv, additionalData: te.encode(String(id)) },
+    enc,
+    ct,
+  );
+  return new Uint8Array(pt);
+}
+
+// 密钥指纹（只用于日志/UI，永不打印完整密钥）
+export function keyFingerprint(syncKey) {
+  const k = extractSyncKey(syncKey);
+  if (!k) return '';
+  return `${k.slice(0, 9)}…${k.slice(-4)}`;
+}
