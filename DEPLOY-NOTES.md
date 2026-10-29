@@ -1,3 +1,7 @@
+## v1.9.2（日程：未完成置顶 + 已完成默认折叠）
+- home.js `renderMonthList`：本月未完成按日分组在上；已完成整段「已完成 · N 项 ▸」默认收起，点开展开；点日历某日若仅有已完成则自动展开并滚到该日。
+- 版本：config/sw/settings → 1.9.2；window-ui 增折叠断言；截图 42-done-fold-expanded.png。
+
 # 部署备忘（给后续维护）
 - 前端：GitHub Pages https://lj-lioo.github.io/baby-record/ （repo lj-lioo/baby-record，main 分支 site/ → Actions `deploy.yml` → gh-pages）
   - 更新方式：修改 site/ 后推送到 main（push_files 可推文本文件；PNG 由 workflow 从 icons/src/*.svg 生成，或通过 workflow_dispatch 的 src_url+src_sha256 导入 tar.gz）
