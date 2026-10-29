@@ -1,3 +1,11 @@
+## v1.14.0（极空间存普通照片，不再加密）
+
+- photo-server 1.14.0：`/v1/file/:id/:n` 明文 256KB 分块，收齐拼成 `年/年-月/YYYYMMDD_HHMMSS_短id.ext`，mtime=拍摄时间；`.index/<id>.json` 记录路径/MIME；GET 原样返回（Range）；`/v1/legacy/:id` 删旧密文。旧 `/v1/photo`、`/v1/video` 全保留。
+- App：`uploadOriginal` 优先 `/v1/file`（storage='file'），旧服务 404 时自动回落加密分块；读取按 storage 分支；删除同时删 file+旧密文；`store.normalizePhoto` 保留 storage/ext（之前 storage 字段被丢掉）。
+- 迁移：设置 → 照片服务 →「转换成普通照片」（`migrateLegacyToPlain`：本机缓存或拉密文本地解密 → 明文回传 → DELETE /v1/legacy）。
+- 测试：`node test/plain-file-ui.mjs`（上传→普通文件、旧密文迁移、删除）。
+- 版本：config / sw / settings → 1.14.0。
+
 ## v1.13.6（未上传原图：别误报「服务找不到」+ 重装后指引）
 
 - 角标「本地」/「仅本机」= 原图从没成功传到极空间（多半是 Tunnel 通之前加的，或上传失败）。

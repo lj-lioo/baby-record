@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// 宝宝记录 · 极空间照片服务（只存 AES-GCM 密文，不碰明文）
+// 宝宝记录 · 极空间照片服务
+// v1.14.0 起：新上传存成普通照片/视频（/v1/file，按 年/年-月 分文件夹，极空间相册可直接识别）；
+// 旧的 AES 密文（/v1/photo、/v1/video）仍可读写删，供旧版 App 和迁移使用。
 // 环境变量：PORT（默认 8789）、DATA_DIR（默认 ./data）、PHOTO_TOKEN（可选，非空则要求 Bearer）、CORS_ORIGINS（逗号分隔，额外允许的源）
 import http from 'http';
 import fs from 'fs';
@@ -86,6 +88,68 @@ function readBody(req, limit = 40 * 1024 * 1024) {
   });
 }
 
+// ───────── v1.14.0 明文文件 ─────────
+const STAGE_DIR = path.join(DATA_DIR, '.staging');
+const INDEX_DIR = path.join(DATA_DIR, '.index');
+const MIME_EXT = {
+  'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/heif': 'heif',
+  'image/gif': 'gif', 'image/webp': 'webp', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm',
+  'video/3gpp': '3gp', 'video/x-m4v': 'm4v',
+};
+const EXT_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', heif: 'image/heif', gif: 'image/gif', webp: 'image/webp', mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', '3gp': 'video/3gpp', m4v: 'video/x-m4v' };
+function pickExt(ext, mime) {
+  const e = String(ext || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^jpeg$/, 'jpg');
+  if (e && EXT_MIME[e]) return e;
+  return MIME_EXT[String(mime || '').toLowerCase()] || 'bin';
+}
+// 拍摄时间（毫秒）→ 北京时间各字段
+function shanghaiParts(ms) {
+  const d = new Date(Number.isFinite(ms) && ms > 0 ? ms + 8 * 3600e3 : Date.now() + 8 * 3600e3);
+  const p = (n) => String(n).padStart(2, '0');
+  return { y: String(d.getUTCFullYear()), m: p(d.getUTCMonth() + 1), d: p(d.getUTCDate()), H: p(d.getUTCHours()), M: p(d.getUTCMinutes()), S: p(d.getUTCSeconds()) };
+}
+function indexPath(id) { return path.join(INDEX_DIR, `${id}.json`); }
+function readIndex(id) {
+  try { return JSON.parse(fs.readFileSync(indexPath(id), 'utf8')); } catch { return null; }
+}
+function finalizeFile(id, total, info) {
+  const sdir = path.join(STAGE_DIR, id);
+  const old = readIndex(id);
+  const t = shanghaiParts(Number(info.taken));
+  const ext = pickExt(info.ext, info.mime);
+  const rel = path.join(t.y, `${t.y}-${t.m}`, `${t.y}${t.m}${t.d}_${t.H}${t.M}${t.S}_${id.slice(-6)}.${ext}`);
+  const fp = path.join(DATA_DIR, rel);
+  fs.mkdirSync(path.dirname(fp), { recursive: true });
+  const tmp = fp + '.tmp';
+  const fd = fs.openSync(tmp, 'w');
+  let size = 0;
+  try {
+    for (let n = 0; n < total; n++) {
+      const b = fs.readFileSync(path.join(sdir, `${n}.part`));
+      fs.writeSync(fd, b); size += b.length;
+    }
+  } finally { fs.closeSync(fd); }
+  fs.renameSync(tmp, fp);
+  const taken = Number(info.taken);
+  if (Number.isFinite(taken) && taken > 0) { try { fs.utimesSync(fp, taken / 1000, taken / 1000); } catch { /* ignore */ } }
+  if (old?.path && old.path !== rel) { try { fs.unlinkSync(path.join(DATA_DIR, old.path)); } catch { /* ignore */ } }
+  fs.mkdirSync(INDEX_DIR, { recursive: true });
+  const idx = { id, path: rel, mime: EXT_MIME[ext] || info.mime || 'application/octet-stream', size, taken: taken || null, savedAt: Date.now() };
+  fs.writeFileSync(indexPath(id), JSON.stringify(idx));
+  fs.rmSync(sdir, { recursive: true, force: true });
+  return idx;
+}
+function deletePlain(id) {
+  const idx = readIndex(id);
+  if (idx?.path) { try { fs.unlinkSync(path.join(DATA_DIR, idx.path)); } catch { /* ignore */ } }
+  try { fs.unlinkSync(indexPath(id)); } catch { /* ignore */ }
+  fs.rmSync(path.join(STAGE_DIR, id), { recursive: true, force: true });
+}
+function deleteLegacy(id) {
+  try { fs.unlinkSync(filePath(id)); } catch { /* ignore */ }
+  fs.rmSync(path.join(DATA_DIR, `v_${id}`), { recursive: true, force: true });
+}
+
 const CHUNK_LIMIT = 9 * 1024 * 1024; // 客户端每块明文 4MB，留余量
 const MAX_CHUNKS = 2000;
 
@@ -95,11 +159,11 @@ function sendJson(res, code, obj) {
 }
 
 // 流式返回文件，支持 Range（bytes=a-b），不把大文件读进内存
-function sendFile(req, res, fp) {
+function sendFile(req, res, fp, mime = 'application/octet-stream') {
   let st;
   try { st = fs.statSync(fp); } catch { return sendJson(res, 404, { error: 'not_found' }); }
   const size = st.size;
-  const base = { 'Content-Type': 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=3600' };
+  const base = { 'Content-Type': mime, 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=3600' };
   const r = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
   if (r && (r[1] || r[2])) {
     let start = r[1] ? Number(r[1]) : Math.max(0, size - Number(r[2]));
@@ -127,8 +191,61 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ ok: true, service: 'baby-record-photo', version: '1.10.0', features: ['photo', 'video-chunks', 'range'] }));
+    res.end(JSON.stringify({ ok: true, service: 'baby-record-photo', version: '1.14.0', features: ['photo', 'video-chunks', 'range', 'plain-file'] }));
     return;
+  }
+
+  // v1.14.0 明文：PUT /v1/file/:id/:n?total=N&taken=ms&ext=jpg&mime=…（256KB 分块，收齐自动拼成普通文件）
+  //   GET /v1/file/:id（原样文件，支持 Range）；GET /v1/file/:id?info=1 → 索引；DELETE /v1/file/:id（明文+旧密文都删）
+  //   DELETE /v1/legacy/:id → 只删旧密文（迁移完成后用）
+  const lm = /^\/v1\/legacy\/([^/]+)\/?$/.exec(url.pathname);
+  if (lm) {
+    const lid = safeId(decodeURIComponent(lm[1]));
+    if (!lid) return sendJson(res, 400, { error: 'bad_id' });
+    if (!checkAuth(req, res)) return;
+    if (req.method !== 'DELETE') return sendJson(res, 405, { error: 'method_not_allowed' });
+    deleteLegacy(lid);
+    return sendJson(res, 200, { ok: true, id: lid });
+  }
+  const fm = /^\/v1\/file\/([^/]+)(?:\/(\d{1,5}))?\/?$/.exec(url.pathname);
+  if (fm) {
+    const fid = safeId(decodeURIComponent(fm[1]));
+    if (!fid) return sendJson(res, 400, { error: 'bad_id' });
+    if (!checkAuth(req, res)) return;
+    try {
+      if (fm[2] == null) {
+        if (req.method === 'DELETE') { deletePlain(fid); deleteLegacy(fid); return sendJson(res, 200, { ok: true, id: fid }); }
+        if (req.method === 'GET') {
+          const idx = readIndex(fid);
+          if (!idx) return sendJson(res, 404, { error: 'not_found' });
+          if (url.searchParams.get('info')) return sendJson(res, 200, idx);
+          return sendFile(req, res, path.join(DATA_DIR, idx.path), idx.mime);
+        }
+        return sendJson(res, 405, { error: 'method_not_allowed' });
+      }
+      if (req.method !== 'PUT') return sendJson(res, 405, { error: 'method_not_allowed' });
+      const n = Number(fm[2]);
+      const total = Number(url.searchParams.get('total'));
+      if (!Number.isInteger(total) || total < 1 || total > MAX_CHUNKS || n >= total) return sendJson(res, 400, { error: 'bad_total' });
+      const sdir = path.join(STAGE_DIR, fid);
+      fs.mkdirSync(sdir, { recursive: true });
+      const body = await readBody(req, CHUNK_LIMIT);
+      if (!body.length) return sendJson(res, 400, { error: 'empty' });
+      const fp = path.join(sdir, `${n}.part`);
+      fs.writeFileSync(fp + '.tmp', body);
+      fs.renameSync(fp + '.tmp', fp);
+      let done = true;
+      for (let i = 0; i < total; i++) if (!fs.existsSync(path.join(sdir, `${i}.part`))) { done = false; break; }
+      if (!done) return sendJson(res, 200, { ok: true, id: fid, n, bytes: body.length, complete: false });
+      const idx = finalizeFile(fid, total, {
+        taken: url.searchParams.get('taken'), ext: url.searchParams.get('ext'), mime: url.searchParams.get('mime'),
+      });
+      return sendJson(res, 200, { ok: true, id: fid, n, bytes: body.length, complete: true, path: idx.path, size: idx.size });
+    } catch (e) {
+      console.error(e);
+      if (e.message === 'body too large') return sendJson(res, 413, { error: 'too_large' });
+      return sendJson(res, 500, { error: 'server_error', message: String(e.message || e) });
+    }
   }
 
   // v1.10.0 视频：分块密文 /v1/video/:id/:n（每块单独 AES-GCM），DELETE /v1/video/:id 删整段
