@@ -46,6 +46,7 @@ export function renderHome(root) {
     <button class="fab" id="fab" aria-label="添加事项">＋</button>`;
 
   root.querySelector('#btnBabyProfile').onclick = () => openBabyProfile();
+  repHints = replacementHints(store.events()); // 日历针标红叉也要用，须在 renderCalendar 之前
   renderReminderCard(root.querySelector('#remindCard'));
   renderCalendar(root.querySelector('#calCard'));
   renderMonthList(root.querySelector('#dayCard'));
@@ -146,16 +147,22 @@ function renderCalendar(el) {
     const ds = ymd(d);
     const evs = byDate[ds] || [];
     const early = byEarly[ds] || [];
-    const hasV = evs.some((e) => e.category === 'vaccine' && !e.done);
+    // 有未替代的免费剂次 → 普通紫针；仅剩被自费替代的 → 紫针+红叉；否则才轮到自费💰
+    const hasActiveV = evs.some((e) => e.category === 'vaccine' && !e.done && !repHints.get(e.scheduleId));
+    const hasRepV = evs.some((e) => e.category === 'vaccine' && !e.done && repHints.get(e.scheduleId));
+    const hasV = hasActiveV || hasRepV;
     const hasP = !hasV && evs.some((e) => e.category === 'paidvax' && !e.done);
     const inWin = fw && ds >= fw.earliest && ds <= fEnd;
-    const cls = ['day', d.getMonth() !== m - 1 ? 'other-month' : '', ds === today ? 'today' : '', ds === ui.selected ? 'selected' : '', hasV ? 'has-vaccine' : '', hasP ? 'has-paidvax' : '',
+    const cls = ['day', d.getMonth() !== m - 1 ? 'other-month' : '', ds === today ? 'today' : '', ds === ui.selected ? 'selected' : '', hasV ? 'has-vaccine' : '', hasRepV && !hasActiveV ? 'has-replaced' : '', hasP ? 'has-paidvax' : '',
       inWin ? `win win-${fcat}` : '', inWin && (ds === fw.earliest || d.getDay() === 0) ? 'win-s' : '', inWin && (ds === fEnd || d.getDay() === 6) ? 'win-e' : '',
       fw && ds === fw.earliest && ds !== fe.date ? `early-focus ef-${fcat}` : '', fe && ds === fe.date ? `plan-focus pf-${fcat}` : '', fw && fw.latest && ds === fw.latest ? 'late-focus' : ''].filter(Boolean).join(' ');
     const marks = [...evs.map((e) => `<i class="dot ${CATEGORIES[e.category].cls} ${e.done ? 'done' : ''}"></i>`), ...early.map((e) => `<i class="ring ${CATEGORIES[e.category].cls}" title="最早可接种"></i>`)].slice(0, 4).join('');
-    const label = `${cnDate(ds)}${evs.length ? `，${evs.length}个事项` : ''}${early.length ? `，${early.length}个最早可接种` : ''}`;
+    const label = `${cnDate(ds)}${evs.length ? `，${evs.length}个事项` : ''}${early.length ? `，${early.length}个最早可接种` : ''}${hasRepV && !hasActiveV ? '，有已被自费替代的免费疫苗' : ''}`;
+    const vBadge = hasActiveV ? '<span class="vbadge">💉</span>'
+      : hasRepV ? '<span class="vbadge replaced" title="已被自费疫苗替代，可不打（以门诊为准）">💉</span>'
+      : hasP ? '<span class="vbadge paid">💰</span>' : '';
     cells += `<button class="${cls}" data-date="${ds}" aria-label="${label}">
-      ${hasV ? '<span class="vbadge">💉</span>' : hasP ? '<span class="vbadge paid">💰</span>' : ''}${fw && fw.latest && ds === fw.latest ? '<span class="lbadge">止</span>' : ''}<span class="num">${d.getDate()}</span><span class="dots">${marks}</span></button>`;
+      ${vBadge}${fw && fw.latest && ds === fw.latest ? '<span class="lbadge">止</span>' : ''}<span class="num">${d.getDate()}</span><span class="dots">${marks}</span></button>`;
   }
   el.innerHTML = `
     <div class="cal-head">
@@ -166,7 +173,7 @@ function renderCalendar(el) {
     <div class="weekdays">${['日', '一', '二', '三', '四', '五', '六'].map((w) => `<div>${w}</div>`).join('')}</div>
     <div class="days">${cells}</div>
     <div class="legend"><span><i class="dot cat-vaccine"></i>疫苗</span><span><i class="dot cat-paidvax"></i>自费疫苗</span><span><i class="dot cat-checkup"></i>体检</span><span><i class="dot cat-other"></i>其他</span></div>
-    <div class="legend2"><span><i class="dot" style="background:var(--muted)"></i>计划日</span><span><i class="ring" style="border-color:var(--muted)"></i>最早可接种</span><span><i class="band"></i>窗口</span><span><b class="lb-mini">止</b>最迟</span></div>
+    <div class="legend2"><span><i class="dot" style="background:var(--muted)"></i>计划日</span><span><i class="ring" style="border-color:var(--muted)"></i>最早可接种</span><span><i class="band"></i>窗口</span><span><b class="lb-mini">止</b>最迟</span><span><span class="vbadge-lg replaced">💉</span>已被自费替代可不打</span></div>
     ${fe ? `<div class="focus-bar ${CATEGORIES[fcat].cls}"><span class="fb-txt">🪟 <b>${esc(fe.title)}</b>：${esc(winText(fw))}</span><button class="fb-x" id="fbX" aria-label="取消显示窗口">✕</button></div>` : '<div class="focus-hint">点日期或卡片上的「🪟 窗口」，在日历上看窗口</div>'}`;
   el.querySelector('#prevM').onclick = () => shiftMonth(-1);
   el.querySelector('#nextM').onclick = () => shiftMonth(1);

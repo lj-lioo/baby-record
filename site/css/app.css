@@ -109,6 +109,23 @@ a { color: var(--primary-dark); }
 .day.has-vaccine .num { box-shadow: 0 0 0 2px var(--vaccine); }
 .day.today.has-vaccine .num { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--vaccine); }
 .day .vbadge.paid { background: var(--paidvax); }
+/* v1.9.4：已被自费疫苗替代的免费剂次 —— 紫针上叠小红叉 */
+.day .vbadge.replaced::after, .legend2 .vbadge-lg.replaced::after {
+  content: '✕';
+  position: absolute;
+  top: -3px; right: -4px;
+  font-size: 11px; font-weight: 900; line-height: 1;
+  color: #E53935;
+  text-shadow: 0 0 2px #fff, 0 0 3px #fff, 1px 0 0 #fff, -1px 0 0 #fff, 0 1px 0 #fff, 0 -1px 0 #fff;
+  pointer-events: none;
+}
+.day.has-replaced .num { box-shadow: 0 0 0 2px var(--vaccine); opacity: 0.85; }
+.day.today.has-replaced .num { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--vaccine); }
+.legend2 .vbadge-lg {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; line-height: 1; background: var(--vaccine); color: #fff;
+  border-radius: 7px; padding: 2px 3px; vertical-align: -1px;
+}
 .day.has-paidvax .num { box-shadow: 0 0 0 2px var(--paidvax); }
 .day.today.has-paidvax .num { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--paidvax); }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: center; font-size: 12px; color: var(--muted); margin-top: 8px; }
