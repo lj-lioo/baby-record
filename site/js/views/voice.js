@@ -65,22 +65,74 @@ export function openVoice() {
   });
 }
 
-// 增强：浏览器自带语音识别（部分手机支持；失败则隐藏按钮，仍用键盘听写）
+// 增强：浏览器自带语音识别（v1.11.1：每次按下新建实例、状态必复位、看门狗、touch+pointer 双监听、连续失败降级）
+const HOLD_IDLE = '🎙️ 按住说话';
+const HOLD_ON = '🔴 正在听…松开结束';
+export const HOLD_WATCHDOG_MS = 15000;
 function setupHold(btn, ta) {
   if (!speechSupported()) return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null, base = '';
   btn.hidden = false;
-  const stop = () => { try { rec && rec.stop(); } catch {} btn.classList.remove('on'); btn.textContent = '🎙️ 按住说话'; };
-  btn.onpointerdown = (e) => {
-    e.preventDefault();
-    try {
-      rec = new SR(); rec.lang = 'zh-CN'; rec.interimResults = true; rec.continuous = true;
-      base = ta.value ? ta.value.replace(/\s*$/, '') + '\n' : '';
-      rec.onresult = (ev) => { let s = ''; for (const r of ev.results) s += r[0].transcript; ta.value = base + s; ta.dispatchEvent(new Event('input')); };
-      rec.onerror = (ev) => { stop(); if (ev.error !== 'aborted' && ev.error !== 'no-speech') { btn.hidden = true; toast('这台手机不支持按住说话，请用键盘上的 🎤'); } };
-      rec.start(); btn.classList.add('on'); btn.textContent = '🔴 正在听…松开结束';
-    } catch { btn.hidden = true; toast('请用键盘上的 🎤 说话'); }
+  let rec = null, listening = false, gotText = false, fails = 0, watchdog = 0, endTimer = 0, base = '', lastDown = 0;
+  const tip = document.createElement('div');
+  tip.className = 'small v-hold-tip'; tip.id = 'v-hold-tip'; tip.hidden = true;
+  btn.after(tip);
+  const detach = (r) => { if (!r) return; r.onresult = r.onerror = r.onend = r.onstart = r.onspeechend = null; };
+  const reset = () => {
+    clearTimeout(watchdog); clearTimeout(endTimer);
+    const r = rec; rec = null;
+    if (r) { detach(r); try { r.abort(); } catch {} }
+    listening = false;
+    btn.classList.remove('on'); btn.textContent = HOLD_IDLE;
+    if (ta.value.trim()) ta.dispatchEvent(new Event('input'));
   };
-  btn.onpointerup = btn.onpointerleave = btn.onpointercancel = () => { if (btn.classList.contains('on')) stop(); };
+  const fail = () => {
+    fails++;
+    if (fails >= 2) {
+      tip.hidden = false; tip.textContent = '这台手机按钮识别不稳定，请用键盘上的 🎤';
+      setTimeout(() => ta.focus(), 0);
+    }
+  };
+  const finish = (ok) => { if (ok) { fails = 0; } else fail(); reset(); };
+  const start = (e) => {
+    if (e) { if (e.cancelable) e.preventDefault(); }
+    // 同一次手指按下会先后触发 touchstart 和 pointerdown，只认第一个
+    const now = Date.now();
+    if (e && e.type === 'touchstart') lastDown = now;
+    else if (e && e.type === 'pointerdown' && e.pointerType === 'touch' && now - lastDown < 800) return;
+    reset(); // 不论之前状态如何，先彻底清掉旧实例
+    let r;
+    try {
+      r = new SR(); rec = r; r.lang = 'zh-CN'; r.interimResults = true; r.continuous = false;
+      gotText = false;
+      base = ta.value ? ta.value.replace(/[\s。]*$/, '') : '';
+      r.onresult = (ev) => {
+        if (r !== rec) return;
+        let s = ''; for (const x of ev.results) s += x[0].transcript;
+        s = s.trim();
+        if (s) { gotText = true; ta.value = (base ? base + '。' : '') + s; ta.dispatchEvent(new Event('input')); }
+      };
+      r.onerror = (ev) => { if (r !== rec) return; finish(gotText && ev.error !== 'not-allowed' && ev.error !== 'service-not-allowed'); };
+      r.onend = () => { if (r !== rec) return; finish(gotText || !listening); };
+      r.start();
+      listening = true;
+      btn.classList.add('on'); btn.textContent = HOLD_ON;
+      watchdog = setTimeout(() => { if (r === rec) finish(gotText); }, HOLD_WATCHDOG_MS);
+    } catch { rec = null; detach(r); finish(false); }
+  };
+  const release = (e) => {
+    if (!rec) return;
+    if (e && e.cancelable && e.type.startsWith('touch')) e.preventDefault();
+    listening = false;
+    const r = rec;
+    try { r.stop(); } catch { finish(gotText); return; }
+    // 等最终结果；onend 不来则 1.5 秒后强制复位
+    clearTimeout(endTimer); endTimer = setTimeout(() => { if (r === rec) finish(gotText); }, 1500);
+  };
+  btn.addEventListener('touchstart', start, { passive: false });
+  btn.addEventListener('pointerdown', start);
+  ['touchend', 'touchcancel', 'pointerup', 'pointercancel'].forEach((t) => btn.addEventListener(t, release, { passive: false }));
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+  // 弹层关闭时清理
+  new MutationObserver((_, o) => { if (!btn.isConnected) { reset(); o.disconnect(); } }).observe(document.body, { childList: true, subtree: true });
 }

@@ -419,7 +419,10 @@ summary { font-weight: 700; cursor: pointer; }
 .v-text { width: 100%; font-size: 18px; min-height: 84px; resize: vertical; }
 .v-tip { margin: 6px 0 10px; }
 .v-hold { width: 100%; margin-bottom: 10px; user-select: none; -webkit-user-select: none; touch-action: none; }
-.v-hold.on { background: #E8590C; color: #fff; }
+.v-hold { -webkit-touch-callout: none; }
+.v-hold.on { background: #E03131; color: #fff; animation: vpulse 1s ease-in-out infinite; }
+@keyframes vpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(224,49,49,.55); } 50% { box-shadow: 0 0 0 10px rgba(224,49,49,0); } }
+.v-hold-tip { color: #E03131; margin: -4px 0 10px; }
 .v-card { border: 1px solid #F3D9D2; border-radius: 14px; padding: 10px; margin: 8px 0; background: #FFF8F5; }
 .v-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 .v-row .input { flex: 1; min-width: 0; }
