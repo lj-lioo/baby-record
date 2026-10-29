@@ -57,6 +57,7 @@ await page.waitForTimeout(700);
 await check('生长页标题', await page.locator('h1').innerText() === '生长记录');
 await check('底部生长 Tab', await page.locator('#tabbar a[data-tab=growth]').count() === 1);
 await check('四个子 Tab', await page.locator('.gr-tab').count() === 4);
+await page.click('.gr-tab[data-tab=list]'); await page.waitForTimeout(300); // v1.12.3 默认身高曲线，切到列表
 await check('空态', (await page.locator('.album-empty').count()) === 1 || (await page.innerText('body')).includes('还没有生长记录'));
 await page.screenshot({ path: path.join(shotDir, '38-growth-empty.png'), fullPage: true });
 
@@ -77,6 +78,7 @@ await page.fill('#gr-hd', '37.6');
 await page.click('#grSave');
 await page.waitForTimeout(500);
 
+await page.click('.gr-tab[data-tab=list]'); await page.waitForTimeout(300);
 await check('两条记录', await page.locator('.gr-card').count() === 2);
 const body = await page.locator('#grBody').innerText();
 await check('显示日龄第1天', body.includes('第1天'));

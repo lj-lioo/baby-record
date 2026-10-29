@@ -57,6 +57,11 @@ await page.evaluate(async ({ csv, meds }) => {
 }, { csv, meds });
 await page.goto(`http://127.0.0.1:${APP_PORT}/#/growth`);
 await page.waitForTimeout(700);
+const tabs = await page.locator('.gr-tab').allInnerTexts();
+await check('标签顺序 ' + tabs.join('/'), tabs.join('/') === '身高曲线/体重曲线/头围曲线/记录列表');
+await check('默认选中身高曲线', (await page.locator('.gr-tab.on').innerText()) === '身高曲线');
+await page.click('.gr-tab[data-tab=list]');
+await page.waitForTimeout(300);
 await check('生长列表 33 条', await page.locator('.gr-card').count() === 33);
 await check('用药卡在生长列表下方', await page.locator('#grBody + #medsCard').count() === 1);
 await check('在用 3 条排上面', await page.locator('.md-row.on').count() === 3 && await page.locator('.md-row').first().evaluate((e) => e.classList.contains('on')));

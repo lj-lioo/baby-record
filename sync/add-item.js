@@ -30,6 +30,7 @@
 //   node add-item.js list [--from 日期] [--to 日期] [--all] [--json]
 //   node add-item.js growth-list | growth-import 文件.csv [--dry-run]   （v1.12.0 生长记录 gr:；CSV 列 date,weight,height,head,note；同日期已有则更新）
 //   node add-item.js meds-list | meds-import 文件.json [--dry-run]      （v1.12.0 用药记录 md:；[{name,dose,start,end,note}]；同药品+开始日期已有则更新）
+//   node add-item.js meds-delete <id> [<id>…] [--dry-run]               （v1.12.3 删除用药记录，写删除标记）
 //   node add-item.js done <id>     |  undone <id>  |  delete <id>
 import fs from 'fs';
 import os from 'os';
@@ -288,6 +289,20 @@ async function main() {
     console.log(`共 ${list.length} 条${isG ? '生长记录' : '用药记录'}`);
     return;
   }
+  if (cmd === 'meds-delete') {
+    // v1.12.3：node add-item.js meds-delete <id> [<id>…] [--dry-run]  写删除标记（tombstone），其他设备同步后也删掉
+    const hits = pos.map((id) => meds.get(id)).filter(Boolean);
+    if (hits.length !== pos.length || !pos.length) throw new Error(`找不到：${pos.filter((id) => !meds.has(id)).join(', ') || '（未给 id）'}`);
+    for (const h of hits) console.log(`${opt['dry-run'] ? '（预演）' : ''}删除 ${h.item.start}~${h.item.end || '至今'} ${h.item.name} ${h.item.dose}`);
+    if (opt['dry-run']) return;
+    const now = Date.now();
+    const changes = hits.map((h) => ({ id: core.MEDS_PREFIX + h.item.id, updatedAt: Math.max(now, h.rec.updatedAt + 1), deleted: true, data: null }));
+    const res = await core.syncRequest(cfg.url, keys.token, { since: 0, changes });
+    const rej = changes.filter((c) => !res.accepted.includes(c.id));
+    if (rej.length) throw new Error(`未写入 ${rej.length} 条`);
+    console.log(`已删除 ${changes.length} 条`);
+    return;
+  }
   if (cmd === 'growth-import' || cmd === 'meds-import') {
     const isG = cmd === 'growth-import';
     if (!pos[0]) throw new Error(`用法：${cmd} 文件`);
@@ -304,7 +319,7 @@ async function main() {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(isG ? r.date : r.start)) throw new Error(`日期格式错误：${JSON.stringify(r)}`);
       const hit = have.find((x) => isG ? x.item.date === r.date : (x.item.name === r.name && x.item.start === r.start));
       const fields = isG ? { date: r.date, height: r.height, weight: r.weight, head: r.head, note: r.note || '' }
-        : { name: r.name, dose: r.dose || '', start: r.start, end: r.end || '', note: r.note || '' };
+        : { name: r.name, dose: r.dose || '', start: r.start, end: r.end || '', note: r.note || '', ...(r.series != null || hit?.item.series != null ? { series: r.series ?? hit?.item.series ?? '' } : {}) };
       if (hit && Object.keys(fields).every((k) => (hit.item[k] ?? null) === (fields[k] ?? null))) { stat.same++; continue; }
       const item = hit ? { ...hit.item, ...fields, updatedAt: Math.max(now, hit.rec.updatedAt + 1) } : { id: uid(), ...fields, createdAt: now, updatedAt: now };
       hit ? stat.upd++ : stat.add++;
