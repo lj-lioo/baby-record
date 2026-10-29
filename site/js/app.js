@@ -1,6 +1,6 @@
 // 入口：路由、渲染、提醒检查、Service Worker
 import { store } from './store.js';
-import { $$, closeSheet } from './ui.js';
+import { $$, closeSheet, toast } from './ui.js';
 import { renderHome, selectDate } from './views/home.js';
 import { renderSettings } from './views/settings.js';
 import { renderHelp } from './views/help.js';
@@ -11,9 +11,21 @@ import { syncReminders, refreshOnLaunch } from './push.js';
 import { unlockAudio } from './sound.js';
 import { initSync, syncAvailable, takePendingPairKey } from './sync.js';
 import { openPairSheet } from './views/settings.js';
+import { applyInviteFromParams, hasRole, openRolePicker, roleLabel } from './roles.js';
 
 const view = document.getElementById('view');
 const routes = { home: renderHome, album: renderAlbum, growth: renderGrowth, settings: renderSettings, help: renderHelp };
+
+// 邀请链接 #/join?role=…：模块加载时取出参数并立刻从地址栏去掉（不含同步密钥）
+let pendingJoinParams = null;
+try {
+  const raw = location.hash || '';
+  const m = /^#\/?join\?(.*)/.exec(raw);
+  if (m) {
+    pendingJoinParams = new URLSearchParams(m[1]);
+    history.replaceState(null, '', location.pathname + location.search + '#/settings');
+  }
+} catch { /* ignore */ }
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -21,8 +33,30 @@ function parseHash() {
   return { path: path || 'home', params: new URLSearchParams(qs || '') };
 }
 
+async function consumePendingJoin() {
+  if (!pendingJoinParams) return false;
+  const params = pendingJoinParams;
+  pendingJoinParams = null;
+  try {
+    const { role, soft } = await applyInviteFromParams(params);
+    toast(soft
+      ? `已加入为「${role}」（请向爸妈另行配置同步密钥；邀请不含密钥）`
+      : `已加入为「${roleLabel(role)}」`, 4000);
+  } catch (e) {
+    toast(e.message || '邀请无效', 4500);
+  }
+  return true;
+}
+
 function render() {
   const { path, params } = parseHash();
+  if (path === 'join') {
+    // 晚到的 hash（例如站内再点邀请）：记下并清地址栏，异步应用后重绘设置
+    pendingJoinParams = params;
+    try { history.replaceState(null, '', location.pathname + location.search + '#/settings'); } catch { /* ignore */ }
+    consumePendingJoin().then(() => { renderSettings(view); setTab('settings'); });
+    return;
+  }
   if (path === 'alarm') {
     const rid = params.get('rid'), e = params.get('e');
     if (!routes.home.rendered) { renderHome(view); routes.home.rendered = true; setTab('home'); }
@@ -76,8 +110,21 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-render();
-setTimeout(checkDueAlarms, 800);
 initSync(); // 仅当 config.js 配置了 syncApi 时启用
-const pairKey = takePendingPairKey();
-if (pairKey && syncAvailable()) openPairSheet(pairKey);
+
+// 先消化邀请，再首屏渲染，避免与「选身份」引导抢弹层
+const bootedWithJoin = !!pendingJoinParams;
+consumePendingJoin().then((joined) => {
+  if (joined) {
+    renderSettings(view);
+    setTab('settings');
+  } else {
+    render();
+  }
+  setTimeout(checkDueAlarms, 800);
+  const pairKey = takePendingPairKey();
+  if (pairKey && syncAvailable()) openPairSheet(pairKey);
+  if (!hasRole() && !bootedWithJoin && !joined) {
+    setTimeout(() => openRolePicker(), 400);
+  }
+});

@@ -24,6 +24,7 @@ function defaults() {
       photoApi: '',      // v1.8.0 极空间照片服务地址（本机设置，不同步；如 http://192.168.1.8:8789）
       sound: true,
       profileUpdatedAt: 0, // 宝宝资料的修改时间（云同步用）
+      memberRole: '',      // v1.13.0 本机亲友身份：爸爸/妈妈/爷爷/奶奶/姥姥/姥爷（不入云同步 profile）
     },
     // feeding: []   // 预留：以后的功能
   };
