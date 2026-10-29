@@ -28,6 +28,8 @@
 //                        只改这三个字段和 updatedAt，计划日期/时间/备注/提醒/已完成/已设闹钟都不动；不新增事项
 //   node add-item.js shop 尿不湿NB码 湿巾 [--date 2026-10-01] [--time 10:00]   添加一条「🛒 购物清单」事项
 //   node add-item.js list [--from 日期] [--to 日期] [--all] [--json]
+//   node add-item.js growth-list | growth-import 文件.csv [--dry-run]   （v1.12.0 生长记录 gr:；CSV 列 date,weight,height,head,note；同日期已有则更新）
+//   node add-item.js meds-list | meds-import 文件.json [--dry-run]      （v1.12.0 用药记录 md:；[{name,dose,start,end,note}]；同药品+开始日期已有则更新）
 //   node add-item.js done <id>     |  undone <id>  |  delete <id>
 import fs from 'fs';
 import os from 'os';
@@ -116,7 +118,7 @@ function need(cfg, withUrl = true) {
 
 // 拉取云端全部记录并解密，返回 { events: Map(id -> {rec, event}), profile, cursor }
 async function pullAll(cfg, keys) {
-  const events = new Map();
+  const events = new Map(), growth = new Map(), meds = new Map();
   let since = 0, profile = null, more = true;
   while (more) {
     const res = await core.syncRequest(cfg.url, keys.token, { since, changes: [] });
@@ -126,13 +128,19 @@ async function pullAll(cfg, keys) {
         if (r.deleted) { events.delete(id); continue; }
         const obj = await core.unseal(keys.enc, r.id, r.updatedAt, r.data);
         events.set(id, { rec: r, event: obj.event });
+      } else if (r.id.startsWith(core.GROWTH_PREFIX) || r.id.startsWith(core.MEDS_PREFIX)) {
+        const isG = r.id.startsWith(core.GROWTH_PREFIX);
+        const m = isG ? growth : meds, id = r.id.slice(3);
+        if (r.deleted) { m.delete(id); continue; }
+        const obj = await core.unseal(keys.enc, r.id, r.updatedAt, r.data);
+        m.set(id, { rec: r, item: { ...(isG ? obj.growth : obj.med), id, updatedAt: r.updatedAt } });
       } else if (r.id === core.PROFILE_ID && !r.deleted) {
         profile = (await core.unseal(keys.enc, r.id, r.updatedAt, r.data)).profile;
       }
     }
     since = res.cursor; more = res.more;
   }
-  return { events, profile, cursor: since };
+  return { events, growth, meds, profile, cursor: since };
 }
 
 async function pushEvents(cfg, keys, list) {
@@ -270,7 +278,54 @@ async function main() {
     return;
   }
 
-  const { events, profile } = await pullAll(cfg, keys);
+  const { events, profile, growth, meds } = await pullAll(cfg, keys);
+  if (cmd === 'growth-list' || cmd === 'meds-list') {
+    const isG = cmd === 'growth-list';
+    const list = [...(isG ? growth : meds).values()].map((x) => x.item).sort((a, b) => (isG ? a.date.localeCompare(b.date) : a.start.localeCompare(b.start)));
+    if (opt.json) { console.log(JSON.stringify(list, null, 2)); return; }
+    for (const g of list) console.log(isG ? `${g.date}  体重 ${g.weight ?? '—'} kg  身长 ${g.height ?? '—'} cm  头围 ${g.head ?? '—'} cm${g.note ? '  — ' + g.note : ''}`
+      : `${g.start} ~ ${g.end || '至今'}  ${g.name}  ${g.dose}${g.note ? '  — ' + g.note : ''}`);
+    console.log(`共 ${list.length} 条${isG ? '生长记录' : '用药记录'}`);
+    return;
+  }
+  if (cmd === 'growth-import' || cmd === 'meds-import') {
+    const isG = cmd === 'growth-import';
+    if (!pos[0]) throw new Error(`用法：${cmd} 文件`);
+    const raw = fs.readFileSync(pos[0], 'utf8');
+    const num = (v) => (v === '' || v == null ? null : Math.round(Number(v) * 100) / 100);
+    const rows = isG ? raw.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#') && !/^date/.test(l)).map((l) => {
+      const [date, weight, height, head, ...note] = l.split(',');
+      return { date: date.trim(), weight: num(weight?.trim()), height: num(height?.trim()), head: num(head?.trim()), note: note.join(',').trim() };
+    }) : JSON.parse(raw);
+    const have = [...(isG ? growth : meds).values()];
+    const out = [], stat = { add: 0, upd: 0, same: 0 };
+    const now = Date.now();
+    for (const r of rows) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(isG ? r.date : r.start)) throw new Error(`日期格式错误：${JSON.stringify(r)}`);
+      const hit = have.find((x) => isG ? x.item.date === r.date : (x.item.name === r.name && x.item.start === r.start));
+      const fields = isG ? { date: r.date, height: r.height, weight: r.weight, head: r.head, note: r.note || '' }
+        : { name: r.name, dose: r.dose || '', start: r.start, end: r.end || '', note: r.note || '' };
+      if (hit && Object.keys(fields).every((k) => (hit.item[k] ?? null) === (fields[k] ?? null))) { stat.same++; continue; }
+      const item = hit ? { ...hit.item, ...fields, updatedAt: Math.max(now, hit.rec.updatedAt + 1) } : { id: uid(), ...fields, createdAt: now, updatedAt: now };
+      hit ? stat.upd++ : stat.add++;
+      out.push(item);
+    }
+    console.log(`${opt['dry-run'] ? '（预演）' : ''}${isG ? '生长记录' : '用药记录'}：新增 ${stat.add}、更新 ${stat.upd}、已一致 ${stat.same}`);
+    if (opt['dry-run'] || !out.length) return;
+    const P = isG ? core.GROWTH_PREFIX : core.MEDS_PREFIX;
+    for (let i = 0; i < out.length; i += 100) {
+      const changes = [];
+      for (const it of out.slice(i, i + 100)) {
+        const rid = P + it.id;
+        changes.push({ id: rid, updatedAt: it.updatedAt, deleted: false, data: await core.seal(keys.enc, rid, it.updatedAt, isG ? { type: 'growth', growth: it } : { type: 'med', med: it }) });
+      }
+      const res = await core.syncRequest(cfg.url, keys.token, { since: 0, changes });
+      const rej = changes.filter((c) => !res.accepted.includes(c.id));
+      if (rej.length) throw new Error(`未写入 ${rej.length} 条`);
+    }
+    console.log(`已写入 ${out.length} 条`);
+    return;
+  }
   const all = [...events.values()].map((x) => x.event).sort((a, b) => (a.date + (a.time || '99')).localeCompare(b.date + (b.time || '99')));
 
   if (cmd === 'plan' || cmd === 'plan-paid') {

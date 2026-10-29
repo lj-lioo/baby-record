@@ -28,7 +28,8 @@ check('1个月1天', ageOnDate(B, '2026-10-18') === '1个月1天');
 check('整月', ageOnDate(B, '2026-10-17') === '1个月');
 check('早于生日空', ageOnDate(B, '2026-09-16') === '');
 
-check('缺身高失败', !!validateGrowth({ date: B, height: '', weight: '3', head: '' }, B));
+check('v1.12.0 只有体重可通过', validateGrowth({ date: B, height: '', weight: '3', head: '' }, B) === null);
+check('身高体重都空失败', !!validateGrowth({ date: B, height: '', weight: '', head: '' }, B));
 check('合法通过', validateGrowth({ date: B, height: '49', weight: '2.8', head: '' }, B) === null);
 check('头围可选', validateGrowth({ date: '2026-10-18', height: '53.5', weight: '4.2', head: '37.6' }, B) === null);
 check('身高超范围', !!validateGrowth({ date: B, height: '200', weight: '3', head: '' }, B));
