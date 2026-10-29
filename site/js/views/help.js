@@ -166,13 +166,35 @@ export function renderHelp(root) {
       </ul>
     </section>
 
+    <section class="card" id="h-album">
+      <h2>📷 相册（v1.8.0）</h2>
+      <ul class="steps">
+        <li>底部「📷 相册」按拍摄/上传时间看宝宝照片；点右上角 <b>「＋ 上传」</b> 从手机相册选图或拍照。</li>
+        <li>可以写一句话说明；点照片看大图，也可以删除（删了会同步到其他家人）。</li>
+        <li>缩略图和说明走 <b>云同步</b>（和疫苗事项同一把密钥）；原图在本机用同步密钥加密后再存到极空间。</li>
+        <li>还没填照片服务地址时：本机仍可选图预览，元数据可先同步；提示「填极空间照片服务地址后才能全家看到原图」。</li>
+      </ul>
+    </section>
+
+    <section class="card" id="h-nas">
+      <h2>🗄️ 接极空间（照片服务）</h2>
+      <ol class="steps">
+        <li>在极空间 Docker 里运行仓库里的 <b>sync/photo-server</b>（把一个文件夹挂到容器的 <span class="kbd">/data</span>，端口 <span class="kbd">8789</span>）。详见该目录 README。</li>
+        <li>手机连家里 Wi‑Fi，浏览器先打开 <span class="kbd">http://极空间局域网IP:8789/health</span> 确认能通。</li>
+        <li>本 App「设置 → 📷 照片服务」填同一个地址，点「测试连接」。</li>
+        <li><b>家里</b>：局域网直连即可上传/看原图。<b>外出</b>：需 VPN 连回家，或以后买域名 + Cloudflare Tunnel。</li>
+        <li>疫苗等事项的云同步目前仍是 <span class="kbd">*.workers.dev</span>，国内常需 VPN；以后绑自己的域名后家人一般可直连。</li>
+      </ol>
+      <p class="note">服务端只存密文，看不到照片内容。不要把同步密钥发给不信任的人，也不要写进 Docker 环境变量提交到公开地方。</p>
+    </section>
+
     <section class="card" id="h-limit">
       <h2>ℹ️ 小贴士与限制</h2>
       <ul class="steps">
         <li>网页App不能直接在 iPhone 上设置闹钟，所以通过「快捷指令」创建紧急提醒事项来实现闹钟效果；日历和推送是备用方式。</li>
         <li>在本App里修改或删除事项，<b>不会</b>自动修改已经建好的提醒事项，需要到「提醒事项」App的「宝宝」列表里手动修改/删除。<span class="newtag">新增</span> v1.7.1 起：重设闹钟会自动替换旧的，删除事项时可点「🗑 删除旧闹钟」（需先完成上面的「新增」步骤）。</li>
         <li>App打开时到了提醒时间，会直接弹出全屏提醒页并播放铃声（需要先点过屏幕任意处，iPhone 才允许播放声音）。</li>
-        <li>数据只存在本机，请定期「导出备份」。</li>
+        <li>日程数据存在本机并可选云同步；照片原图在极空间（密文）。请定期「导出备份」。</li>
       </ul>
     </section>
     </div>`;
