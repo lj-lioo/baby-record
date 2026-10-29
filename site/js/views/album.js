@@ -210,12 +210,13 @@ export function renderAlbum(root) {
     try { e.target.value = ''; } catch { /* ignore */ }
     if (!files.length) { toast('没有选到照片'); return; }
     const total = files.length;
-    toast(total === 1 ? '正在处理 1 张…' : `正在处理 ${total} 张…`, 2500);
+    toast(total === 1 ? '正在加入相册…' : `正在把 ${total} 张加入相册…`, 2500);
     if (total > BATCH_SOFT_LIMIT) {
-      toast(`一次选了 ${total} 张，建议每次 ${BATCH_SOFT_LIMIT} 张左右分批传（隧道限速，会串行分块）。本次仍继续，请保持屏幕常亮。`, 5500);
+      toast(`一次选了 ${total} 张，建议每次 ${BATCH_SOFT_LIMIT} 张左右分批传（原图会排队上传）。本次仍继续，请保持屏幕常亮。`, 5500);
     }
-    let ok = 0, fail = 0, uploadFail = 0;
+    let localOk = 0, fail = 0, uploadFail = 0;
     const lastErr = [];
+    const pendingUpload = []; // { id, isVid, size }
     const setProg = (t) => {
       setUploadBatchText(t);
       syncAlbumProgressUi(albumRootRef || root);
@@ -223,43 +224,61 @@ export function renderAlbum(root) {
     const refresh = () => {
       if (location.hash.startsWith('#/album')) renderAlbum(albumRootRef || root);
     };
-    beginUploadBatch(total, `正在处理 0/${total}…`);
+    beginUploadBatch(total, `正在加入相册 0/${total}…`);
     syncAlbumProgressUi(albumRootRef || root);
     const wake = await requestAlbumWakeLock();
     try {
-      for (const [i, f] of files.entries()) {
-        const n = i + 1;
-        try {
-          const isVid = String(f.type || '').startsWith('video/') || /\.(mov|mp4|m4v)$/i.test(f.name || '');
-          setProg(isVid
-            ? `已处理 ${i}/${total}，准备视频 ${n}/${total}（约 ${fmtSize(f.size)}）…`
-            : `已处理 ${i}/${total}，处理中 ${n}/${total}…`);
-          const opts = {
-            onLocalReady: () => {
-              refresh();
-              setProg(`已处理 ${n}/${total}，上传中…`);
-            },
-            onProgress: (ev) => {
-              if (ev?.phase === 'upload') {
-                const pct = ev.ratio != null ? ` ${Math.round(ev.ratio * 100)}%` : '';
-                setProg(isVid
-                  ? `上传中 ${n}/${total}${pct}（约 ${fmtSize(f.size)}）`
-                  : `上传中 ${n}/${total}${pct}…`);
-              } else if (ev?.phase === 'done') {
-                setProg(`已处理 ${n}/${total}` + (n < total ? '，继续…' : '，完成'));
-              }
-            },
-          };
-          // 限并发=1：串行 await，避免隧道挤满
-          const r = isVid ? await addVideoFromFile(f, opts) : await addPhotoFromFile(f, opts);
-          ok++;
-          if (r.needsPhotoApi) lastErr.push('已保存到本机；填照片服务地址后全家才能看原图');
-          else if (r.uploadError) { uploadFail++; lastErr.push(r.uploadError); }
-          refresh();
-        } catch (err) {
-          fail++;
-          lastErr.push(err.message || '上传失败');
-          refresh();
+      // 阶段 1：尽快全部生成缩略图并入库（可小并发），用户几乎立刻看到整批
+      const LOCAL_CONCURRENCY = 3;
+      let cursor = 0;
+      const runLocalOne = async (f) => {
+        const isVid = String(f.type || '').startsWith('video/') || /\.(mov|mp4|m4v)$/i.test(f.name || '');
+        const r = isVid
+          ? await addVideoFromFile(f, { upload: false, onLocalReady: () => refresh() })
+          : await addPhotoFromFile(f, { upload: false, onLocalReady: () => refresh() });
+        localOk++;
+        setProg(`已进相册 ${localOk}/${total}` + (r.deferred ? '，接着传原图…' : ''));
+        if (r.needsPhotoApi) lastErr.push('已保存到本机；填照片服务地址后全家才能看原图');
+        if (r.deferred && r.photo?.id) pendingUpload.push({ id: r.photo.id, isVid, size: f.size || r.photo.size || 0 });
+        refresh();
+      };
+      const workers = Array.from({ length: Math.min(LOCAL_CONCURRENCY, total) }, async () => {
+        while (cursor < files.length) {
+          const i = cursor++;
+          try {
+            await runLocalOne(files[i]);
+          } catch (err) {
+            fail++;
+            lastErr.push(err.message || '处理失败');
+            refresh();
+          }
+        }
+      });
+      await Promise.all(workers);
+
+      // 阶段 2：原图串行上传（隧道限速）
+      const upTotal = pendingUpload.length;
+      if (upTotal) {
+        setProg(`已进相册 ${localOk}/${total}，原图上传中 0/${upTotal}…`);
+        for (const [ui, item] of pendingUpload.entries()) {
+          const n = ui + 1;
+          try {
+            await retryUpload(item.id, {
+              onProgress: (ev) => {
+                if (ev?.phase === 'upload') {
+                  const pct = ev.ratio != null ? ` ${Math.round(ev.ratio * 100)}%` : '';
+                  setProg(`已进相册 ${localOk}/${total}，原图上传中 ${n}/${upTotal}${pct}`
+                    + (item.isVid ? `（约 ${fmtSize(item.size)}）` : ''));
+                }
+              },
+            });
+            setProg(`已进相册 ${localOk}/${total}，原图上传中 ${n}/${upTotal}`);
+            refresh();
+          } catch (err) {
+            uploadFail++;
+            lastErr.push(err.message || '原图上传失败');
+            refresh();
+          }
         }
       }
     } finally {
@@ -267,11 +286,17 @@ export function renderAlbum(root) {
       releaseAlbumWakeLock(wake);
       syncAlbumProgressUi(albumRootRef || root);
     }
-    if (fail && !ok) toast(lastErr[0] || '上传失败', 4500);
-    else if (uploadFail) toast(`已添加 ${ok} 项，其中 ${uploadFail} 项原图上传失败：${lastErr[lastErr.length - 1]}。可点「一键补传」或打开后补传`, 5500);
-    else if (ok && lastErr.length && !uploadFail) toast(lastErr[0], 4000);
-    else if (ok && !fail) toast(ok === 1 ? '已添加并上传 1 项' : `已添加并上传 ${ok} 项`);
+    if (fail && !localOk) toast(lastErr[0] || '添加失败', 4500);
+    else if (uploadFail) toast(`已进相册 ${localOk} 项，其中 ${uploadFail} 项原图上传失败：${lastErr[lastErr.length - 1]}。可点「一键补传」`, 5500);
+    else if (localOk && lastErr.length && !uploadFail) toast(lastErr[0], 4000);
+    else if (localOk && !fail && !uploadFail) {
+      toast(upTotalMsg(localOk, pendingUpload.length));
+    }
   };
+  function upTotalMsg(localOk, uploaded) {
+    if (!uploaded) return localOk === 1 ? '已添加 1 项' : `已添加 ${localOk} 项`;
+    return localOk === 1 ? '已添加并上传 1 项' : `已进相册 ${localOk} 项，原图已传完`;
+  }
   // v1.13.2：file input 放在 body 上常驻。iOS 从相册返回会触发 visibilitychange/同步重渲染，
   // 之前 input 在相册 DOM 里会被替换掉，change 事件丢失 → 选完照片什么都不出现
   ensureFileInputs();

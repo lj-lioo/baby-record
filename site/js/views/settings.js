@@ -10,13 +10,13 @@ import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 import { openPaidCatalog, catalogCounts } from './paidcat.js';
 import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../sync.js';
 import { extractSyncKey } from '../sync-core.js';
-import { pingPhotoServer, videoCacheInfo, clearVideoCache, legacyEncryptedPhotos, migrateLegacyToPlain } from '../photos.js';
+import { pingPhotoServer, videoCacheInfo, clearVideoCache } from '../photos.js';
 import {
   getRole, setRole, canEditDangerousSettings, canEditProfile,
   ROLES, ADMIN_ROLES, ELDER_ROLES, roleCapabilityText, openRolePicker, copyInviteFor,
 } from '../roles.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.14.1';
+export const APP_BUILD = '1.14.2';
 
 /** 编辑宝宝名字 + 生日（云同步 profile）；保存后触发 rerender */
 export function openBabyProfile({ onSaved } = {}) {
@@ -246,24 +246,8 @@ export function renderSettings(root) {
   };
   showVC();
   q('#btnVideoCacheClear').onclick = async () => { await clearVideoCache(); toast('已清空本机视频缓存'); showVC(); };
-  const showMig = () => {
-    const box = q('#migrateBox'); if (!box) return;
-    const n = legacyEncryptedPhotos().length;
-    box.innerHTML = n ? `<p class="small">极空间里还有 <b>${n}</b> 个旧的加密文件（看着像代码）。</p><div class="btn-row"><button class="btn secondary" id="btnMigrate">转换成普通照片</button></div><p class="small muted" id="migrateMsg">需先在极空间更新照片服务。转换时请保持 App 在前台、屏幕常亮。</p>` : '';
-    const b = q('#btnMigrate');
-    if (b) b.onclick = async () => {
-      b.disabled = true;
-      const msg = q('#migrateMsg');
-      try {
-        const r = await migrateLegacyToPlain({ onProgress: (x) => { msg.textContent = `转换中 ${x.index}/${x.total}（成功 ${x.ok}，失败 ${x.fail}）…请别锁屏`; } });
-        toast(r.fail ? `转换完成：成功 ${r.ok}，失败 ${r.fail}` : `已转换 ${r.ok} 个`, 4000);
-        msg.textContent = r.fail ? `失败原因：${r.errors[0] || ''}（可再点一次重试）` : '全部转换完成';
-      } catch (e) { msg.textContent = '转换失败：' + (e.message || e); }
-      b.disabled = false;
-      if (!legacyEncryptedPhotos().length) showMig();
-    };
-  };
-  showMig();
+  // 用户确认旧加密文件不必转换；新上传已是明文。转换入口隐藏（代码仍保留 migrateLegacyToPlain 备用）
+  const box = q('#migrateBox'); if (box) box.innerHTML = '';
   q('#btnPhotoTest').onclick = async () => {
     const url = q('#photoApi').value.trim().replace(/\/+$/, '');
     store.updateSettings({ photoApi: url });

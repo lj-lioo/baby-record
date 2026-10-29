@@ -267,7 +267,8 @@ export const BATCH_SOFT_LIMIT = 12; // 建议单次张数；超过只提示，�
 export const UPLOAD_CONCURRENCY = 1; // 隧道串行，避免挤垮慢上行
 
 /** 选图/拍照后入库：先写缩略图+本机缓存立刻可见，再后台加密上传原图 */
-export async function addPhotoFromFile(file, { note = '', takenAt, onLocalReady, onProgress } = {}) {
+/** @param {{ upload?: boolean }} opts upload=false 时只写缩略图+本机缓存，原图留给调用方排队上传 */
+export async function addPhotoFromFile(file, { note = '', takenAt, onLocalReady, onProgress, upload = true } = {}) {
   const isImg = String(file?.type || '').startsWith('image/') || /\.(jpe?g|png|heic|heif|gif|webp)$/i.test(file?.name || '');
   if (!file || !isImg) throw new Error('请选择图片文件');
   const id = uid();
@@ -296,29 +297,27 @@ export async function addPhotoFromFile(file, { note = '', takenAt, onLocalReady,
     ext: extOf(file),
   });
   onLocalReady?.(photo);
-  onProgress?.({ phase: willUpload ? 'upload' : 'local', id });
+  onProgress?.({ phase: (!upload || !willUpload) ? 'local' : 'upload', id });
 
-  let remoteReady = false;
-  let uploadError = '';
-  let chunks = 0;
-  if (willUpload) {
-    try {
-      // 隧道慢上行：整文件 PUT 易超时；统一按 UPLOAD_CHUNK 分块走 /v1/video（与视频同协议）
-      const patch = await uploadOriginal(id, buf, { taken, ext: extOf(file), mime: file.type || 'image/jpeg' }, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
-      chunks = patch.chunks || 0;
-      remoteReady = true;
-      photo = store.upsertPhoto({ ...store.getPhoto(id), ...patch, remoteReady: true });
-      trackPending(id, false);
-      onProgress?.({ phase: 'done', id });
-    } catch (e) {
-      uploadError = e.message || String(e);
-      console.warn('原图上传失败（元数据仍会同步）', core.keyFingerprint?.(syncStatus().key), e);
-      onProgress?.({ phase: 'error', id, error: uploadError });
-    } finally {
-      markUploading(id, false);
-    }
+  // 只入库：缩略图已可见；原图由相册页统一排队上传（隧道串行）
+  if (!upload || !willUpload) {
+    return { photo: store.getPhoto(id) || photo, uploadError: '', needsPhotoApi: !photoApiBase(), deferred: !!willUpload };
   }
-  return { photo: store.getPhoto(id) || photo, uploadError, needsPhotoApi: !photoApiBase() };
+
+  let uploadError = '';
+  try {
+    const patch = await uploadOriginal(id, buf, { taken, ext: extOf(file), mime: file.type || 'image/jpeg' }, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
+    photo = store.upsertPhoto({ ...store.getPhoto(id), ...patch, remoteReady: true });
+    trackPending(id, false);
+    onProgress?.({ phase: 'done', id });
+  } catch (e) {
+    uploadError = e.message || String(e);
+    console.warn('原图上传失败（元数据仍会同步）', core.keyFingerprint?.(syncStatus().key), e);
+    onProgress?.({ phase: 'error', id, error: uploadError });
+  } finally {
+    markUploading(id, false);
+  }
+  return { photo: store.getPhoto(id) || photo, uploadError, needsPhotoApi: !photoApiBase(), deferred: false };
 }
 
 // ───────── v1.10.0 视频 ─────────
@@ -581,7 +580,7 @@ export async function migrateLegacyToPlain({ onProgress } = {}) {
 }
 
 /** 选视频后入库：先封面+本机缓存立刻可见，再分块加密上传 */
-export async function addVideoFromFile(file, { note = '', takenAt, onLocalReady, onProgress } = {}) {
+export async function addVideoFromFile(file, { note = '', takenAt, onLocalReady, onProgress, upload = true } = {}) {
   if (!file || !String(file.type || '').startsWith('video/')) throw new Error('请选择视频文件');
   const max = videoMaxBytes();
   if (file.size > max) {
@@ -601,24 +600,25 @@ export async function addVideoFromFile(file, { note = '', takenAt, onLocalReady,
     thumbData: dataUrl, remoteReady: false, ext: extOf(file),
   });
   onLocalReady?.(photo);
+  onProgress?.({ phase: (!upload || !willUpload) ? 'local' : 'upload', id });
 
-  let remoteReady = false, uploadError = '', chunks = 0;
-  if (willUpload) {
-    try {
-      const patch = await uploadOriginal(id, file, { taken, ext: extOf(file), mime }, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
-      chunks = patch.chunks || 0;
-      remoteReady = true;
-      photo = store.upsertPhoto({ ...store.getPhoto(id), ...patch, remoteReady: true });
-      trackPending(id, false);
-      onProgress?.({ phase: 'done', id });
-    } catch (e) {
-      uploadError = e.message || String(e);
-      onProgress?.({ phase: 'error', id, error: uploadError });
-    } finally {
-      markUploading(id, false);
-    }
+  if (!upload || !willUpload) {
+    return { photo: store.getPhoto(id) || photo, uploadError: '', needsPhotoApi: !photoApiBase(), deferred: !!willUpload };
   }
-  return { photo: store.getPhoto(id) || photo, uploadError, needsPhotoApi: !photoApiBase() };
+
+  let uploadError = '';
+  try {
+    const patch = await uploadOriginal(id, file, { taken, ext: extOf(file), mime }, (x) => onProgress?.({ phase: 'upload', id, ratio: x }));
+    photo = store.upsertPhoto({ ...store.getPhoto(id), ...patch, remoteReady: true });
+    trackPending(id, false);
+    onProgress?.({ phase: 'done', id });
+  } catch (e) {
+    uploadError = e.message || String(e);
+    onProgress?.({ phase: 'error', id, error: uploadError });
+  } finally {
+    markUploading(id, false);
+  }
+  return { photo: store.getPhoto(id) || photo, uploadError, needsPhotoApi: !photoApiBase(), deferred: false };
 }
 
 /** 播放：本机缓存 → 用户点了才分块下载解密（绝不自动调用） */
