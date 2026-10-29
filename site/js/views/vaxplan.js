@@ -75,7 +75,7 @@ export function openPlan(kind) {
       const nNew = picked.size;
       const nHave = plan.filter((d) => d.existing).length;
       q('#vp-body').innerHTML = `
-        <p class="small" style="margin:0 0 6px">共 ${plan.length} ${K.unit}：将添加 <b>${nNew}</b> 个未来的${K.noun}${nHave ? `，${nHave} 个已添加过（不会重复添加）` : ''}。每个事项时间 ${TIME}，提醒：前一天 20:00、当天 08:00（之后可在事项里修改）。</p>
+        <p class="small" style="margin:0 0 6px">共 ${plan.length} ${K.unit}：将添加 <b>${nNew}</b> 个未来的${K.noun}${nHave ? `，${nHave} 个已添加过（不会重复添加）` : ''}。每个事项时间 ${TIME}，提醒：前一天 20:00（之后可在事项里修改）。</p>
         <ul class="vp-list">${plan.map((d, i) => {
           const group = K.groupLabel && d.optional && !plan[i - 1]?.optional ? `<li class="vp-group">${esc(K.groupLabel)}</li>` : '';
           const status = d.existing ? '<span class="vp-st ok">已添加</span>'

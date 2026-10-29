@@ -137,7 +137,7 @@ export function openSeriesPicker(fam, back = null) {
     <div id="sp-warn"></div>
     <div class="flabel" id="sp-head"></div>
     <ol class="sp-list" id="sp-list"></ol>
-    <p class="small muted" style="margin:4px 0 8px">后面剂次：计划日＝max(推荐月龄, 上一剂＋推荐间隔)，最早日＝上一剂＋最短间隔（且不早于最小月龄）。每剂提醒前一天 20:00、当天 08:00；之后可逐剂「📆 改计划日」。</p>
+    <p class="small muted" style="margin:4px 0 8px">后面剂次：计划日＝max(推荐月龄, 上一剂＋推荐间隔)，最早日＝上一剂＋最短间隔（且不早于最小月龄）。每剂提醒前一天 20:00；之后可逐剂「📆 改计划日」。</p>
     ${S.replaces ? `<p class="note small" style="margin:0 0 8px">🔁 可替代${esc(S.replaces)}：免费事项上会提示「可不打此剂」，不会自动删除，以门诊为准。</p>` : ''}
     <div class="btn-row">
       <button type="button" class="btn ghost" id="sp-cancel">${back ? '返回' : '取消'}</button>

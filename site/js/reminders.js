@@ -17,9 +17,8 @@ export const PRESETS = [
 export const presetByKey = Object.fromEntries(PRESETS.map((p) => [p.key, p]));
 
 export function defaultReminders(hasTime) {
-  const r = [{ id: uid(), kind: 'preset', preset: 'eve20' }, { id: uid(), kind: 'preset', preset: 'morning8' }];
-  if (hasTime) r.push({ id: uid(), kind: 'preset', preset: 'h1' });
-  return r;
+  // v1.12.8：默认只提醒一次「前一天 20:00」（hasTime 保留参数兼容旧调用）
+  return [{ id: uid(), kind: 'preset', preset: 'eve20' }];
 }
 
 // 事项开始时间（无具体时间时视为当天 00:00 的全天事项）

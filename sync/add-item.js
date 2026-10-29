@@ -8,7 +8,7 @@
 //   node add-item.js status                       查看配置和云端事项数
 //   node add-item.js pair [--qr 文件.png] [--text] 给手机的配对二维码：默认内容是 App 配对链接 …/#pair=<密钥>（--text 只放密钥）；不加 --qr 则打印
 //   node add-item.js add --title 标题 --date 2026-10-01 [--time 10:00] [--category vaccine|paidvax|checkup|other]
-//                        [--note 备注] [--remind eve20,morning8,h1|none] [--schedule-id paid:xxx]（同 scheduleId 已存在则不重复添加）
+//                        [--note 备注] [--remind eve20,morning8,h1|none，默认 eve20] [--schedule-id paid:xxx]（同 scheduleId 已存在则不重复添加）
 //                        [--earliest 日期] [--latest 日期]（接种窗口，可不填；--date 是计划日期）
 //   node add-item.js plan paid|vaccine|checkup [--dry-run] [--birthday 2026-09-17] [--include-optional]
 //                        按 App 同一个生成器写入云端（09:00，提醒前一天20:00+当天08:00；跳过已过的和云端已有同 scheduleId 的）；plan-paid 同 plan paid
@@ -167,7 +167,7 @@ function makeEvent({ title, date, time = '', category = 'other', note = '', remi
   if (!CAT[category]) throw new Error(`类别只能是 ${Object.keys(CAT).join(' / ')}`);
   if (scheduleId && !/^[a-z]+:[a-z0-9-]+$/.test(scheduleId)) throw new Error('scheduleId 格式应为 前缀:编号（如 paid:rsv）');
   let presets;
-  if (remind === undefined || remind === true) presets = time ? ['eve20', 'morning8', 'h1'] : ['eve20', 'morning8'];
+  if (remind === undefined || remind === true) presets = ['eve20']; // v1.12.8 默认只提醒前一天 20:00
   else if (remind === 'none') presets = [];
   else presets = String(remind).split(',').map((s) => s.trim()).filter(Boolean);
   for (const p of presets) if (!PRESETS.includes(p)) throw new Error(`未知提醒：${p}（可用 ${PRESETS.join(',')} 或 none）`);
@@ -354,11 +354,26 @@ async function main() {
     const pick = plan.filter((d) => !d.existing && !d.past && !undecided(d) && (opt['include-optional'] || !d.optional));
     const skipped = { existing: plan.filter((d) => d.existing).length, past: plan.filter((d) => !d.existing && d.past).length, undecided: plan.filter((d) => !d.existing && !d.past && undecided(d)).length,
       optional: plan.filter((d) => !d.existing && !d.past && !undecided(d) && d.optional && !opt['include-optional']).length };
-    const list = pick.map((d) => makeEvent({ title: d.title, date: d.date, time: '09:00', category: P.category, note: d.note, remind: 'eve20,morning8', scheduleId: d.scheduleId,
+    const list = pick.map((d) => makeEvent({ title: d.title, date: d.date, time: '09:00', category: P.category, note: d.note, remind: 'eve20', scheduleId: d.scheduleId,
       earliest: d.earliest || '', latest: d.latest || '', windowNote: d.windowNote || '' }));
     list.forEach((e) => console.log(`${opt['dry-run'] ? '（预演）' : '＋'} ${fmt(e).replace(/  — .*  \[/, '  [')}  ${e.scheduleId}`));
     console.log(`生日 ${bday}：计划 ${plan.length} 项；${opt['dry-run'] ? '将' : '已'}写入 ${list.length} 项；跳过 云端已有 ${skipped.existing}、已过 ${skipped.past}、备选/可选 ${skipped.optional}${kind === 'paid' ? `、自费待定 ${skipped.undecided}（不写入；要打哪种用 paid-series <疫苗> --start 日期 加入）` : ''}`);
     if (!opt['dry-run'] && list.length) await pushEvents(cfg, keys, list.map((event) => ({ event })));
+    return;
+  }
+  if (cmd === 'reminders-single') {
+    // v1.12.8：未完成且提醒恰为旧默认「eve20+morning8」的事项 → 只保留 eve20
+    if (opt.backup) { fs.writeFileSync(opt.backup, JSON.stringify([...events.values()].map((x) => x.event), null, 1)); console.log(`已备份 ${events.size} 项 → ${opt.backup}`); }
+    const out = [];
+    for (const { rec, event } of events.values()) {
+      const rs = event.reminders || [];
+      const sig = rs.map((r) => r.kind === 'preset' ? r.preset : 'abs').join(',');
+      if (event.done || sig !== 'eve20,morning8') continue;
+      out.push({ event: { ...event, reminders: rs.filter((r) => r.preset === 'eve20'), updatedAt: Math.max(Date.now(), rec.updatedAt + 1) } });
+      console.log(`${opt['dry-run'] ? '（预演）' : '✎'} ${event.date} ${event.title}${event.alarmAdded ? '  ⏰已设闹钟→需重设' : ''}`);
+    }
+    console.log(`${opt['dry-run'] ? '将' : '已'}改为只提醒前一天 20:00：${out.length} 项；其中已设闹钟 ${out.filter((x) => x.event.alarmAdded).length} 项`);
+    if (!opt['dry-run'] && out.length) await pushEvents(cfg, keys, out);
     return;
   }
   if (cmd === 'refresh-notes') {
@@ -434,7 +449,7 @@ async function main() {
     if (have.length) { have.forEach(({ event }) => console.log(`  已有：${fmt(event).replace(/  — .*  \[/, '  [')}`)); throw new Error(`云端已有 ${S.title} 的 ${have.length} 剂，未重复添加（先 paid-remove ${fam}）`); }
     if (info.latest && start > info.latest) console.log(`⚠️ 第1剂晚于最迟日期 ${info.latest}（${info.latestNote || ''}），请先咨询接种门诊`);
     const plan = m.seriesPlan(fam, bday, start);
-    const list = plan.map((d) => makeEvent({ title: d.title, date: d.date, time, category: 'paidvax', note: d.note, remind: 'eve20,morning8', scheduleId: d.scheduleId,
+    const list = plan.map((d) => makeEvent({ title: d.title, date: d.date, time, category: 'paidvax', note: d.note, remind: 'eve20', scheduleId: d.scheduleId,
       earliest: d.earliest, latest: d.latest || '', windowNote: d.windowNote || '' }));
     list.forEach((e) => console.log(`${opt['dry-run'] ? '（预演）' : '＋'} ${e.date} ${e.time}  ${e.title}  〔最早 ${e.earliest}${e.latest ? ` · 最迟 ${e.latest}` : ''}〕${e.latest && e.date > e.latest ? '  ⚠️晚于最迟' : ''}  ${e.scheduleId}`));
     console.log(`${S.title}：${opt['dry-run'] ? '将' : '已'}加入计划 ${list.length} 剂（生日 ${bday}，第1剂最早 ${info.earliest}${info.latest ? `、最迟 ${info.latest}` : ''}）`);
@@ -461,7 +476,7 @@ async function main() {
         if ((event.time || '') !== '09:00') why.push(`时间改过（${event.time || '全天'}）`);
         if (event.title !== d.title) why.push('标题改过');
         if (event.note !== d.note) why.push('备注改过');
-        if ((event.reminders || []).map((r) => r.kind === 'preset' ? r.preset : 'abs').join(',') !== 'eve20,morning8') why.push('提醒改过');
+        if (!['eve20,morning8', 'eve20'].includes((event.reminders || []).map((r) => r.kind === 'preset' ? r.preset : 'abs').join(','))) why.push('提醒改过');
         if (event.category !== 'paidvax') why.push(`类别是 ${event.category}`);
       }
       if (why.length) keep.push({ event, why: why.join('、') }); else del.push({ rec, event });
