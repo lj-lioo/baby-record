@@ -8,7 +8,6 @@ import { openEditor } from './editor.js';
 import { canEditEvents, requireEditEvents, requireAlarm } from '../roles.js';
 import { openAlarmSheet, alarmState } from './actions.js';
 import { openICS } from '../ics.js';
-import { isStandalone, isIOS } from '../push.js';
 import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 import { openPlannedSheet } from './planned.js';
 import { windowOf, windowStatus, planOutside } from '../windows.js';
@@ -46,7 +45,6 @@ export function renderHome(root) {
       </button>
     </header>
     <button type="button" class="voice-cta" id="btnVoice">🎤 说一句话记事<span>如「11月5号买奶粉」</span></button>
-    <div id="pushBanner"></div>
     <div id="vaxCta"></div>
     <section class="card remind-card" id="remindCard"></section>
     <section class="card" id="calCard"></section>
@@ -62,7 +60,6 @@ export function renderHome(root) {
   renderMonthList(root.querySelector('#dayCard'));
   renderFreeVaxCard(root.querySelector('#freeVaxCard'));
   renderPaidCard(root.querySelector('#paidCard'));
-  renderPushBanner(root.querySelector('#pushBanner'));
   renderVaxCta(root.querySelector('#vaxCta'));
   if (ui.scrollTo) {
     const key = ui.scrollTo;
@@ -410,16 +407,6 @@ function renderMonthList(el) {
   });
 }
 
-async function renderPushBanner(el) {
-  if (localStorage.getItem('babyrecord.hideBanner') === '1') { el.innerHTML = ''; return; }
-  const msg = isIOS() && !isStandalone()
-    ? '<b>第一步：添加到主屏幕</b>Safari 分享按钮 → 添加到主屏幕；然后设置一次「宝宝闹钟」快捷指令'
-    : '<b>设置一次「宝宝闹钟」快捷指令</b>之后每个事项点「⏰ 设为闹钟提醒」，到点像闹钟一样响';
-  el.innerHTML = `<div class="banner"><span style="font-size:28px">🔔</span><div class="bt">${msg}</div>
-    <a class="btn" style="padding:8px 12px;font-size:14px;text-decoration:none" href="#/help">看步骤</a>
-    <button class="x-btn" style="width:30px;height:30px;font-size:14px;background:transparent" aria-label="关闭">✕</button></div>`;
-  el.querySelector('.x-btn').onclick = () => { localStorage.setItem('babyrecord.hideBanner', '1'); el.innerHTML = ''; };
-}
 // 还没有生成疫苗/体检计划时，在首页提示「一键生成」
 function renderVaxCta(el) {
   if (!canEditEvents()) { el.innerHTML = ''; return; }
