@@ -199,7 +199,7 @@ export function renderAlbum(root) {
             </button>`).join('')}
         </div>
       </section>`).join('')}
-    <p class="small muted" style="text-align:center;margin:8px 0 24px">共 ${store.photos().length} 项 · 原图/视频加密存极空间 · 视频不自动下载 · 元数据云同步</p>
+    <p class="small muted" style="text-align:center;margin:8px 0 24px">共 ${store.photos().length} 项 · 原图/视频存极空间 · 视频不自动下载 · 元数据云同步</p>
   `;
 
   const q = (s) => root.querySelector(s);
@@ -207,9 +207,10 @@ export function renderAlbum(root) {
   q('#btnAddPhoto').onclick = () => openAddPhotoSheet(root);
   const onFiles = async (e) => {
     const files = [...(e.target.files || [])];
-    e.target.value = '';
-    if (!files.length) return;
+    try { e.target.value = ''; } catch { /* ignore */ }
+    if (!files.length) { toast('没有选到照片'); return; }
     const total = files.length;
+    toast(total === 1 ? '正在处理 1 张…' : `正在处理 ${total} 张…`, 2500);
     if (total > BATCH_SOFT_LIMIT) {
       toast(`一次选了 ${total} 张，建议每次 ${BATCH_SOFT_LIMIT} 张左右分批传（隧道限速，会串行分块）。本次仍继续，请保持屏幕常亮。`, 5500);
     }
@@ -323,6 +324,7 @@ export function renderAlbum(root) {
 
 /** 「＋ 上传」：选从相册（可多选）或拍照（带 capture，走相机） */
 function openAddPhotoSheet(albumRoot) {
+  ensureFileInputs();
   openSheet(`
     <h3>添加照片 / 视频</h3>
     <p class="small muted" style="margin-top:0">从手机相册选照片或视频，或直接拍照、录视频。视频上限 ${Math.round((Number(store.state.settings.videoMaxMB) || 200))}MB，可在设置里改。大批量建议每次约 ${BATCH_SOFT_LIMIT} 张，原图会分块串行上传，请保持屏幕常亮。</p>
@@ -334,18 +336,18 @@ function openAddPhotoSheet(albumRoot) {
     </div>
   `, (sh) => {
     sh.querySelector('#pickCancel').onclick = closeSheet;
+    // 必须在用户手势里同步触发 input.click；先关面板再延时点，iOS 会丢 change → 选完勾选没反应
     sh.querySelector('#pickAlbum').onclick = () => {
+      document.getElementById('filePhotoAlbum')?.click();
       closeSheet();
-      // 等面板关掉后再点 file input，避免 iOS 手势链被打断
-      setTimeout(() => document.getElementById('filePhotoAlbum')?.click(), 80);
     };
     sh.querySelector('#pickVideo').onclick = () => {
+      document.getElementById('fileVideoCamera')?.click();
       closeSheet();
-      setTimeout(() => document.getElementById('fileVideoCamera')?.click(), 80);
     };
     sh.querySelector('#pickCamera').onclick = () => {
+      document.getElementById('filePhotoCamera')?.click();
       closeSheet();
-      setTimeout(() => document.getElementById('filePhotoCamera')?.click(), 80);
     };
   });
 }
@@ -579,7 +581,16 @@ function ensureFileInputs() {
     el.type = 'file'; el.id = id; el.accept = accept; el.hidden = true;
     if (multi) el.multiple = true;
     if (cap) el.setAttribute('capture', cap);
-    el.addEventListener('change', (e) => onFilesRef && onFilesRef(e));
     document.body.appendChild(el);
+  }
+  // 委托一次即可：避免 render 重建/重复绑定，也避免个别 input 监听丢了
+  if (!document.body.dataset.albumFileBound) {
+    document.body.dataset.albumFileBound = '1';
+    document.body.addEventListener('change', (e) => {
+      const t = e.target;
+      if (!t || !t.id || !/^file(Photo|Video)/.test(t.id)) return;
+      if (typeof onFilesRef === 'function') onFilesRef(e);
+      else toast('相册页还没就绪，请再选一次');
+    });
   }
 }

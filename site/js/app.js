@@ -12,6 +12,7 @@ import { unlockAudio } from './sound.js';
 import { initSync, syncAvailable, takePendingPairKey } from './sync.js';
 import { openPairSheet } from './views/settings.js';
 import { applyInviteFromParams, hasRole, openRolePicker, roleLabel } from './roles.js';
+import { getUploadSession } from './photos.js';
 
 const view = document.getElementById('view');
 const routes = { home: renderHome, album: renderAlbum, growth: renderGrowth, settings: renderSettings, help: renderHelp };
@@ -75,6 +76,12 @@ window.addEventListener('rerender', () => { if (parseHash().path === 'home' || p
 window.addEventListener('select-date', (e) => { selectDate(e.detail); if (parseHash().path === 'home') renderHome(view); });
 store.subscribe(() => {
   const p = parseHash().path;
+  // 上传批次中 upsert 会连着触发 subscribe→整页重绘，和 iOS 选图返回的 visibilitychange 叠在一起，
+  // 容易把刚挂上的处理逻辑打乱；相册交给 onLocalReady / 进度回调里的 refresh。
+  if (p === 'album' && getUploadSession().active) {
+    syncReminders();
+    return;
+  }
   if (p === 'home' || p === 'alarm' || p === 'album' || p === 'growth' || p === 'settings') render();
   syncReminders();
 });

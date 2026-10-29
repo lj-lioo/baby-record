@@ -402,6 +402,9 @@ export async function hasLocalVideo(id) { return !!(await idbGet(vkey(id)).catch
 async function putPlainChunks(id, plainOrBlob, onProgress) {
   const base = photoApiBase();
   if (!base) throw new Error('未配置照片服务地址');
+  if (photoApiBlockedByMixedContent(base)) {
+    throw new Error('照片地址是局域网 http，HTTPS 的 App 连不上。请改成 https://photo.jiayouzhaozhao.cn');
+  }
   const enc = await getEncKey();
   const isU8 = plainOrBlob instanceof Uint8Array;
   const size = isU8 ? plainOrBlob.byteLength : plainOrBlob.size;
@@ -457,6 +460,11 @@ export function extOf(fileOrMeta) {
 async function putRawChunks(id, plainOrBlob, { taken, ext, mime } = {}, onProgress) {
   const base = photoApiBase();
   if (!base) throw new Error('未配置照片服务地址');
+  if (photoApiBlockedByMixedContent(base)) {
+    const e = new Error('照片地址是局域网 http，HTTPS 的 App 连不上。请改成 https://photo.jiayouzhaozhao.cn');
+    e.code = 'mixed_content';
+    throw e;
+  }
   const isU8 = plainOrBlob instanceof Uint8Array;
   const size = isU8 ? plainOrBlob.byteLength : plainOrBlob.size;
   const chunkSize = UPLOAD_CHUNK;
@@ -469,7 +477,8 @@ async function putRawChunks(id, plainOrBlob, { taken, ext, mime } = {}, onProgre
     let res, lastErr;
     for (let tryN = 0; tryN < 3; tryN++) {
       const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const timer = ctrl ? setTimeout(() => ctrl.abort(), 90000) : null;
+      // 首块用短超时，尽快判断旧服务/连不上；后续块仍 90s
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), n === 0 && tryN === 0 ? 15000 : 90000) : null;
       try {
         res = await fetch(`${base}/v1/file/${encodeURIComponent(id)}/${n}?${qs}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: part, signal: ctrl?.signal,
@@ -502,6 +511,7 @@ async function uploadOriginal(id, plainOrBlob, info, onProgress) {
     const chunks = await putRawChunks(id, plainOrBlob, info, onProgress);
     return { storage: 'file', chunks: 0, chunkSize: UPLOAD_CHUNK, ext: info.ext || '', fileChunks: chunks };
   } catch (e) {
+    if (e.code === 'mixed_content') throw e;
     if (e.code !== 'old_server') throw e;
     const chunks = await putPlainChunks(id, plainOrBlob, onProgress);
     return { storage: 'chunks', chunks, chunkSize: UPLOAD_CHUNK };
