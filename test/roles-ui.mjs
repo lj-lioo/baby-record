@@ -53,7 +53,7 @@ async function check(name, cond, extra = '') {
 await page.goto(`http://127.0.0.1:${APP_PORT}/`);
 await page.waitForTimeout(600);
 
-await check(`版本 ${APP_V}`, APP_V === '1.13.0');
+await check(`版本 ${APP_V}`, APP_V === '1.15.0');
 
 // 首装引导：选爸爸
 const sheetH = page.locator('#sheet h3');
