@@ -40,9 +40,10 @@ await new Promise((r) => setTimeout(r, 400));
 const browser = await chromium.launch();
 const ctx = await browser.newContext({
   viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
-  locale: 'zh-CN', timezoneId: 'Asia/Shanghai',
+  serviceWorkers: 'block', locale: 'zh-CN', timezoneId: 'Asia/Shanghai',
   userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
 });
+await ctx.addInitScript(() => { if (!localStorage.getItem('babyrecord.v1')) localStorage.setItem('babyrecord.v1', JSON.stringify({ events: [], settings: { memberRole: '爸爸' } })); });
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));

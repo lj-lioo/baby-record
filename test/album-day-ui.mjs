@@ -31,6 +31,7 @@ const ctx = await browser.newContext({
   userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
 });
 const page = await ctx.newPage();
+await page.clock.setFixedTime(new Date('2026-10-29T12:00:00+08:00'));
 const errors = []; page.on('pageerror', (e) => errors.push(e.message));
 let pass = 0, fail = 0;
 const check = (n, c) => { if (c) { pass++; console.log('✅', n); } else { fail++; console.log('❌', n); } };
@@ -93,14 +94,14 @@ const ageSmall = await page.locator('.album-day-age').first().evaluate((el) => {
   return { ageFs: parseFloat(s.fontSize), titleFs: parseFloat(h2.fontSize), muted: s.color !== h2.color || el.classList.contains('muted') };
 });
 check(`第X天字号小于标题 (${ageSmall.ageFs}<${ageSmall.titleFs})`, ageSmall.ageFs < ageSmall.titleFs && ageSmall.muted);
-check(`版本 ${APP_V}`, APP_V === '1.12.15');
+check(`版本 ${APP_V}`, APP_V === '1.15.0');
 
 await page.screenshot({ path: path.join(shotDir, '69-album-day-age-small.png'), fullPage: true });
 
 await page.goto(`http://127.0.0.1:${APP_PORT}/#/settings`);
 await page.waitForTimeout(500);
 const ver = await page.locator('#appVer').innerText();
-check(`设置页版本 ${ver}`, ver.includes('v1.12.15'));
+check(`设置页版本 ${ver}`, ver.includes('v1.15.0'));
 await page.screenshot({ path: path.join(shotDir, '70-settings-v1.12.15.png'), fullPage: true });
 
 check('无页面 JS 错误', errors.length === 0);
