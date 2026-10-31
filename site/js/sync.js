@@ -1,3 +1,4 @@
+import { ensureRemoteThumb } from './photos.js';
 // 云同步（可选）：多台设备、以及助手在盒子上用命令行添加的事项，双向同步。
 // 只有 config.js 里配置了 syncApi（同步服务地址）才会显示/启用；数据在本机加密后再上传（见 sync-core.js）。
 // 合并：每个事项按 updatedAt「最后写入者胜」；删除用 tombstone 同步；一键生成的计划按 scheduleId 去重。
@@ -64,18 +65,6 @@ function profileTime() {
   return st.profileUpdatedAt || (st.babyBirthday || st.babyName ? 1 : 0);
 }
 
-async function shrinkThumb(url, w, q) {
-  try {
-    if (typeof Image === 'undefined' || typeof document === 'undefined') return null;
-    const img = new Image(); img.src = url; await img.decode();
-    const k = Math.min(1, w / Math.max(img.width, img.height));
-    const c = document.createElement('canvas');
-    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', q);
-  } catch { return null; }
-}
-
 // 本机需要上传的变更
 async function collectChanges(enc) {
   const changes = [];
@@ -98,14 +87,12 @@ async function collectChanges(enc) {
     const rid = PH + ph.id;
     presentPh.add(rid);
     if (meta.acked[rid] !== ph.updatedAt) {
-      let data = await core.seal(enc, rid, ph.updatedAt, { type: 'photo', photo: ph });
-      // 缩略图太大（超 32KB 单条上限）→ 再压缩一次缩略图后上传
-      for (const [w, q] of [[240, 0.6], [160, 0.5]]) {
-        if (data.length <= 30 * 1024 || !ph.thumbData) break;
-        const t = await shrinkThumb(ph.thumbData, w, q);
-        if (t) data = await core.seal(enc, rid, ph.updatedAt, { type: 'photo', photo: { ...ph, thumbData: t } });
-      }
-      changes.push({ id: rid, updatedAt: ph.updatedAt, deleted: false, data });
+      // 大缩略图走照片服务，不占 Worker 单条 32KB；离线/失败保留本机原质量并重试。
+      let photo = ph;
+      try { photo = await ensureRemoteThumb(ph); } catch { /* 小图可暂用旧协议，大图留待下次 */ }
+      const payload = photo.thumbRemote ? { ...photo, thumbData: '' } : photo;
+      const data = await core.seal(enc, rid, photo.updatedAt, { type: 'photo', photo: payload });
+      changes.push({ id: rid, updatedAt: photo.updatedAt, deleted: false, data });
     }
   }
   for (const rid of Object.keys(meta.acked)) {

@@ -1,6 +1,7 @@
-// 数据层：所有数据保存在本机 localStorage，无需登录。
+// 数据层：元数据保存在本机 localStorage，缩略图在 IndexedDB，无需登录。
 // 结构可扩展：以后可加入 growth（生长记录）、feeding（喂养记录）等集合。
 import { fillWindow } from './windows.js';
+import { readThumb, writeThumb, hasStoredThumb, deleteThumb } from './thumbs.js';
 const KEY = 'babyrecord.v1';
 const SCHEMA_VERSION = 1;
 export const CATEGORY_KEYS = ['vaccine', 'paidvax', 'checkup', 'other'];
@@ -100,6 +101,8 @@ export function normalizePhoto(p) {
     width: Number(p.width) || 0,
     height: Number(p.height) || 0,
     thumbData: typeof p.thumbData === 'string' ? p.thumbData : '', // data:image/jpeg;base64,… 最长边约 400
+    thumbRemote: !!p.thumbRemote,
+    mediumReady: !!p.mediumReady,
     kind: p.kind === 'video' ? 'video' : 'photo', // v1.10.0
     duration: Number(p.duration) || 0,             // 视频秒数
     chunks: Number(p.chunks) || 0,                 // 视频密文分块数
@@ -152,8 +155,38 @@ export function normalizeMed(m) {
 function validYmd(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s || '') ? s : ''; }
 function bdayNow() { try { return state?.settings?.babyBirthday || ''; } catch (e) { return ''; } } // 加载期间 state 尚未赋值时也安全
 
+function persist() {
+  const photos = state.photos.map((p) => hasStoredThumb(p.id, p.thumbData) ? { ...p, thumbData: '' } : p);
+  localStorage.setItem(KEY, JSON.stringify({ ...state, photos }));
+}
+const hydrating = new Set();
+let thumbEmitTimer, thumbPersistTimer;
+function notifyThumbs() {
+  if (!thumbEmitTimer) thumbEmitTimer = setTimeout(() => { thumbEmitTimer = null; emit(); }, 16);
+}
+function persistThumbs() {
+  if (!thumbPersistTimer) thumbPersistTimer = setTimeout(() => {
+    thumbPersistTimer = null;
+    try { persist(); } catch { /* localStorage 旧副本仍在，IDB 已提交 */ }
+  }, 16);
+}
+function hydrateThumbs() {
+  for (const p of state.photos) {
+    if (p.thumbData) {
+      if (!hasStoredThumb(p.id, p.thumbData)) writeThumb(p.id, p.thumbData).then(persistThumbs).catch(() => { /* 旧副本保留，稍后重试 */ });
+    } else if (!hydrating.has(p.id)) {
+      hydrating.add(p.id);
+      readThumb(p.id).then((src) => {
+        const cur = store.getPhoto(p.id);
+        if (src && cur && !cur.thumbData) { cur.thumbData = src; notifyThumbs(); }
+      }).catch(() => {}).finally(() => hydrating.delete(p.id));
+    }
+  }
+}
+function emit() { listeners.forEach((fn) => { try { fn(state); } catch (e) { console.error(e); } }); }
 function save() {
-  localStorage.setItem(KEY, JSON.stringify(state));
+  persist();
+  hydrateThumbs();
   listeners.forEach((fn) => { try { fn(state); } catch (e) { console.error(e); } });
 }
 
@@ -176,6 +209,7 @@ export const store = {
   },
   deletePhoto(id) {
     state.photos = state.photos.filter((p) => p.id !== id);
+    deleteThumb(id).catch(() => {});
     save();
   },
   growth() { return state.growth; },
@@ -287,9 +321,9 @@ export const store = {
       if (i >= 0) state.events[i] = e; else state.events.push(e);
     }
     const pdel = new Set(photosDeletes);
-    if (pdel.size) state.photos = state.photos.filter((p) => !pdel.has(p.id));
+    if (pdel.size) { state.photos = state.photos.filter((p) => !pdel.has(p.id)); pdel.forEach((id) => deleteThumb(id).catch(() => {})); }
     for (const ph of photosUpserts) {
-      const p = normalizePhoto(ph);
+      const p = normalizePhoto({ ...ph, thumbData: ph.thumbData || this.getPhoto(ph.id)?.thumbData || '' });
       const i = state.photos.findIndex((x) => x.id === p.id);
       if (i >= 0) state.photos[i] = p; else state.photos.push(p);
     }
@@ -323,3 +357,6 @@ export const store = {
   },
   resetAll() { state = defaults(); save(); },
 };
+
+// 延至模块初始化完成，旧数据迁移失败不会覆盖 localStorage 的缩略图。
+if (typeof indexedDB !== 'undefined') queueMicrotask(hydrateThumbs);
