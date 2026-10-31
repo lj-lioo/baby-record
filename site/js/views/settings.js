@@ -16,7 +16,7 @@ import {
   ROLES, ADMIN_ROLES, ELDER_ROLES, roleCapabilityText, openRolePicker, copyInviteFor,
 } from '../roles.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.14.2';
+export const APP_BUILD = '1.15.0';
 
 /** 编辑宝宝名字 + 生日（云同步 profile）；保存后触发 rerender */
 export function openBabyProfile({ onSaved } = {}) {
@@ -143,10 +143,11 @@ export function renderSettings(root) {
 
     <section class="card" id="photoCard">
       <h2>📷 照片服务（极空间）</h2>
-      <p class="small muted" style="margin-top:0">相册原图/视频以普通照片文件存到你家极空间（按 年/年-月 分文件夹，极空间相册可直接看）；缩略图和说明走云同步。<b>注意：</b>App 本身在 HTTPS（GitHub Pages）上，浏览器禁止它去连局域网的 <span class="kbd">http://192.168.x.x</span>（Safari 地址栏直接打开可以，App 里会 Load failed）。照片服务地址必须是 <b>https://…</b>（买域名后用 Cloudflare Tunnel 指到极空间 8789）。</p>
+      <p class="small muted" style="margin-top:0">相册原图/视频以普通照片文件存到你家极空间（按 年/年-月 分文件夹，极空间相册可直接看）；说明和图片引用走云同步；缩略图保存在本机、通过照片服务共享。<b>注意：</b>App 本身在 HTTPS（GitHub Pages）上，浏览器禁止它去连局域网的 <span class="kbd">http://192.168.x.x</span>（Safari 地址栏直接打开可以，App 里会 Load failed）。照片服务地址必须是 <b>https://…</b>（买域名后用 Cloudflare Tunnel 指到极空间 8789）。</p>
       <div class="field"><label for="photoApi">照片服务地址</label>
         <input id="photoApi" class="input" placeholder="https://photo.jiayouzhaozhao.cn" value="${esc(st.photoApi || window.BABY_CONFIG?.photoApi || '')}"></div>
       <div class="btn-row"><button class="btn secondary" id="btnPhotoTest">测试连接</button><button class="btn ghost" id="btnPhotoSave">保存</button></div>
+      <div class="field"><label for="photoToken">照片服务令牌（NAS 未设 PHOTO_TOKEN 时留空）</label><input id="photoToken" class="input" type="password" autocomplete="off" value="${esc(st.photoToken || '')}"></div>
       <p class="small muted" id="photoTestResult" style="margin-top:8px"></p>
       <div id="migrateBox" style="margin-top:8px"></div>
       <h3 style="margin:14px 0 6px;font-size:15px">🎬 视频（省流量）</h3>
@@ -156,7 +157,7 @@ export function renderSettings(root) {
         <input id="videoCacheMB" class="input" type="number" inputmode="numeric" min="50" max="5000" value="${esc(String(st.videoCacheMB || 500))}"></div>
       <div class="btn-row"><button class="btn ghost" id="btnVideoCacheClear">清空本机视频缓存</button></div>
       <p class="small muted" id="videoCacheInfo" style="margin-top:6px">本机视频缓存：计算中…</p>
-      <p class="note small">视频不会自动下载或播放；点开后显示大小，点「播放」才下载，下载过的存本机（超出缓存上限时先删最早的）。超过大小上限会拒绝，请在 iPhone 相册里剪短后再传。</p>
+      <p class="note small">视频点开后静音自动播放，可拖动进度和横屏观看；明文视频边下边播，旧加密视频仍需先解密。超过大小上限会拒绝，请在 iPhone 相册里剪短后再传。</p>
       <p class="note small">部署说明见仓库 <code>sync/photo-server/README.md</code>（极空间 Docker 挂载文件夹、端口 8789）。未填地址时仍可本机选图预览，元数据可先同步，全家看原图需填地址。</p>
     </section>
 
@@ -233,7 +234,7 @@ export function renderSettings(root) {
   if (syncAvailable()) bindSyncCard(root);
 
   q('#btnPhotoSave').onclick = () => {
-    store.updateSettings({ photoApi: q('#photoApi').value.trim().replace(/\/+$/, '') });
+    store.updateSettings({ photoToken: q('#photoToken').value.trim(), photoApi: q('#photoApi').value.trim().replace(/\/+$/, '') });
     toast('已保存照片服务地址');
   };
   const clampMB = (v, lo, hi, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n > 0 ? Math.min(hi, Math.max(lo, n)) : d; };
@@ -250,7 +251,7 @@ export function renderSettings(root) {
   const box = q('#migrateBox'); if (box) box.innerHTML = '';
   q('#btnPhotoTest').onclick = async () => {
     const url = q('#photoApi').value.trim().replace(/\/+$/, '');
-    store.updateSettings({ photoApi: url });
+    store.updateSettings({ photoApi: url, photoToken: q('#photoToken').value.trim() });
     const el = q('#photoTestResult');
     el.textContent = '测试中…';
     const r = await pingPhotoServer(url);
