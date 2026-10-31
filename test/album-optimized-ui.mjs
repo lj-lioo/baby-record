@@ -1,4 +1,4 @@
-// v1.15.0：增量节点、月份折叠、先缩略图后中图、放大原图、滑动/下拉、资源释放。
+// v1.15.1 轮播滑动；v1.15.0：增量节点、月份折叠、先缩略图后中图、放大原图、滑动/下拉、资源释放。
 import assert from 'node:assert/strict';
 import { albumHarness, addPhoto } from './support/album-harness.mjs';
 const app = await albumHarness();
@@ -32,13 +32,13 @@ try {
   const gate = new Promise((r) => { release = r; });
   await family.route('**/v1/file/*-m?*', async (r) => { await gate; await r.continue(); });
   await family.locator(`.album-cell[data-id="${photo.id}"]`).click();
-  assert.match(await family.locator('#avImg img').getAttribute('src'), /^data:image/);
+  assert.match(await family.locator('#avImg .is-current .av-zoom > img:last-of-type').getAttribute('src'), /^data:image/);
   assert.ok(!(await family.locator('.album-fullscreen').innerText()).includes('加载中'));
   assert.match(await family.locator('#avTitle').innerText(), /今天.*第\d+天/);
   release();
-  await family.waitForFunction((id) => document.querySelector('#avImg img')?.src.includes(id + '-m'), photo.id);
+  await family.waitForFunction((id) => document.querySelector('#avImg .is-current .av-zoom > img:last-of-type')?.src.includes(id + '-m'), photo.id);
   await family.locator('#avImg').dblclick();
-  await family.waitForFunction((id) => document.querySelector('#avImg img')?.src.includes('/' + id + '?'), photo.id);
+  await family.waitForFunction((id) => document.querySelector('#avImg .is-current .av-zoom > img:last-of-type')?.src.includes('/' + id + '?'), photo.id);
   assert.ok(Number(await family.locator('#avImg').getAttribute('data-scale')) > 1);
   await family.locator('#avImg').dblclick();
   const box = await family.locator('#avImg').boundingBox(); const cy = box.y + box.height / 2;
@@ -51,7 +51,7 @@ try {
   await family.mouse.move(190, cy); await family.mouse.down(); await family.waitForTimeout(650); await family.mouse.up();
   assert.equal(await family.locator('#avActions').isVisible(), true, '长按打开底部菜单');
   await family.click('#avActionsClose');
-  await family.mouse.move(310, cy); await family.mouse.down(); await family.mouse.move(70, cy, { steps: 8 }); await family.mouse.up();
+  await family.mouse.move(310, cy); await family.mouse.down(); await family.mouse.move(70, cy, { steps: 8 }); await family.mouse.up(); await family.waitForTimeout(450);
   assert.match(await family.locator('#avTitle').innerText(), /昨天|月\d+日/);
   await family.click('#avClose'); await family.waitForSelector('.album-fullscreen', { state: 'detached' });
   // 本机尚未上传的原图仍需临时 blob URL；切换、关闭都必须释放。
@@ -63,7 +63,8 @@ try {
   });
   const local = await addPhoto(page, { upload: false, takenAt: Date.now() + 1000 });
   await page.locator(`.album-cell[data-id="${local.id}"]`).click();
-  await page.waitForFunction(() => document.querySelector('#avImg img')?.src.startsWith('blob:'));
+  await page.waitForFunction(() => document.querySelector('#avImg .is-current .av-zoom > img:last-of-type')?.src.startsWith('blob:'));
+  await page.waitForTimeout(300); // 等打开的 FLIP 动画结束
   await page.mouse.move(190, 220); await page.mouse.down(); await page.mouse.move(190, 390, { steps: 7 });
   assert.ok(await page.locator('.album-fullscreen').evaluate((el) => el.style.backgroundColor.startsWith('rgba')));
   await page.mouse.up(); await page.waitForSelector('.album-fullscreen', { state: 'detached' });
