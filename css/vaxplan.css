@@ -1,0 +1,21 @@
+/* 一键生成疫苗计划 */
+.vp-list { list-style: none; margin: 0 0 8px; padding: 0; border-top: 1px solid var(--line); }
+.vp-item { border-bottom: 1px solid var(--line); }
+.vp-item label { display: flex; gap: 10px; align-items: flex-start; padding: 9px 2px; }
+.vp-item input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--vaccine); }
+.vp-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vp-title { font-weight: 700; font-size: 15px; }
+.vp-meta { font-size: 13px; color: #6E6070; }
+.vp-st { font-size: 12px; font-weight: 700; color: #9A8C90; }
+.vp-st.ok { color: var(--checkup); }
+.vp-hint { font-size: 12px; color: #B0A2A6; }
+.vp-item.is-past .vp-title, .vp-item.is-have .vp-title { color: #9A8C90; }
+.vp-item.is-opt .vp-title { color: #7A6A6F; }
+.cta-btns { display: flex; gap: 8px; margin-top: 8px; }
+.cta-btns .btn { padding: 7px 12px; font-size: 14px; flex: none; }
+[data-kind="checkup"] .vp-item input { accent-color: var(--checkup); }
+[data-kind="checkup"] #vp-ok { background: var(--checkup); }
+[data-kind="paid"] .vp-item input { accent-color: var(--paidvax); }
+[data-kind="paid"] #vp-ok { background: var(--paidvax); }
+.vp-item.is-req .vp-title::after { content: "已安排"; margin-left: 6px; font-size: 11px; font-weight: 700; color: #fff; background: var(--paidvax); border-radius: 999px; padding: 1px 6px; vertical-align: 1px; }
+.vp-group { margin: 10px 0 2px; font-size: 13px; font-weight: 800; color: var(--paidvax); }

@@ -1,0 +1,430 @@
+// 首页：醒目的近期提醒卡片 + 月历（含接种窗口）+ 本月全部事项（按计划日期分组）
+import { store } from '../store.js';
+import { CATEGORIES } from '../categories.js';
+import { daysBetween, todayStr, addDays, ymd, parseYmd, cnDate, weekday, countdown, pad } from '../dates.js';
+import { fireAtOf, reminderLabel } from '../reminders.js';
+import { esc, toast, openSheet, closeSheet } from '../ui.js';
+import { openEditor } from './editor.js';
+import { canEditEvents, requireEditEvents, requireAlarm } from '../roles.js';
+import { openAlarmSheet, alarmState } from './actions.js';
+import { openICS } from '../ics.js';
+import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
+import { openPlannedSheet } from './planned.js';
+import { windowOf, windowStatus, planOutside } from '../windows.js';
+import { renderPaidCard, markDone } from './paidcat.js';
+import { renderFreeVaxCard } from './freevax.js';
+import { replacementHints, priceBriefOfSid } from '../paidvax.js';
+import { ageOnDate } from '../growth.js';
+import { openBabyProfile } from './settings.js';
+import { openVoice } from './voice.js';
+
+const ui = { month: null, selected: null, focus: null, scrollTo: null, pendOpen: false, doneOpen: false, dayOpen: null, details: new Set() }; // v1.12.7：待完成/已完成每次打开默认收起，不记忆
+let repHints = new Map(); // v1.7.0：已计划的自费疫苗可替代的免费剂次
+// v1.12.9：被自费替代的免费剂次在日历/小框/近期提醒/月列表里完全不显示（只在免费疫苗合集卡里显示）
+const isRep = (e) => e.category === 'vaccine' && !e.done && !!repHints.get(e.scheduleId);
+const visEvents = () => store.events().filter((e) => !isRep(e));
+const visOn = (d) => store.eventsOn(d).filter((e) => !isRep(e));
+
+export function renderHome(root) {
+  const today = todayStr();
+  if (!ui.selected) ui.selected = today;
+  if (!ui.month) ui.month = ui.selected.slice(0, 7);
+
+  const st = store.state.settings;
+  const babyName = (st.babyName || '').trim() || '宝宝记录';
+  const age = ageOnDate(st.babyBirthday, today);
+  const totalDays = st.babyBirthday && st.babyBirthday <= today ? daysBetween(st.babyBirthday, today) + 1 : 0; // v1.10.1 出生当天＝第1天
+  const ageBit = age ? `已出生${age}` : '点此设置生日';
+  const sub = `${ageBit} · ${cnDate(today, true)} ${weekday(today)}`;
+
+  root.innerHTML = `
+    <header class="topbar">
+      <button type="button" class="logo logo-btn" id="btnBabyProfile" aria-label="编辑宝宝名字和生日">
+        <img src="icons/icon-192.png" alt="">
+        <div><h1>${esc(babyName)}${totalDays ? `<span class="title-days" id="titleDays">（${totalDays}天）</span>` : ''}</h1><div class="sub">${esc(sub)}</div></div>
+      </button>
+    </header>
+    <button type="button" class="voice-cta" id="btnVoice">🎤 说一句话记事<span>如「11月5号买奶粉」</span></button>
+    <div id="vaxCta"></div>
+    <section class="card remind-card" id="remindCard"></section>
+    <section class="card" id="calCard"></section>
+    <section class="card" id="dayCard"></section>
+    <section class="card paid-card free-card" id="freeVaxCard"></section>
+    <section class="card paid-card" id="paidCard"></section>`;
+
+  root.querySelector('#btnBabyProfile').onclick = () => openBabyProfile();
+  root.querySelector('#btnVoice').onclick = () => openVoice();
+  repHints = replacementHints(store.events()); // 日历针标红叉也要用，须在 renderCalendar 之前
+  renderReminderCard(root.querySelector('#remindCard'));
+  renderCalendar(root.querySelector('#calCard'));
+  renderMonthList(root.querySelector('#dayCard'));
+  renderFreeVaxCard(root.querySelector('#freeVaxCard'));
+  renderPaidCard(root.querySelector('#paidCard'));
+  renderVaxCta(root.querySelector('#vaxCta'));
+  if (ui.scrollTo) {
+    const key = ui.scrollTo;
+    ui.scrollTo = null;
+    const g = root.querySelector(key.startsWith('d-') ? `#g${key}` : `#g-${key}`); // d-YYYY-MM-DD → #gd-...
+    if (g) { g.classList.add('flash'); requestAnimationFrame(() => g.scrollIntoView({ behavior: 'smooth', block: 'start' })); setTimeout(() => g.classList.remove('flash'), 1600); }
+  }
+}
+
+export function selectDate(d) { ui.pendOpen = true; ui.selected = d; ui.month = d.slice(0, 7); }
+
+function renderReminderCard(el) {
+  const today = todayStr();
+  const end = addDays(today, 7);
+  const overdueFrom = addDays(today, -30);
+  const items = visEvents()
+    .filter((e) => (e.date >= today && e.date <= end && !e.done) || (e.date < today && e.date >= overdueFrom && !e.done && e.category !== 'other'))
+    .sort((a, b) => (a.date + (a.time || '99')).localeCompare(b.date + (b.time || '99')));
+  const urgent = items.some((e) => e.date <= today);
+  el.classList.toggle('has-urgent', urgent);
+  el.innerHTML = `
+    <h2>🔔 近期提醒 <span class="muted small" style="font-weight:500">今天 ~ 未来7天</span></h2>
+    ${items.length ? `<ul class="rlist">${items.map((e) => {
+      const c = CATEGORIES[e.category], cd = countdown(e.date);
+      const past = e.date < today;
+      return `<li class="ritem lvl-${cd.level}" data-id="${e.id}">
+        <div class="ricon" style="background:var(--${e.category}-soft)">${c.icon}</div>
+        <div class="rbody"><div class="rtitle">${esc(e.title)}</div>
+          <div class="rmeta">${cnDate(e.date)} ${weekday(e.date)}${e.time ? ' ' + e.time : ''} · ${c.label}${nextRemText(e)}${!past ? alarmMini(e) : ''}</div></div>
+        ${canEditEvents() && (past || cd.level === 'today') ? `<button class="mini-btn" data-done="${e.id}">${past ? '已完成?' : '完成'}</button>` : ''}
+        <span class="pill lvl-${cd.level}">${cd.text}</span>
+      </li>`;
+    }).join('')}</ul>` : '<div class="empty">🎈 未来7天没有安排，好好陪宝宝玩吧～</div>'}`;
+  el.querySelectorAll('.ritem').forEach((li) => {
+    li.onclick = (ev) => {
+      if (ev.target.closest('[data-done]')) return;
+      const e = store.getEvent(li.dataset.id);
+      if (e) openEventDetail(e);
+    };
+  });
+  el.querySelectorAll('[data-done]').forEach((b) => {
+    b.onclick = () => { if (!requireEditEvents()) return; markDone(b.dataset.done); };
+  });
+}
+
+// v1.12.4：近期提醒点开 → 底部详情面板（完整信息 + 已完成 / 设为闹钟提醒；不放改日期）
+export function openEventDetail(e) {
+  const c = CATEGORIES[e.category];
+  const bday = store.state.settings.babyBirthday;
+  const w = windowOf(e, bday);
+  const noun = e.category === 'checkup' ? '体检' : e.category === 'other' ? '' : '接种';
+  const rems = (e.reminders || []).map((r) => ({ at: fireAtOf(e, r), label: reminderLabel(r) })).filter((x) => x.at != null).sort((a, b) => a.at - b.at);
+  const price = e.category === 'paidvax' ? priceBriefOfSid(e.scheduleId) : '';
+  const rep = !e.done ? replacementHints(store.events()).get(e.scheduleId) : '';
+  openSheet(`<div class="ev-detail">
+    <h3>${c.icon} ${esc(e.title)}</h3>
+    <div class="evd-row"><span class="tag ${c.cls}">${c.label}</span>${e.done ? ' <span class="tag done">已完成</span>' : ''}</div>
+    <div class="evd-row">📅 ${cnDate(e.date)} ${weekday(e.date)} ${esc(e.time || '全天')}</div>
+    ${w ? `<div class="evd-row">🪟 ${noun}窗口${w.ref ? '（参考）' : ''}：${esc(winText(w))} · <b>${esc(windowStatus(e, w, todayStr()).text)}</b></div>` : ''}
+    ${price ? `<div class="evd-row">💰 襄阳参考价 ${esc(price)}（以当地门诊为准）</div>` : ''}
+    <div class="evd-row">${rems.length ? `⏰ ${rems.map((x) => esc(x.label)).join('、')}` : '⏰ 未设置提醒'}</div>
+    ${rep ? `<div class="evd-small">💡 ${esc(rep)}</div>` : ''}
+    ${w && w.note ? `<div class="evd-small">ℹ️ ${esc(w.note)}</div>` : ''}
+    ${e.note ? `<div class="evd-small">📝 ${esc(e.note)}</div>` : ''}
+    <div class="btn-row" style="margin-top:14px">
+      ${e.done || !canEditEvents() ? '' : '<button class="btn secondary" id="evdAlarm">⏰ 设为闹钟提醒</button><button class="btn" id="evdDone">✅ 已完成</button>'}
+      <button class="btn ghost" id="evdClose">关闭</button>
+    </div></div>`, (sh) => {
+    sh.querySelector('#evdClose').onclick = closeSheet;
+    const d = sh.querySelector('#evdDone'), a = sh.querySelector('#evdAlarm');
+    if (d) d.onclick = () => { if (!requireEditEvents()) return; closeSheet(); markDone(e.id); };
+    if (a) a.onclick = () => { if (!requireAlarm()) return; closeSheet(); openAlarmSheet(store.getEvent(e.id)); };
+  });
+}
+
+function alarmBtn(e) {
+  const st = alarmState(e);
+  if (st === 'added') return '<button class="chip-btn alarm-btn added" data-act="alarm">✅ 已设闹钟</button>';
+  if (st === 'changed') return '<button class="chip-btn alarm-btn warn" data-act="alarm">⚠️ 时间已改，重设闹钟</button>';
+  return '<button class="chip-btn alarm-btn" data-act="alarm">⏰ 设为闹钟提醒</button>';
+}
+function alarmMini(e) {
+  const st = alarmState(e);
+  return st === 'added' ? ' · <span class="ok">已设闹钟</span>' : st === 'changed' ? ' · <span class="bad">需重设闹钟</span>' : ' · <span class="bad">未设闹钟</span>';
+}
+
+function nextRemText(e) {
+  const now = Date.now();
+  const next = (e.reminders || []).map((r) => fireAtOf(e, r)).filter((t) => t != null && t > now).sort((a, b) => a - b)[0];
+  if (!next) return '';
+  const d = new Date(next);
+  return ` · ⏰${ymd(d) === todayStr() ? '今天' : `${d.getMonth() + 1}/${d.getDate()}`} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// 日历：● 实心圆点 = 计划日；○ 空心圆点 = 最早可接种日（与计划日不同时）；
+// 选中的事项（点某天或点卡片上的「🪟 窗口」）：窗口天数淡色底、最早日虚线圈、计划日实心、最迟日「止」。
+function renderCalendar(el) {
+  const [y, m] = ui.month.split('-').map(Number);
+  const first = new Date(y, m - 1, 1);
+  const startOffset = first.getDay();
+  const gridStart = new Date(y, m - 1, 1 - startOffset);
+  const today = todayStr();
+  const bday = store.state.settings.babyBirthday;
+  const byDate = {}, byEarly = {};
+  for (const e of visEvents()) {
+    (byDate[e.date] ||= []).push(e);
+    if (e.done) continue;
+    const w = windowOf(e, bday);
+    if (w && w.earliest !== e.date) (byEarly[w.earliest] ||= []).push(e);
+  }
+  const fe = ui.focus ? store.getEvent(ui.focus) : null;
+  const fw = fe ? windowOf(fe, bday) : null;
+  if (fe && !fw) ui.focus = null;
+  const fcat = fe ? fe.category : '';
+  const fEnd = fw ? (fw.latest || fw.earliest) : '';
+  let cells = '';
+  const rows = Math.ceil((startOffset + new Date(y, m, 0).getDate()) / 7);
+  for (let i = 0; i < rows * 7; i++) {
+    const d = new Date(gridStart); d.setDate(gridStart.getDate() + i);
+    const ds = ymd(d);
+    const evs = byDate[ds] || [];
+    const early = byEarly[ds] || [];
+    // 有未替代的免费剂次 → 普通紫针；仅剩被自费替代的 → 紫针+红叉；否则才轮到自费💰
+    const hasActiveV = evs.some((e) => e.category === 'vaccine' && !e.done && !repHints.get(e.scheduleId));
+    const hasRepV = evs.some((e) => e.category === 'vaccine' && !e.done && repHints.get(e.scheduleId));
+    const hasV = hasActiveV || hasRepV;
+    const hasP = !hasV && evs.some((e) => e.category === 'paidvax' && !e.done);
+    const inWin = fw && ds >= fw.earliest && ds <= fEnd;
+    const cls = ['day', d.getMonth() !== m - 1 ? 'other-month' : '', ds === today ? 'today' : '', ds === ui.selected ? 'selected' : '', hasV ? 'has-vaccine' : '', hasRepV && !hasActiveV ? 'has-replaced' : '', hasP ? 'has-paidvax' : '',
+      inWin ? `win win-${fcat}` : '', inWin && (ds === fw.earliest || d.getDay() === 0) ? 'win-s' : '', inWin && (ds === fEnd || d.getDay() === 6) ? 'win-e' : '',
+      fw && ds === fw.earliest && ds !== fe.date ? `early-focus ef-${fcat}` : '', fe && ds === fe.date ? `plan-focus pf-${fcat}` : '', fw && fw.latest && ds === fw.latest ? 'late-focus' : ''].filter(Boolean).join(' ');
+    const marks = [...evs.map((e) => `<i class="dot ${CATEGORIES[e.category].cls} ${e.done ? 'done' : ''}"></i>`), ...early.map((e) => `<i class="ring ${CATEGORIES[e.category].cls}" title="最早可接种"></i>`)].slice(0, 4).join('');
+    const label = `${cnDate(ds)}${evs.length ? `，${evs.length}个事项` : ''}${early.length ? `，${early.length}个最早可接种` : ''}${hasRepV && !hasActiveV ? '，有已被自费替代的免费疫苗' : ''}`;
+    const vBadge = hasActiveV ? '<span class="vbadge">💉</span>'
+      : hasRepV ? '<span class="vbadge replaced" title="已被自费疫苗替代，可不打（以门诊为准）">💉</span>'
+      : hasP ? '<span class="vbadge paid">💰</span>' : '';
+    cells += `<button class="${cls}" data-date="${ds}" aria-label="${label}">
+      ${vBadge}${fw && fw.latest && ds === fw.latest ? '<span class="lbadge">止</span>' : ''}<span class="num">${d.getDate()}</span><span class="dots">${marks}</span></button>`;
+  }
+  el.innerHTML = `
+    <div class="cal-head">
+      <button class="icon-btn" id="prevM" aria-label="上个月">‹</button>
+      <div style="text-align:center"><div class="month">${y}年${m}月</div>${ui.month !== today.slice(0, 7) ? '<button class="today-btn" id="toToday">回到今天</button>' : ''}</div>
+      <button class="icon-btn" id="nextM" aria-label="下个月">›</button>
+    </div>
+    <div class="weekdays">${['日', '一', '二', '三', '四', '五', '六'].map((w) => `<div>${w}</div>`).join('')}</div>
+    <div class="days">${cells}</div>
+    <div class="legend"><span><i class="dot cat-vaccine"></i>疫苗</span><span><i class="dot cat-paidvax"></i>自费疫苗</span><span><i class="dot cat-checkup"></i>体检</span><span><i class="dot cat-other"></i>其他</span></div>
+    <div class="legend2"><span><i class="dot" style="background:var(--muted)"></i>计划日</span><span><i class="ring" style="border-color:var(--muted)"></i>最早可接种</span><span><i class="band"></i>窗口</span><span><b class="lb-mini">止</b>最迟</span></div>
+    ${ui.dayOpen && (byDate[ui.dayOpen] || []).length ? dayPanel(ui.dayOpen, byDate[ui.dayOpen], bday) : fe ? `<div class="focus-bar ${CATEGORIES[fcat].cls}"><span class="fb-txt">🪟 <b>${esc(fe.title)}</b>：${esc(winText(fw))}</span><button class="fb-x" id="fbX" aria-label="取消显示窗口">✕</button></div>` : '<div class="focus-hint">点日期或卡片上的「🪟 窗口」，在日历上看窗口</div>'}`;
+  el.querySelector('#prevM').onclick = () => shiftMonth(-1);
+  el.querySelector('#nextM').onclick = () => shiftMonth(1);
+  el.querySelector('#fbX')?.addEventListener('click', () => { ui.focus = null; rerender(); });
+  el.querySelector('#dpX')?.addEventListener('click', () => { ui.dayOpen = null; ui.focus = null; rerender(); });
+  el.querySelectorAll('[data-dp]').forEach((li) => { li.onclick = () => { const e = store.getEvent(li.dataset.dp); if (e) openEventDetail(e); }; });
+  const tt = el.querySelector('#toToday');
+  if (tt) tt.onclick = () => { const t = todayStr(); ui.selected = t; ui.month = t.slice(0, 7); ui.dayOpen = visOn(t).length ? t : null; rerender(); };
+  el.querySelectorAll('.day').forEach((b) => {
+    b.onclick = () => {
+      const ds = b.dataset.date;
+      const dayEvs = visOn(ds);
+      // v1.12.9：第一次点 → 只选中＋显示当天简介小框；再点同一天 → 有事项则展开分组并滚到该天，空白日则添加事项
+      if (ds === ui.selected) {
+        if (!dayEvs.length) { if (!requireEditEvents()) return; openEditor({ date: ds }); return; }
+        if (ui.dayOpen === ds) {
+          if (dayEvs.some((e) => !e.done)) ui.pendOpen = true; else ui.doneOpen = true;
+          ui.scrollTo = dayEvs.some((e) => !e.done) ? ds : `d-${ds}`;
+        } else ui.dayOpen = ds;
+        rerender(); return;
+      }
+      ui.selected = ds;
+      if (ds.slice(0, 7) !== ui.month) ui.month = ds.slice(0, 7);
+      ui.focus = pickFocus(ds, byEarly[ds] || []);
+      ui.dayOpen = dayEvs.length ? ds : null;
+      rerender();
+    };
+  });
+}
+
+// 点某天时选中显示窗口的事项：当天计划的第一个有窗口、未完成的事项；否则当天是其最早日的事项
+function pickFocus(ds, early) {
+  const bday = store.state.settings.babyBirthday;
+  const cands = [...visOn(ds).filter((e) => !e.done), ...early]
+    .map((e) => ({ e, w: windowOf(e, bday) })).filter((x) => x.w);
+  if (!cands.length) return null;
+  // 优先显示有「最迟日期」、且最迟日期最近的事项（窗口最有参考价值）
+  cands.sort((a, b) => (a.w.latest || '9999').localeCompare(b.w.latest || '9999'));
+  return cands[0].e.id;
+}
+
+const yr = (d) => d.slice(0, 4) !== todayStr().slice(0, 4);
+const fmtD = (d) => `${cnDate(d, yr(d))} ${weekday(d)}`;
+function winText(w) {
+  return w.latest ? `${cnDate(w.earliest, yr(w.earliest))} – ${cnDate(w.latest, yr(w.latest) || w.latest.slice(0, 4) !== w.earliest.slice(0, 4))}（最迟）` : `${cnDate(w.earliest, yr(w.earliest))} 起（未规定最迟）`;
+}
+
+// v1.12.9 当天事项简介小框（日历下方）
+function dayPanel(ds, evs, bday) {
+  const ord = (e) => (e.time || '99') + e.title;
+  const rows = [...evs].sort((a, b) => ord(a).localeCompare(ord(b))).map((e) => {
+    const c = CATEGORIES[e.category] || CATEGORIES.other;
+    const rep = !e.done && e.category === 'vaccine' && repHints.get(e.scheduleId);
+    const w = !e.done ? windowOf(e, bday) : null;
+    const st = e.done ? '<span class="dp-st ok">✅已完成</span>' : rep ? '<span class="dp-st rep">✕被替代</span>' : '';
+    return `<li class="dp-row" data-dp="${e.id}"><i class="dot ${c.cls}"></i><span class="dp-t">${c.icon} ${esc(e.title)}${w ? `<small class="dp-w">🪟 ${esc(winText(w))}</small>` : ''}</span><span class="dp-time">${e.time || '全天'}</span>${st}</li>`;
+  }).join('');
+  return `<div class="day-panel" id="dayPanel"><div class="dp-head"><b>${fmtD(ds)} · ${evs.length} 个事项</b><span class="dp-hint">再点该日期看详情</span><button class="fb-x" id="dpX" aria-label="关闭">✕</button></div><ul class="dp-list">${rows}</ul></div>`;
+}
+
+function shiftMonth(n) {
+  const [y, m] = ui.month.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  ui.month = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  ui.dayOpen = null;
+  rerender();
+}
+const rerender = () => window.dispatchEvent(new CustomEvent('rerender'));
+
+function itemCard(e, today, bday) {
+  const c = CATEGORIES[e.category];
+  const w = windowOf(e, bday);
+  const noun = e.category === 'checkup' ? '体检' : e.category === 'other' ? '' : '接种';
+  const st = w ? windowStatus(e, w, today) : null;
+  const out = w ? planOutside(e.date, w) : '';
+  const overdue = !e.done && e.date < today;
+  const rems = (e.reminders || []).map((r) => ({ at: fireAtOf(e, r), label: reminderLabel(r) })).filter((x) => x.at != null).sort((a, b) => a.at - b.at);
+  const time = e.time || '全天';
+  const plan = w
+    ? (w.earliest === e.date ? `📅 计划 ${fmtD(e.date)} ${time}<span class="muted">（最早可${noun || '安排'}日）</span>` : `📅 最早 ${fmtD(w.earliest)} · <b>计划 ${fmtD(e.date)} ${time}</b>`)
+    : `🕒 ${time}`;
+  // v1.12.4：小字说明（替代提示 / 窗口说明 / 备注）默认折叠
+  const details = [
+    !e.done && repHints.get(e.scheduleId) ? `<div class="irep">💡 ${esc(repHints.get(e.scheduleId))}</div>` : '',
+    w && w.note && ui.focus !== e.id ? `<div class="inote">ℹ️ ${esc(w.note)}</div>` : '',
+    e.note ? `<div class="inote">📝 ${esc(e.note)}</div>` : '',
+  ].join('');
+  const dOpen = ui.details.has(e.id);
+  return `<div class="item ${c.cls} ${e.done ? 'is-done' : ''} ${overdue ? 'is-overdue' : ''} ${ui.focus === e.id ? 'is-focus' : ''}" data-id="${e.id}">
+    <div class="irow"><span style="font-size:20px">${c.icon}</span><span class="ititle">${esc(e.title)}</span>
+      ${e.done ? '<span class="tag done">已完成</span>' : overdue ? '<span class="tag overdue">已过期未完成</span>' : `<span class="tag ${c.cls}">${c.label}</span>`}</div>
+    <div class="iplan">${plan}</div>
+    ${w ? `<button type="button" class="iwin st-${st.key}" data-act="focus">🪟 ${noun}窗口${w.ref ? '（参考）' : ''}：${esc(winText(w))} · <b>${esc(st.text)}</b></button>` : ''}
+    ${e.category === 'paidvax' && priceBriefOfSid(e.scheduleId) ? `<div class="iprice">💰 襄阳参考价 ${esc(priceBriefOfSid(e.scheduleId))}（以当地门诊为准）</div>` : ''}
+    ${out === 'early' ? `<div class="iwarn">⚠️ 计划日早于最早${noun}日，请改计划日</div>` : out === 'late' ? `<div class="iwarn">⚠️ 计划日晚于最迟日期（逾期补种）</div>` : ''}
+    ${w && ui.focus === e.id && w.note ? `<div class="inote">ℹ️ ${esc(w.note)}</div>` : ''}
+    <div class="imeta">${rems.length ? `⏰ ${rems.map((x) => esc(x.label)).join('、')}` : '⏰ 未设置提醒'}</div>
+    ${details ? `<button type="button" class="det-toggle" data-act="details" aria-expanded="${dOpen}">${dOpen ? '收起 ▴' : '显示详情 ▾'}</button>
+    <div class="idetails" ${dOpen ? '' : 'hidden'}>${details}</div>` : ''}
+    <div class="iactions">
+      ${canEditEvents() && !e.done ? alarmBtn(e) : ''}
+      ${canEditEvents() && !e.done && (w || e.category !== 'other') ? `<button class="chip-btn" data-act="plan">📆 改计划日</button>` : ''}
+      ${canEditEvents() ? '<button class="chip-btn" data-act="edit">✏️ 编辑</button>' : ''}
+      <button class="chip-btn" data-act="ics">📅 苹果日历</button>
+      ${canEditEvents() ? (e.done ? '<button class="chip-btn" data-act="undone">↩︎ 取消完成</button>' : '<button class="chip-btn done-btn" data-act="done">✅ 已完成</button>') : ''}
+    </div>
+  </div>`;
+}
+
+// 日历下方：当前月份事项；未完成按计划日分组在上，已完成整段默认折叠在下（v1.9.2）
+function renderMonthList(el) {
+  const today = todayStr();
+  const bday = store.state.settings.babyBirthday;
+  const [y, m] = ui.month.split('-').map(Number);
+  const monthStart = `${ui.month}-01`, monthEnd = ymd(new Date(y, m, 0));
+  const inMonth = visEvents().filter((e) => e.date >= monthStart && e.date <= monthEnd);
+  const pending = inMonth.filter((e) => !e.done);
+  const completed = inMonth.filter((e) => e.done).sort((a, b) => (a.date + (a.time || '99')).localeCompare(b.date + (b.time || '99')));
+  repHints = replacementHints(store.events());
+  const byDate = {};
+  for (const e of pending) (byDate[e.date] ||= []).push(e);
+  const dates = Object.keys(byDate);
+  dates.sort();
+  const sortT = (a, b) => (a.time || '99').localeCompare(b.time || '99');
+  const earlier = today.slice(0, 7) === ui.month
+    ? visEvents().filter((e) => !e.done && e.date < monthStart && (e.category !== 'other' || e.date >= addDays(today, -30))).sort((a, b) => a.date.localeCompare(b.date))
+    : [];
+  const doneByDate = {};
+  for (const e of completed) (doneByDate[e.date] ||= []).push(e);
+  const doneDates = Object.keys(doneByDate).sort();
+  const doneBody = doneDates.map((ds) => {
+    const list = doneByDate[ds].sort(sortT);
+    return `<div class="grp-sub muted-sub" id="gd-${ds}">${esc(fmtD(ds))}</div>${list.map((e) => itemCard(e, today, bday)).join('')}`;
+  }).join('');
+  const pendCount = pending.length + earlier.length;
+  const emptyMonth = !pending.length && !completed.length && !dates.length;
+  el.innerHTML = `
+    <div class="day-panel-head">
+      <h2 style="margin:0">📋 ${m}月的事项 <span class="muted small" style="font-weight:500">共 ${inMonth.length} 个${completed.length ? ` · 未完成 ${pending.length}` : ''}</span></h2>
+      ${canEditEvents() ? '<button class="btn secondary" id="addHere" style="padding:8px 14px;font-size:15px">＋ 添加</button>' : ''}
+    </div>
+    ${pendCount ? `<button type="button" class="done-fold pend-fold" id="pendFold" aria-expanded="${ui.pendOpen}">
+      <span class="done-fold-lab">待完成（${pendCount}）</span><span class="done-fold-chev" aria-hidden="true">${ui.pendOpen ? '▾' : '▸'}</span></button>` : ''}
+    <div id="pendBody" ${pendCount && !ui.pendOpen ? 'hidden' : ''}>
+    ${earlier.length ? `<div class="grp grp-overdue" id="g-earlier"><div class="grp-head"><h2>⚠️ 之前未完成 <span class="pill lvl-overdue" style="animation:none">${earlier.length} 个</span></h2></div>
+      ${earlier.map((e) => `<div class="grp-sub">${esc(fmtD(e.date))}</div>${itemCard(e, today, bday)}`).join('')}</div>` : ''}
+    ${dates.length ? dates.map((ds) => {
+      const cd = countdown(ds);
+      const list = (byDate[ds] || []).sort(sortT);
+      const onlyDoneHere = !list.length && (doneByDate[ds] || []).length;
+      return `<div class="grp ${ds === ui.selected ? 'sel' : ''}" id="g-${ds}" data-date="${ds}">
+        <div class="grp-head"><h2>${cnDate(ds)} ${weekday(ds)} <span class="pill lvl-${cd.level}" style="animation:none">${cd.text}</span></h2>
+          ${list.length || !canEditEvents() ? '' : `<button class="link-btn" data-add="${ds}">＋ 添加</button>`}</div>
+        ${list.length ? list.map((e) => itemCard(e, today, bday)).join('')
+          : onlyDoneHere ? `<p class="muted small" style="margin:4px 0 2px">这一天的事项已全部完成，见下方「已完成」。</p>`
+            : '<p class="muted small" style="margin:4px 0 2px">这一天还没有安排。</p>'}
+      </div>`;
+    }).join('') : (emptyMonth ? `<p class="muted" style="margin:12px 0 2px">这个月还没有安排。点「＋ 添加」记录疫苗、体检等事项。</p>` : '')}
+    </div>
+    ${completed.length ? `<div class="grp grp-done" id="g-done">
+      <button type="button" class="done-fold" id="doneFold" aria-expanded="${ui.doneOpen ? 'true' : 'false'}">
+        <span class="done-fold-lab">已完成（${completed.length}）</span>
+        <span class="done-fold-chev" aria-hidden="true">${ui.doneOpen ? '▾' : '▸'}</span>
+      </button>
+      <div class="done-fold-body" id="doneFoldBody" ${ui.doneOpen ? '' : 'hidden'}>${doneBody}</div>
+    </div>` : ''}`;
+  const ah = el.querySelector('#addHere');
+  if (ah) ah.onclick = () => { if (!requireEditEvents()) return; openEditor({ date: ui.selected >= monthStart && ui.selected <= monthEnd ? ui.selected : (today.slice(0, 7) === ui.month ? today : monthStart) }); };
+  el.querySelectorAll('[data-add]').forEach((b) => { b.onclick = () => { if (!requireEditEvents()) return; openEditor({ date: b.dataset.add }); }; });
+  const pf = el.querySelector('#pendFold');
+  if (pf) pf.onclick = () => { ui.pendOpen = !ui.pendOpen; rerender(); };
+  const fold = el.querySelector('#doneFold');
+  if (fold) {
+    fold.onclick = () => { ui.doneOpen = !ui.doneOpen; rerender(); };
+  }
+  el.querySelectorAll('.item').forEach((card) => {
+    const id = card.dataset.id;
+    card.querySelectorAll('[data-act]').forEach((b) => {
+      b.onclick = () => {
+        const e = store.getEvent(id);
+        const act = b.dataset.act;
+        if (act === 'details') { ui.details.has(id) ? ui.details.delete(id) : ui.details.add(id); rerender(); return; }
+        if (act === 'edit') { if (!requireEditEvents()) return; openEditor({ id }); }
+        else if (act === 'ics') openICS(e);
+        else if (act === 'alarm') { if (!requireAlarm()) return; openAlarmSheet(e); }
+        else if (act === 'plan') { if (!requireEditEvents()) return; openPlannedSheet(e); }
+        else if (act === 'focus') {
+          ui.focus = ui.focus === id ? null : id;
+          rerender();
+          if (ui.focus) document.getElementById('calCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        else if (act === 'done') { if (!requireEditEvents()) return; markDone(id); }
+        else if (act === 'undone') { if (!requireEditEvents()) return; store.setDone(id, false); }
+      };
+    });
+  });
+}
+
+// 还没有生成疫苗/体检计划时，在首页提示「一键生成」
+function renderVaxCta(el) {
+  if (!canEditEvents()) { el.innerHTML = ''; return; }
+  const needV = !planCounts('vaccine') && localStorage.getItem('babyrecord.hideVaxCta') !== '1';
+  const needC = !planCounts('checkup') && localStorage.getItem('babyrecord.hideChkCta') !== '1';
+  if (!needV && !needC) { el.innerHTML = ''; return; }
+  const head = needV && needC ? '<b>一键生成疫苗/体检计划</b>输入宝宝生日，按国家规范自动添加全部免费疫苗和儿保体检日程'
+    : needV ? '<b>一键生成疫苗计划</b>输入宝宝生日，按国家免疫程序自动添加全部免费疫苗日程'
+      : '<b>一键生成体检计划</b>输入宝宝生日，按国家儿童健康管理规范自动添加儿保体检日程';
+  el.innerHTML = `<div class="banner" style="border-color:#C9BDFF"><span style="font-size:28px">${needV ? '💉' : '🩺'}</span><div class="bt">${head}
+    <div class="cta-btns">${needV ? '<button class="btn" id="vaxGo" style="background:var(--vaccine)">💉 疫苗计划</button>' : ''}${needC ? '<button class="btn" id="chkGo" style="background:var(--checkup)">🩺 体检计划</button>' : ''}</div></div>
+    <button class="x-btn" style="width:30px;height:30px;font-size:14px;background:transparent;align-self:flex-start" aria-label="关闭">✕</button></div>`;
+  el.querySelector('#vaxGo')?.addEventListener('click', () => openVaxPlan());
+  el.querySelector('#chkGo')?.addEventListener('click', () => openCheckupPlan());
+  el.querySelector('.x-btn').onclick = () => {
+    if (needV) localStorage.setItem('babyrecord.hideVaxCta', '1');
+    if (needC) localStorage.setItem('babyrecord.hideChkCta', '1');
+    el.innerHTML = ''; toast('可在「设置 → 一键生成日程」里生成');
+  };
+}
+export { parseYmd };
