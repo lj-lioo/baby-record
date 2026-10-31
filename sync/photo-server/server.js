@@ -69,6 +69,9 @@ function checkAuth(req, res) {
   const h = req.headers.authorization || '';
   const m = /^Bearer\s+(.+)$/i.exec(h);
   if (m && m[1] === TOKEN) return true;
+  // 仅 GET 允许查询鉴权，供 <img>/<video> 原生 Range；旧 Bearer 客户端照常工作。
+  const u = new URL(req.url, 'http://localhost');
+  if (req.method === 'GET' && u.searchParams.get('access_token') === TOKEN) return true;
   res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify({ error: 'unauthorized', message: '需要 PHOTO_TOKEN' }));
   return false;
@@ -163,7 +166,7 @@ function sendFile(req, res, fp, mime = 'application/octet-stream') {
   let st;
   try { st = fs.statSync(fp); } catch { return sendJson(res, 404, { error: 'not_found' }); }
   const size = st.size;
-  const base = { 'Content-Type': mime, 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=3600' };
+  const base = { 'Referrer-Policy': 'no-referrer', 'Content-Type': mime, 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=3600' };
   const r = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
   if (r && (r[1] || r[2])) {
     let start = r[1] ? Number(r[1]) : Math.max(0, size - Number(r[2]));
@@ -173,13 +176,19 @@ function sendFile(req, res, fp, mime = 'application/octet-stream') {
       return res.end();
     }
     res.writeHead(206, { ...base, 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${size}` });
-    return fs.createReadStream(fp, { start, end }).pipe(res);
+    const stream = fs.createReadStream(fp, { start, end });
+    res.on('close', () => stream.destroy());
+    stream.on('error', () => res.destroy());
+    return stream.pipe(res);
   }
   res.writeHead(200, { ...base, 'Content-Length': size });
-  fs.createReadStream(fp).pipe(res);
+  const stream = fs.createReadStream(fp);
+  res.on('close', () => stream.destroy());
+  stream.on('error', () => res.destroy());
+  stream.pipe(res);
 }
 
-const server = http.createServer(async (req, res) => {
+export async function handleRequest(req, res) {
   setCors(req, res);
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
@@ -191,7 +200,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ ok: true, service: 'baby-record-photo', version: '1.14.0', features: ['photo', 'video-chunks', 'range', 'plain-file'] }));
+    res.end(JSON.stringify({ ok: true, service: 'baby-record-photo', version: '1.15.0', features: ['photo', 'video-chunks', 'range', 'plain-file'] }));
     return;
   }
 
@@ -327,8 +336,11 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ error: 'server_error', message: String(e.message || e) }));
   }
-});
+}
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[baby-record-photo] http://0.0.0.0:${PORT}  DATA_DIR=${DATA_DIR}  TOKEN=${TOKEN ? 'on' : 'off'}`);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const server = http.createServer(handleRequest);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[baby-record-photo] http://0.0.0.0:${PORT}  DATA_DIR=${DATA_DIR}  TOKEN=${TOKEN ? 'on' : 'off'}`);
+  });
+}
