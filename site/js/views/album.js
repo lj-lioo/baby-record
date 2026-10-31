@@ -1,14 +1,13 @@
 // v1.8.0 相册页：按拍摄/上传时间分组的时间轴（v1.9.1 上传可选；v1.12.14 第X天；v1.12.15 第X天次要字号、去掉 N 项）
 import { store } from '../store.js';
-import { esc, toast, confirmSheet, openSheet, closeSheet } from '../ui.js';
-import { canDeleteAlbum } from '../roles.js';
+import { esc, toast, openSheet, closeSheet } from '../ui.js';
 import {
-  photosByDay, fmtDayTitle, dayNumberOnDate, addPhotoFromFile, loadPhotoBlob, removePhoto,
-  retryUpload, photoApiBase, pingPhotoServer, isUploading, isUploadPending, hasLocalPhoto,
-  addVideoFromFile, loadVideoBlob, hasLocalVideo,
+  photosByDay, fmtDayTitle, dayNumberOnDate, addPhotoFromFile,
+  retryUpload, photoApiBase, pingPhotoServer, isUploadPending, addVideoFromFile,
   getUploadSession, onUploadSession, beginUploadBatch, setUploadBatchText, endUploadBatch,
-  retryAllPendingUploads, BATCH_SOFT_LIMIT,
+  retryAllPendingUploads, BATCH_SOFT_LIMIT, photoThumb,
 } from '../photos.js';
+import { openAlbumViewer } from './album-viewer.js';
 import { syncStatus } from '../sync.js';
 
 function fmtSize(n) {
@@ -21,14 +20,7 @@ export function fmtDur(sec) {
   sec = Math.round(Number(sec) || 0);
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }
-function fmtTime(ts) {
-  const d = new Date(ts);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-// v1.14.2 「保存到相册」：只存本地缩略图（不再从极空间拉原片）；iPhone 走分享面板，安卓/鸿蒙走 <a download>
-const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/heif': 'heif', 'image/webp': 'webp', 'image/gif': 'gif', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm' };
+// 保存到系统相册只保存缩略图，视频也只保存封面。
 export function originalFileName(meta) {
   const d = new Date(meta.takenAt || Date.now());
   const p = (n) => String(n).padStart(2, '0');
@@ -37,7 +29,7 @@ export function originalFileName(meta) {
 }
 /** dataURL / blobURL → Blob（缩略图） */
 async function thumbToBlob(meta) {
-  const src = meta?.thumbData;
+  const src = await photoThumb(meta);
   if (!src) throw new Error('没有缩略图可保存');
   if (String(src).startsWith('data:')) {
     const r = await fetch(src);
@@ -111,7 +103,7 @@ function wireDownload(sh, meta, _getBlob) {
         const how = await saveBlobToDevice(ready, name);
         btn.disabled = false; btn.textContent = label;
         if (how === 'share') {
-          say('已保存缩略图到系统相册（或你在分享面板里选的位置）');
+          say('保存成功 · 已保存缩略图到系统相册（或你在分享面板里选的位置）');
           toast('已保存到相册', 2500);
         } else if (how === 'open') {
           say('已在新页面打开缩略图：点分享或长按，选「存储到照片」');
@@ -120,7 +112,7 @@ function wireDownload(sh, meta, _getBlob) {
           say('已取消，可再点一次保存');
           toast('已取消保存', 2000);
         } else if (how === 'download') {
-          say(`已保存缩略图 ${name}`);
+          say(`保存成功 · 已保存缩略图 ${name}`);
           toast('已保存到相册', 2500);
         }
       } catch (e) {
@@ -131,7 +123,7 @@ function wireDownload(sh, meta, _getBlob) {
       }
       return;
     }
-    btn.disabled = true; btn.textContent = '准备中…'; say('正在准备缩略图…');
+    btn.disabled = true; btn.textContent = '保存中…'; say('保存中…');
     try {
       let blob = await thumbToBlob(meta);
       if (!blob.type || !String(blob.type).startsWith('image/')) blob = new Blob([blob], { type: 'image/jpeg' });
@@ -144,7 +136,7 @@ function wireDownload(sh, meta, _getBlob) {
         try {
           await saveBlobToDevice(blob, name);
           btn.textContent = label;
-          say(`已保存缩略图 ${name}（${fmtSize(blob.size)}）`);
+          say(`保存成功 · 已保存缩略图 ${name}（${fmtSize(blob.size)}）`);
           toast('已保存到相册', 2500);
         } catch (e2) {
           btn.textContent = label;
@@ -163,7 +155,7 @@ function wireDownload(sh, meta, _getBlob) {
 }
 
 export function renderAlbum(root) {
-  const groups = photosByDay();
+  if (root.querySelector('#albumList')) { updateAlbum(root); return; }
   const api = photoApiBase();
   const syncOn = !!syncStatus().enabled;
   root.innerHTML = `
@@ -173,30 +165,13 @@ export function renderAlbum(root) {
     </header>
     ${!api ? `<div class="banner album-tip"><div class="bt"><b>还没填照片服务地址</b>缩略图和说明可以先同步；填极空间照片服务地址后，全家才能看到原图。家里 Wi‑Fi 填局域网地址即可。</div>
       <button class="btn secondary" id="btnGoPhotoSet" style="flex:none">去设置</button></div>` : ''}
-    ${api && !syncOn ? `<div class="banner album-tip"><div class="bt"><b>建议开启云同步</b>原图用同步密钥加密后上传；元数据也靠云同步共享给家人。</div></div>` : ''}
+    ${api && !syncOn ? `<div class="banner album-tip"><div class="bt"><b>建议开启云同步</b>原图和视频存照片服务；开启云同步可把相册共享给家人。</div></div>` : ''}
     <div class="banner album-progress" id="albumProgress" hidden>
       <div class="bt" id="albumProgressText">上传中…</div>
       <button type="button" class="btn secondary" id="btnRetryPending" hidden style="flex:none">一键补传</button>
     </div>
-    ${groups.length === 0 ? `
-      <section class="card album-empty">
-        <div style="font-size:48px;text-align:center">📷</div>
-        <p style="text-align:center;margin:8px 0 4px;font-weight:700">还没有照片或视频</p>
-        <p class="small muted" style="text-align:center;margin:0">点右上角「＋ 上传」，可选「从相册选择」（照片/视频）、「拍照」或「录视频」。</p>
-      </section>` : groups.map((g) => `
-      <section class="card album-day">
-        <h2 class="album-day-title">${esc(fmtDayTitle(g.day))}${(() => { const n = dayNumberOnDate(store.state.settings.babyBirthday, g.day); return n != null ? `<span class="muted small album-day-age" style="font-weight:600;margin-left:8px">第${n}天</span>` : ''; })()}</h2>
-        <div class="album-grid">
-          ${g.items.map((p) => `
-            <button type="button" class="album-cell" data-id="${esc(p.id)}" aria-label="${p.kind === 'video' ? '查看视频' : '查看照片'}">
-              <img src="${esc(p.thumbData || '')}" alt="" loading="lazy">
-              ${p.kind === 'video' ? `<span class="album-play">▶ ${esc(fmtDur(p.duration))}</span>` : ''}
-              ${(!p.remoteReady && isUploadPending(p.id)) ? '<span class="album-badge uploading" title="正在上传到照片服务（切页也会保留）">上传中</span>' : (p.remoteReady ? '' : '<span class="album-badge" title="原图尚未上传到照片服务">本地</span>')}
-              ${p.note ? `<span class="album-note-dot" title="${esc(p.note)}">📝</span>` : ''}
-            </button>`).join('')}
-        </div>
-      </section>`).join('')}
-    <p class="small muted" style="text-align:center;margin:8px 0 24px">共 ${store.photos().length} 项 · 原图/视频存极空间 · 视频不自动下载 · 元数据云同步</p>
+    <div id="albumList"></div>
+    <p class="small muted" id="albumCount" style="text-align:center;margin:8px 0 24px"></p>
   `;
 
   const q = (s) => root.querySelector(s);
@@ -219,7 +194,7 @@ export function renderAlbum(root) {
       syncAlbumProgressUi(albumRootRef || root);
     };
     const refresh = () => {
-      if (location.hash.startsWith('#/album')) renderAlbum(albumRootRef || root);
+      if (location.hash.startsWith('#/album')) updateAlbum(albumRootRef || root);
     };
     beginUploadBatch(total, `正在加入相册 0/${total}…`);
     syncAlbumProgressUi(albumRootRef || root);
@@ -298,9 +273,8 @@ export function renderAlbum(root) {
   // 之前 input 在相册 DOM 里会被替换掉，change 事件丢失 → 选完照片什么都不出现
   ensureFileInputs();
   albumRootRef = root; onFilesRef = onFiles;
-  root.querySelectorAll('.album-cell').forEach((btn) => {
-    btn.onclick = () => openViewer(btn.dataset.id, root);
-  });
+  root.querySelector('#albumList').onclick = (e) => { const cell = e.target.closest('.album-cell'); if (cell) openViewer(cell.dataset.id, root); };
+  updateAlbum(root);
   // 切页回来：进度条/角标跟 uploadSession + remoteReady 对齐
   syncAlbumProgressUi(root);
   wireRetryPending(root);
@@ -311,36 +285,7 @@ export function renderAlbum(root) {
     if (!r) return;
     // 只更新进度条，避免整页重绘打断滚动；角标在下次 render / 单项刷新时对齐
     syncAlbumProgressUi(r);
-    // 有进行中的项时轻量刷新格子角标
-    const sess = getUploadSession();
-    if (sess.active || sess.pending) {
-      r.querySelectorAll('.album-cell').forEach((btn) => {
-        const id = btn.dataset.id;
-        const meta = store.getPhoto(id);
-        if (!meta) return;
-        let badge = btn.querySelector('.album-badge');
-        const wantUp = !meta.remoteReady && isUploadPending(id);
-        if (wantUp) {
-          if (!badge || !badge.classList.contains('uploading')) {
-            if (badge) badge.remove();
-            const s = document.createElement('span');
-            s.className = 'album-badge uploading';
-            s.title = '正在上传到照片服务（切页也会保留）';
-            s.textContent = '上传中';
-            btn.appendChild(s);
-          }
-        } else if (meta.remoteReady) {
-          badge?.remove();
-        } else if (!badge || badge.classList.contains('uploading')) {
-          badge?.remove();
-          const s = document.createElement('span');
-          s.className = 'album-badge';
-          s.title = '原图尚未上传到照片服务';
-          s.textContent = '本地';
-          btn.appendChild(s);
-        }
-      });
-    }
+    updateAlbum(r);
   });
 }
 
@@ -374,157 +319,90 @@ function openAddPhotoSheet(albumRoot) {
   });
 }
 
-async function openViewer(id, albumRoot) {
-  const meta = store.getPhoto(id);
-  if (!meta) return;
-  if (meta.kind === 'video') return openVideoViewer(id, albumRoot);
-  const localOk = await hasLocalPhoto(id).catch(() => false);
-  const needReselect = !meta.remoteReady && !localOk;
-  openSheet(`
-    <h3>照片</h3>
-    <div class="album-viewer">
-      <div class="album-viewer-img" id="avImg"><div class="muted small" style="padding:40px;text-align:center">加载中…</div></div>
-      <div class="kv"><span>拍摄/时间</span><span>${esc(fmtDayTitle((() => { const d = new Date(meta.takenAt); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })()))} ${esc(fmtTime(meta.takenAt))}</span></div>
-      <div class="kv"><span>大小</span><span>${esc(fmtSize(meta.size))}${meta.width ? ` · ${meta.width}×${meta.height}` : ''}</span></div>
-      <div class="kv"><span>原图</span><span>${meta.remoteReady ? '<span class="ok">已上传到照片服务</span>' : '<span class="bad">仅本机 / 未上传</span>'}</span></div>
-      <div class="field"><label for="avNote">说明</label>
-        <input id="avNote" class="input" value="${esc(meta.note)}" placeholder="可选：一句话说明"></div>
-      <p class="small muted" id="avTip" ${needReselect ? '' : 'hidden'}>${needReselect ? '本机原图已不在（删过 App 会清掉）。请删除这条，再点「＋上传」从手机相册重新选同一张。' : ''}</p>
-      <p class="small muted" id="avDlState" hidden></p>
-      <div class="btn-row" style="margin-top:10px">
-        <button class="btn ghost" id="avClose">关闭</button>
-        <button class="btn secondary" id="avSave">保存说明</button>
-      </div>
-      <div class="btn-row" style="margin-top:8px">
-        <button class="btn" id="avDl">📥 保存到相册</button>
-        ${!meta.remoteReady && photoApiBase() && localOk ? '<button class="btn secondary" id="avRetry">补传原图</button>' : ''}
-        ${canDeleteAlbum() ? '<button class="btn danger" id="avDel">删除</button>' : ''}
-      </div>
-    </div>
-  `, async (sh) => {
-    sh.querySelector('#avClose').onclick = closeSheet;
-    sh.querySelector('#avSave').onclick = () => {
-      const note = sh.querySelector('#avNote').value.trim();
-      store.upsertPhoto({ ...meta, note });
-      toast('已保存');
-      closeSheet();
-      renderAlbum(albumRoot);
-    };
-    const retry = sh.querySelector('#avRetry');
-    if (retry) retry.onclick = async () => {
-      retry.disabled = true; retry.textContent = '补传中…';
-      try {
-        await retryUpload(id, { onProgress: (ev) => {
-          if (ev?.phase === 'upload') retry.textContent = '补传中…';
-        }});
-        toast('原图已补传'); closeSheet(); renderAlbum(albumRoot);
-      } catch (e) {
-        toast(`补传失败：${e.message || e}`, 4500);
-        retry.disabled = false; retry.textContent = '补传原图';
-      }
-    };
-    const delBtn = sh.querySelector('#avDel');
-    if (delBtn) delBtn.onclick = async () => {
-      if (!canDeleteAlbum()) return;
-      const ok = await confirmSheet('确定删除这张照片吗？其他家人同步后也会删掉。', '删除', true);
-      if (!ok) return;
-      await removePhoto(id);
-      toast('已删除');
-      closeSheet();
-      renderAlbum(albumRoot);
-    };
-    let loading = null;
-    const getBlob = () => (loading ||= loadPhotoBlob(id).catch((e) => { loading = null; throw e; }));
-    wireDownload(sh, meta, getBlob);
-    try {
-      const { blob, source, tip } = await getBlob();
-      const url = URL.createObjectURL(blob);
-      const box = sh.querySelector('#avImg');
-      box.innerHTML = `<img src="${url}" alt="宝宝照片">`;
-      const tipEl = sh.querySelector('#avTip');
-      if (tip) { tipEl.hidden = false; tipEl.textContent = tip; }
-      else if (source === 'thumb') { tipEl.hidden = false; tipEl.textContent = '当前为缩略图'; }
-    } catch (e) {
-      sh.querySelector('#avImg').innerHTML = `<div class="muted small" style="padding:24px;text-align:center">${esc(e.message || '加载失败')}</div>`;
-    }
-  });
+function openViewer(id, root) {
+  openAlbumViewer(id, root, { wireDownload, thumbToBlob, originalFileName, saveBlobToDevice, friendlyDlError });
 }
 
-/** 视频：先只显示封面 + 大小，用户点「播放」才下载（省流量） */
-async function openVideoViewer(id, albumRoot) {
-  const meta = store.getPhoto(id);
-  const local = await hasLocalVideo(id);
-  const d = new Date(meta.takenAt);
-  const ymd = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  openSheet(`
-    <h3>视频</h3>
-    <div class="album-viewer">
-      <div class="album-viewer-img album-video-box" id="avImg">
-        <img src="${esc(meta.thumbData || '')}" alt="视频封面">
-        <button type="button" class="btn album-play-btn" id="avPlay">▶ ${local ? '播放（已在本机）' : `播放（约 ${esc(fmtSize(meta.size))}）`}</button>
-      </div>
-      <p class="small muted" style="margin:0 0 8px">${local ? '本机已缓存，播放不耗流量。' : '为省流量不会自动下载；用手机流量时请留意大小。'}</p>
-      <div class="kv"><span>拍摄/时间</span><span>${esc(fmtDayTitle(ymd))} ${esc(fmtTime(meta.takenAt))}</span></div>
-      <div class="kv"><span>时长 / 大小</span><span>${esc(fmtDur(meta.duration))} · ${esc(fmtSize(meta.size))}${meta.width ? ` · ${meta.width}×${meta.height}` : ''}</span></div>
-      <div class="kv"><span>原视频</span><span>${meta.remoteReady ? '<span class="ok">已上传到照片服务</span>' : '<span class="bad">仅本机 / 未上传</span>'}</span></div>
-      <div class="field"><label for="avNote">说明</label>
-        <input id="avNote" class="input" value="${esc(meta.note)}" placeholder="可选：一句话说明"></div>
-      <p class="small muted" id="avTip" hidden></p>
-      <p class="small muted" id="avDlState" hidden></p>
-      <div class="btn-row" style="margin-top:10px">
-        <button class="btn ghost" id="avClose">关闭</button>
-        <button class="btn secondary" id="avSave">保存说明</button>
-      </div>
-      <div class="btn-row" style="margin-top:8px">
-        <button class="btn" id="avDl">📥 保存到相册</button>
-        ${!meta.remoteReady && photoApiBase() ? '<button class="btn secondary" id="avRetry">补传视频</button>' : ''}
-        ${canDeleteAlbum() ? '<button class="btn danger" id="avDel">删除</button>' : ''}
-      </div>
-    </div>
-  `, (sh) => {
-    let url = '';
-    const cleanup = () => { if (url) URL.revokeObjectURL(url); };
-    sh.querySelector('#avClose').onclick = () => { cleanup(); closeSheet(); };
-    sh.querySelector('#avSave').onclick = () => {
-      store.upsertPhoto({ ...meta, note: sh.querySelector('#avNote').value.trim() });
-      toast('已保存'); cleanup(); closeSheet(); renderAlbum(albumRoot);
-    };
-    const retry = sh.querySelector('#avRetry');
-    if (retry) retry.onclick = async () => {
-      retry.disabled = true; retry.textContent = '补传中…';
-      try {
-        await retryUpload(id, { onProgress: (ev) => {
-          if (ev?.phase === 'upload' && ev.ratio != null) retry.textContent = `补传中 ${Math.round(ev.ratio * 100)}%`;
-          else if (ev?.phase === 'upload') retry.textContent = '补传中…';
-        }});
-        toast('视频已补传'); cleanup(); closeSheet(); renderAlbum(albumRoot);
-      } catch (e) {
-        toast(`补传失败：${e.message || e}`, 4500);
-        retry.disabled = false; retry.textContent = '补传视频';
+// 以月份、日期、照片 ID 复用节点；折叠月份只建立拼图，不建立全部格子。
+function place(parent, nodes) {
+  const keep = new Set(nodes);
+  for (const n of [...parent.children]) if (!keep.has(n)) n.remove();
+  nodes.forEach((n, i) => { if (parent.children[i] !== n) parent.insertBefore(n, parent.children[i] || null); });
+}
+function setThumb(img, p) {
+  const key = p.thumbData || `${p.id}:${p.thumbRemote}`;
+  if (img._thumbKey === key) return;
+  img._thumbKey = key;
+  if (p.thumbData) img.src = p.thumbData;
+  else photoThumb(p).then((src) => { if (src && img._thumbKey === key) img.src = src; }).catch(() => {});
+}
+function dayNode(g, old) {
+  const section = old || document.createElement('section');
+  section.className = 'card album-day'; section.dataset.day = g.day;
+  if (!old) section.innerHTML = '<h2 class="album-day-title"></h2><div class="album-grid"></div>';
+  const age = dayNumberOnDate(store.state.settings.babyBirthday, g.day);
+  const title = `${esc(fmtDayTitle(g.day))}${age != null ? `<span class="muted small album-day-age" style="font-weight:600;margin-left:8px">第${age}天</span>` : ''}`;
+  const h = section.querySelector('h2'); if (h.innerHTML !== title) h.innerHTML = title;
+  const grid = section.querySelector('.album-grid');
+  const cells = new Map([...grid.children].map((c) => [c.dataset.id, c]));
+  place(grid, g.items.map((p) => {
+    let cell = cells.get(p.id);
+    if (!cell) {
+      cell = document.createElement('button'); cell.type = 'button'; cell.className = 'album-cell'; cell.dataset.id = p.id;
+      cell.innerHTML = '<img alt="" loading="lazy"><span class="album-overlays"></span>';
+    }
+    cell.setAttribute('aria-label', p.kind === 'video' ? '查看视频' : '查看照片');
+    setThumb(cell.querySelector('img'), p);
+    const up = !p.remoteReady && isUploadPending(p.id);
+    const overlays = `${p.kind === 'video' ? `<span class="album-play">▶ ${esc(fmtDur(p.duration))}</span>` : ''}${!p.remoteReady ? `<span class="album-badge ${up ? 'uploading' : ''}">${up ? '上传中' : '本地'}</span>` : ''}${p.note ? `<span class="album-note-dot" title="${esc(p.note)}">📝</span>` : ''}`;
+    const ov = cell.querySelector('.album-overlays'); if (ov.innerHTML !== overlays) ov.innerHTML = overlays;
+    return cell;
+  }));
+  return section;
+}
+export function updateAlbum(root) {
+  const list = root.querySelector('#albumList'); if (!list) return;
+  const groups = photosByDay();
+  const now = new Date(); const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const months = new Map();
+  for (const g of groups) { const m = g.day.slice(0, 7); if (!months.has(m)) months.set(m, []); months.get(m).push(g); }
+  const oldMonths = new Map([...list.children].map((n) => [n.dataset.month, n]));
+  const nodes = [];
+  for (const [month, days] of months) {
+    const collapsed = month < current;
+    let node = oldMonths.get(month);
+    if (!node || (node.tagName === 'DETAILS') !== collapsed) {
+      node = document.createElement(collapsed ? 'details' : 'div'); node.dataset.month = month;
+      if (collapsed) {
+        node.className = 'card album-month';
+        node.innerHTML = '<summary><b></b><span class="album-collage"></span><span class="small muted album-month-count"></span></summary><div class="album-month-days"></div>';
+        node.ontoggle = () => { if (node.isConnected) updateAlbum(root); };
       }
-    };
-    const delBtn = sh.querySelector('#avDel');
-    if (delBtn) delBtn.onclick = async () => {
-      if (!canDeleteAlbum()) return;
-      const ok = await confirmSheet('确定删除这个视频吗？其他家人同步后也会删掉。', '删除', true);
-      if (!ok) return;
-      await removePhoto(id); cleanup(); toast('已删除'); closeSheet(); renderAlbum(albumRoot);
-    };
-    wireDownload(sh, meta, null);
-    const play = sh.querySelector('#avPlay');
-    play.onclick = async () => {
-      play.disabled = true; play.textContent = '下载中…';
-      try {
-        const { blob } = await loadVideoBlob(id, { onProgress: (x) => { play.textContent = `下载中 ${Math.round(x * 100)}%`; } });
-        url = URL.createObjectURL(blob);
-        const box = sh.querySelector('#avImg');
-        box.innerHTML = `<video src="${url}" controls playsinline autoplay style="max-width:100%;max-height:70vh;display:block"></video>`;
-      } catch (e) {
-        play.disabled = false; play.textContent = '▶ 重试播放';
-        const tip = sh.querySelector('#avTip'); tip.hidden = false; tip.textContent = e.message || '加载失败';
-      }
-    };
-  });
+    }
+    const items = days.flatMap((g) => g.items);
+    if (collapsed) {
+      node.querySelector('b').textContent = `${month.slice(0, 4)}年${Number(month.slice(5))}月`;
+      node.querySelector('.album-month-count').textContent = `${items.length}条记录 · ${node.open ? '收起' : '点开展开'}`;
+      const collage = node.querySelector('.album-collage');
+      const imgs = new Map([...collage.children].map((img) => [img.dataset.id, img]));
+      place(collage, items.slice(0, 4).map((p) => { const img = imgs.get(p.id) || document.createElement('img'); img.alt = ''; img.dataset.id = p.id; setThumb(img, p); return img; }));
+    }
+    const container = collapsed ? node.querySelector('.album-month-days') : node;
+    if (!collapsed || node.open) {
+      const oldDays = new Map([...container.children].map((n) => [n.dataset.day, n]));
+      place(container, days.map((g) => dayNode(g, oldDays.get(g.day))));
+    } else container.replaceChildren();
+    nodes.push(node);
+  }
+  if (!nodes.length) {
+    const empty = list.querySelector('.album-empty') || document.createElement('section');
+    empty.className = 'card album-empty';
+    empty.innerHTML = '<p style="text-align:center">📷 还没有照片或视频</p><p class="small muted">点右上角「＋ 上传」，可从相册选择、拍照或录视频。</p>';
+    nodes.push(empty);
+  }
+  place(list, nodes);
+  root.querySelector('#albumCount').textContent = `共 ${store.photos().length} 项 · 原图/视频存极空间 · 元数据云同步`;
+  syncAlbumProgressUi(root);
 }
 
 // 设置页可调用：测试照片服务

@@ -487,3 +487,28 @@ summary { font-weight: 700; cursor: pointer; }
 .dp-st.rep { color: #c0392b; }
 /* v1.12.10：长标题/窗口行会把色点挤成 0 宽（flex 收缩），禁止收缩 */
 .dp-row .dot { flex: 0 0 8px; width: 8px; height: 8px; }
+
+/* v1.15.0 相册：折叠月份 + 全屏手势查看 */
+.album-month summary { list-style: none; cursor: pointer; display: flex; flex-direction: column; gap: 10px; }
+.album-month summary::-webkit-details-marker { display: none; }
+.album-collage { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; border-radius: 12px; overflow: hidden; }
+.album-collage img { width: 100%; aspect-ratio: 1; object-fit: cover; background: #eee; }
+.album-month-days { padding-top: 12px; }
+.album-fullscreen { position: fixed; inset: 0; z-index: 40; background: #000; color: #fff; display: flex; flex-direction: column; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); overscroll-behavior: contain; }
+.album-fullscreen button { cursor: pointer; }
+.av-header { display: flex; align-items: center; min-height: 58px; padding: 0 12px; gap: 10px; z-index: 1; }
+.av-header h2 { flex: 1; text-align: center; font-size: 16px; margin: 0; }
+.av-header button, .av-nav button { border: 0; color: #fff; background: transparent; font-size: 30px; min-width: 44px; min-height: 44px; }
+.av-stage { flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; position: relative; touch-action: none; user-select: none; -webkit-user-select: none; }
+.av-stage > img { width: 100%; height: 100%; object-fit: contain; will-change: transform; -webkit-touch-callout: none; }
+.av-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.av-stage video:fullscreen { object-fit: contain; background: #000; }
+.av-nav { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; font-size: 13px; }
+.av-nav button:disabled { opacity: .25; }
+.av-fullscreen-btn { position: absolute; top: 12px; right: 12px; background: #222b; border: 1px solid #888; border-radius: 10px; color: white; padding: 10px; }
+.av-tip { text-align: center; font-size: 13px; margin: 6px 18px; color: #ddd; }
+.av-actions { position: absolute; bottom: env(safe-area-inset-bottom); left: 0; right: 0; padding: 18px; background: #202020f5; border-radius: 20px 20px 0 0; max-height: 75%; overflow-y: auto; display: grid; gap: 10px; z-index: 2; }
+.av-actions[hidden] { display: none; }
+.av-actions .muted { color: #ccc; }
+.av-actions .btn.ghost { color: #eee; }
+.av-actions label { font-size: 13px; }
