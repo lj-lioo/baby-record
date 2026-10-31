@@ -500,7 +500,13 @@ summary { font-weight: 700; cursor: pointer; }
 .av-header h2 { flex: 1; text-align: center; font-size: 16px; margin: 0; }
 .av-header button, .av-nav button { border: 0; color: #fff; background: transparent; font-size: 30px; min-width: 44px; min-height: 44px; }
 .av-stage { flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; position: relative; touch-action: none; user-select: none; -webkit-user-select: none; }
-.av-stage > img { width: 100%; height: 100%; object-fit: contain; will-change: transform; -webkit-touch-callout: none; }
+.av-stage { overflow: hidden; }
+.av-track { position: absolute; inset: 0; will-change: transform; }
+.av-slide { position: absolute; inset: 0; overflow: hidden; contain: layout paint; }
+.av-zoom { position: absolute; inset: 0; will-change: transform; transform-origin: 50% 50%; }
+.av-zoom > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; -webkit-touch-callout: none; -webkit-user-drag: none; pointer-events: none; }
+.av-slide.has-sharp .av-thumb { visibility: hidden; }
+.av-slide.av-empty::after { content: '加载中…'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 14px; background: #1a1a1a; }
 .av-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .av-stage video:fullscreen { object-fit: contain; background: #000; }
 .av-nav { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; font-size: 13px; }

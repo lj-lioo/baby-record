@@ -36,7 +36,7 @@ export function openAlbumViewer(id, albumRoot, helpers) {
     return { left: r.left + (r.width - w) / 2, top: r.top + (r.height - h) / 2, width: w, height: h };
   };
   function fly(opening) {
-    const cell = sourceCell(); const img = box.querySelector('img');
+    const cell = sourceCell(); const s0 = curSlide(); const img = s0?.sharp || s0?.thumb;
     if (!cell || !img?.src || matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve();
     const from = opening ? cell.getBoundingClientRect() : fitRect(current());
     const to = opening ? fitRect(current()) : cell.getBoundingClientRect();
@@ -75,11 +75,11 @@ export function openAlbumViewer(id, albumRoot, helpers) {
     }
   }
   function paint() {
-    if (!activeImage) return;
+    const z = curSlide()?.zoom; if (!z) return;
     const r = fitRect(current());
     px = clamp(px, -r.width * (scale - 1) / 2, r.width * (scale - 1) / 2);
     py = clamp(py, -r.height * (scale - 1) / 2, r.height * (scale - 1) / 2);
-    activeImage.style.transform = `translate(${px}px, ${py}px) scale(${scale})`;
+    z.style.transform = scale === 1 && !px && !py ? '' : `translate(${px}px, ${py}px) scale(${scale})`;
     box.dataset.scale = String(scale);
   }
   async function original() {
@@ -90,7 +90,9 @@ export function openAlbumViewer(id, albumRoot, helpers) {
       const src = await viewerSource(p, true);
       if (closed || rev !== revision) { if (src.temporary) URL.revokeObjectURL(src.url); return; }
       if (src.temporary) originals.add(src.url);
-      const im = new Image(); im.onload = () => { if (!closed && rev === revision && activeImage) { activeImage.dataset.quality = 'original'; activeImage.dataset.clear = '1'; activeImage.src = src.url; } }; im.src = src.url;
+      const im = new Image(); im.src = src.url; await im.decode();
+      const s = curSlide(); if (closed || rev !== revision || !s) return;
+      s.quality = 'original'; setSharp(s, src.url);
     } catch { box.dataset.original = ''; }
   }
   function zoom() {
@@ -130,58 +132,127 @@ export function openAlbumViewer(id, albumRoot, helpers) {
       try { await removePhoto(p.id); toast('已删除'); close(false); } catch (e) { toast(e.message); del.disabled = false; }
     };
   }
-  async function show(next, opening = false) {
-    if (closed) return;
-    flight?.cancel(); flight = null; box.style.visibility = '';
-    items = photosByDay().flatMap((g) => g.items);
-    index = clamp(next, 0, items.length - 1);
-    const p = current(); if (!p) return close(false);
-    const rev = ++revision;
+  // ---- 轮播：上一张/当前/下一张并排放在 track 里，拖动 1:1，松手吸附后再无闪烁地重排 ----
+  const GAP = 18, EASE = 'cubic-bezier(.2,.8,.2,1)', SNAP_MS = 280;
+  const track = document.createElement('div'); track.className = 'av-track'; box.appendChild(track);
+  const slides = new Map(); // id -> slide
+  let settling = null, dragMode = '', samples = [];
+  const curSlide = () => slides.get(current()?.id);
+  const pitch = () => box.clientWidth + GAP;
+  function setTrack(x, ms = 0) { track.style.transition = ms ? `transform ${ms}ms ${EASE}` : 'none'; track.style.transform = x ? `translate3d(${x}px,0,0)` : ''; }
+  function setSharp(s, url) {
+    if (!s.sharp) { s.sharp = new Image(); s.sharp.className = 'av-sharp'; s.sharp.alt = ''; s.sharp.draggable = false; s.sharp.src = url; s.zoom.appendChild(s.sharp); }
+    else s.sharp.src = url;
+    s.el.classList.add('has-sharp');
+  }
+  function makeSlide(p) {
+    const el = document.createElement('div'); el.className = 'av-slide';
+    const zoom = document.createElement('div'); zoom.className = 'av-zoom'; el.appendChild(zoom);
+    const thumb = new Image(); thumb.className = 'av-thumb'; thumb.draggable = false; thumb.alt = p.kind === 'video' ? '视频封面' : '宝宝照片';
+    zoom.appendChild(thumb);
+    const s = { p, el, zoom, thumb, sharp: null, video: null, quality: '' };
+    // 永远先有缩略图垫底：内存 thumbData -> IndexedDB/远端缩略图；都没有时显示“加载中”而不是纯黑。
+    if (p.thumbData) thumb.src = p.thumbData; else el.classList.add('av-empty');
+    photoThumb(p).then((t) => { if (t && !closed && thumb.src !== t) { thumb.src = t; } if (t) el.classList.remove('av-empty'); }).catch(() => {});
+    thumb.onload = () => el.classList.remove('av-empty');
+    if (p.kind !== 'video') {
+      getSource(p).then(async (src) => {
+        if (!src || closed || slides.get(p.id) !== s) return;
+        const pre = new Image(); pre.src = src.url;
+        await pre.decode().catch(() => {}); // 先解码再换上，避免“缩略图→清晰”跳一下
+        if (closed || slides.get(p.id) !== s || s.quality === 'original') return;
+        if (!pre.naturalWidth) throw new Error('清晰图暂不可用，保留缩略图');
+        setSharp(s, src.url);
+      }).catch((e) => { if (!closed && slides.get(p.id) === s && current()?.id === p.id) { q('#avTip').hidden = false; q('#avTip').textContent = e.message || '清晰图暂不可用，保留缩略图'; } });
+    }
+    return s;
+  }
+  function unmountVideo(s) {
+    if (!s?.video) return; s.video.pause(); s.video.removeAttribute('src'); s.video.load?.(); s.video.remove(); s.video = null;
+    s.fs?.remove(); s.fs = null; s.thumb.hidden = false;
+  }
+  async function mountVideo(s, rev) {
+    try {
+      const src = await getSource(s.p);
+      if (!src || closed || rev !== revision || curSlide() !== s || s.video) return;
+      const video = document.createElement('video');
+      video.controls = true; video.muted = true; video.autoplay = true; video.playsInline = true; video.preload = 'metadata';
+      video.setAttribute('playsinline', ''); video.setAttribute('muted', ''); if (s.thumb.src) video.poster = s.thumb.src; video.src = src.url;
+      video.addEventListener('error', () => { q('#avTip').hidden = false; q('#avTip').textContent = '视频暂时无法播放，请检查照片服务或视频格式'; });
+      video.addEventListener('loadeddata', () => { if (s.video === video) s.thumb.hidden = true; });
+      s.zoom.appendChild(video); s.video = video;
+      const fs = document.createElement('button'); fs.id = 'avFullscreen'; fs.className = 'av-fullscreen-btn'; fs.textContent = '⛶ 横屏 / 全屏';
+      fs.onclick = async () => {
+        try { if (video.webkitEnterFullscreen) video.webkitEnterFullscreen(); else await video.requestFullscreen?.(); await screen.orientation?.lock?.('landscape').catch(() => {}); } catch { toast('可旋转手机横屏观看'); }
+      }; s.el.appendChild(fs); s.fs = fs;
+      video.play().catch(() => {});
+    } catch (e) { if (!closed && rev === revision) { q('#avTip').hidden = false; q('#avTip').textContent = e.message || '视频暂时无法播放'; } }
+  }
+  function layout() {
+    const want = new Map();
+    for (let k = -1; k <= 1; k++) { const p = items[index + k]; if (p) want.set(p.id, k); }
+    for (const [id, s] of slides) if (!want.has(id)) { unmountVideo(s); s.el.remove(); slides.delete(id); }
+    for (const [id, k] of want) {
+      let s = slides.get(id); if (!s) { s = makeSlide(items[index + k]); slides.set(id, s); track.appendChild(s.el); }
+      s.el.style.transform = k ? `translate3d(${k * pitch()}px,0,0)` : '';
+      s.el.classList.toggle('is-current', k === 0);
+      if (k !== 0) { unmountVideo(s); s.zoom.style.transform = ''; }
+    }
+  }
+  function enter(rev) {
     for (const url of originals) URL.revokeObjectURL(url); originals.clear();
-    box.querySelector('video')?.pause(); box.replaceChildren();
-    scale = 1; px = py = 0; box.style.transform = ''; box.dataset.scale = '1'; box.dataset.original = '';
-    overlay.style.backgroundColor = ''; menu.hidden = true;
+    scale = 1; px = py = 0; box.dataset.scale = '1'; box.dataset.original = '';
+    overlay.style.backgroundColor = ''; menu.hidden = true; q('#avTip').hidden = true;
+    const p = current();
     const day = photosByDay([p])[0].day;
     q('#avTitle').textContent = fmtAlbumDayTitle(day, store.state.settings.babyBirthday);
     q('#avCount').textContent = `${index + 1} / ${items.length}`;
     q('#avPrev').disabled = index === 0; q('#avNext').disabled = index === items.length - 1;
-    q('#avTip').hidden = true;
-    const img = new Image(); img.alt = p.kind === 'video' ? '视频封面' : '宝宝照片'; img.draggable = false;
-    if (p.thumbData) img.src = p.thumbData;
-    box.appendChild(img); activeImage = img;
-    photoThumb(p).then((src) => { if (src && !closed && rev === revision && !img.dataset.clear) img.src = src; }).catch(() => {});
-    actions(); if (opening) fly(true);
-    try {
-      const src = await getSource(p);
-      if (!src || closed || rev !== revision) return;
-      if (p.kind === 'video') {
-        const video = document.createElement('video');
-        video.controls = true; video.muted = true; video.autoplay = true; video.playsInline = true; video.preload = 'metadata';
-        video.setAttribute('playsinline', ''); video.setAttribute('muted', ''); video.poster = img.src; video.src = src.url;
-        video.addEventListener('error', () => { q('#avTip').hidden = false; q('#avTip').textContent = '视频暂时无法播放，请检查照片服务或视频格式'; });
-        video.addEventListener('loadeddata', () => { if (!closed && rev === revision) img.hidden = true; });
-        box.appendChild(video); activeImage = null;
-        const fs = document.createElement('button'); fs.id = 'avFullscreen'; fs.className = 'av-fullscreen-btn'; fs.textContent = '⛶ 横屏 / 全屏';
-        fs.onclick = async () => {
-          try { if (video.webkitEnterFullscreen) video.webkitEnterFullscreen(); else await video.requestFullscreen?.(); await screen.orientation?.lock?.('landscape').catch(() => {}); } catch { toast('可旋转手机横屏观看'); }
-        }; box.appendChild(fs);
-        video.play().catch(() => {});
-      } else {
-        const clear = new Image();
-        clear.onload = () => { if (!closed && rev === revision) { if (img.dataset.quality === 'original') return; img.dataset.clear = '1'; img.src = src.url; } };
-        clear.onerror = () => { if (!closed && rev === revision) { q('#avTip').hidden = false; q('#avTip').textContent = '清晰图暂不可用，保留缩略图'; } };
-        clear.src = src.url;
-      }
-    } catch (e) {
-      if (!closed && rev === revision) { q('#avTip').hidden = false; q('#avTip').textContent = e.message || '清晰图暂不可用，保留缩略图'; }
-    }
-    if (!closed && rev === revision) preload();
+    layout(); setTrack(0);
+    const s = curSlide(); activeImage = s?.thumb || null; if (s) s.zoom.style.transform = '';
+    actions();
+    if (p.kind === 'video') mountVideo(s, rev);
+    preload();
+  }
+  function finishSettle() { if (settling) { const f = settling; settling = null; f(); } }
+  function go(delta, fromX = 0) {
+    if (closed) return;
+    finishSettle();
+    const target = index + delta;
+    if (!delta || target < 0 || target >= items.length || scale > 1) { if (fromX) setTrack(0, SNAP_MS); return; }
+    const leaving = curSlide(); leaving?.video?.pause();
+    const targetId = items[target].id;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { commit(targetId); return; }
+    if (!fromX) setTrack(0);
+    void track.offsetWidth;
+    setTrack(-delta * pitch(), SNAP_MS);
+    let t; const done = () => { clearTimeout(t); track.removeEventListener('transitionend', onEnd); if (settling === done) settling = null; commit(targetId); };
+    const onEnd = (e) => { if (e.target === track) finishSettle(); };
+    settling = done; track.addEventListener('transitionend', onEnd); t = setTimeout(finishSettle, SNAP_MS + 80);
+  }
+  function commit(targetId) {
+    if (closed) return;
+    items = photosByDay().flatMap((g) => g.items);
+    const i = items.findIndex((p) => p.id === targetId);
+    if (i < 0) { show(index); return; }
+    index = i; enter(++revision); // 只在动画结束后换索引；相邻 slide 元素原样复用，不清空舞台
+  }
+  async function show(next, opening = false) {
+    if (closed) return;
+    finishSettle(); flight?.cancel(); flight = null; box.style.visibility = '';
+    items = photosByDay().flatMap((g) => g.items);
+    index = clamp(next, 0, items.length - 1);
+    const p = current(); if (!p) return close(false);
+    const rev = ++revision;
+    if (!opening) { for (const s of slides.values()) { unmountVideo(s); s.el.remove(); } slides.clear(); }
+    enter(rev);
+    if (opening) fly(true);
   }
   async function close(animated = true) {
     if (closed) return; closed = true; revision++; clearTimeout(longTimer);
     flight?.cancel(); flight = null; box.style.visibility = '';
-    box.querySelector('video')?.pause();
-    window.removeEventListener('hashchange', onRoute); window.removeEventListener('pagehide', onRoute); document.removeEventListener('keydown', keydown);
+    finishSettle(); for (const s of slides.values()) s.video?.pause();
+    window.removeEventListener('hashchange', onRoute); window.removeEventListener('pagehide', onRoute); document.removeEventListener('keydown', keydown); removeEventListener('resize', onResize);
     if (disposeViewer === close) disposeViewer = null;
     if (animated) { const flying = fly(false); overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 240, fill: 'forwards' }); await flying; }
     for (const entry of cache.values()) release(entry); cache.clear();
@@ -190,11 +261,12 @@ export function openAlbumViewer(id, albumRoot, helpers) {
     if (oldFocus?.isConnected) oldFocus.focus({ preventScroll: true });
   }
   const onRoute = () => close(false);
+  const onResize = () => { if (!closed && !settling) layout(); };
   function keydown(e) {
     if (e.key === 'Escape') { if (!menu.hidden) menu.hidden = true; else close(); }
     if (e.target.matches('input')) return;
-    if (e.key === 'ArrowLeft') show(index - 1);
-    if (e.key === 'ArrowRight') show(index + 1);
+    if (e.key === 'ArrowLeft') go(-1);
+    if (e.key === 'ArrowRight') go(1);
     if (e.key === 'Tab') {
       const focusable = [...overlay.querySelectorAll('button,input,video')].filter((n) => !n.disabled && n.getClientRects().length);
       const first = focusable[0], last = focusable.at(-1);
@@ -203,7 +275,8 @@ export function openAlbumViewer(id, albumRoot, helpers) {
     }
   }
   q('#avClose').onclick = () => close(); q('#avMenu').onclick = () => { menu.hidden = !menu.hidden; };
-  q('#avPrev').onclick = () => show(index - 1); q('#avNext').onclick = () => show(index + 1);
+  q('#avPrev').onclick = () => go(-1); q('#avNext').onclick = () => go(1);
+  addEventListener('resize', onResize);
   box.oncontextmenu = (e) => { e.preventDefault(); menu.hidden = false; };
   box.ondblclick = (e) => { if (Date.now() - touchZoomAt < 400) return; if (current().kind !== 'video') { e.preventDefault(); zoom(); } };
   box.onpointerdown = (e) => {
@@ -212,10 +285,12 @@ export function openAlbumViewer(id, albumRoot, helpers) {
     box.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     clearTimeout(longTimer);
     if (pointers.size === 1) {
-      downX = e.clientX; downY = e.clientY; basePX = px; basePY = py; moved = false; pinching = false;
+      finishSettle();
+      downX = e.clientX; downY = e.clientY; basePX = px; basePY = py; moved = false; pinching = false; dragMode = ''; samples = [{ x: e.clientX, t: e.timeStamp }];
       longTimer = setTimeout(() => { menu.hidden = false; moved = true; }, 550);
     } else if (pointers.size === 2) {
       pinching = true; const [a, b] = [...pointers.values()]; baseDistance = Math.hypot(a.x - b.x, a.y - b.y); baseScale = scale;
+      if (dragMode === 'x') setTrack(0, SNAP_MS); dragMode = '';
     }
   };
   box.onpointermove = (e) => {
@@ -225,25 +300,42 @@ export function openAlbumViewer(id, albumRoot, helpers) {
     if (Math.abs(dx) + Math.abs(dy) > 8) { clearTimeout(longTimer); moved = true; }
     if (pointers.size === 2 && current().kind !== 'video') {
       const [a, b] = [...pointers.values()]; scale = clamp(baseScale * Math.hypot(a.x - b.x, a.y - b.y) / (baseDistance || 1), 1, 5); paint(); if (scale > 1.2) original();
-    } else if (pinching) return;
-    else if (scale > 1) { px = basePX + dx; py = basePY + dy; paint(); }
-    else if (dy > 0 && dy > Math.abs(dx)) {
+      return;
+    }
+    if (pinching) return;
+    if (scale > 1) { px = basePX + dx; py = basePY + dy; paint(); return; }
+    if (!dragMode && Math.abs(dx) + Math.abs(dy) > 8) dragMode = dy > 0 && dy > Math.abs(dx) ? 'y' : 'x';
+    const s = curSlide();
+    if (dragMode === 'y' && s) {
       const shrink = clamp(1 - dy / innerHeight, .5, 1);
-      box.style.transform = `translate(${dx}px, ${dy}px) scale(${shrink})`;
+      s.zoom.style.transform = `translate(${dx}px, ${dy}px) scale(${shrink})`;
       overlay.style.backgroundColor = `rgba(0,0,0,${clamp(1 - dy / 350, .1, 1)})`;
-    } else box.style.transform = `translateX(${dx}px)`;
+    } else if (dragMode === 'x') {
+      samples.push({ x: e.clientX, t: e.timeStamp }); while (samples.length > 2 && e.timeStamp - samples[0].t > 100) samples.shift();
+      const atEnd = (dx > 0 && index === 0) || (dx < 0 && index === items.length - 1);
+      setTrack(atEnd ? dx * .35 : dx); // 两端橡皮筋
+    }
   };
   function endPointer(e, cancelled = false) {
     if (!pointers.has(e.pointerId)) return;
     clearTimeout(longTimer); pointers.delete(e.pointerId);
     if (pointers.size) return;
     const dx = e.clientX - downX, dy = e.clientY - downY;
+    const mode = dragMode; dragMode = '';
+    const s = curSlide();
+    if (mode === 'y' && s && scale === 1) s.zoom.style.transform = '';
+    overlay.style.backgroundColor = '';
     if (!cancelled && !pinching && scale === 1 && menu.hidden) {
-      if (dy > 110 && dy > Math.abs(dx)) { close(); return; }
-      if (Math.abs(dx) > 65 && Math.abs(dx) > Math.abs(dy)) show(index + (dx < 0 ? 1 : -1));
-      else if (!moved && e.pointerType === 'touch') { const now = Date.now(); if (now - lastTap < 300 && current().kind !== 'video') { touchZoomAt = now; zoom(); lastTap = 0; } else lastTap = now; }
-    }
-    box.style.transform = ''; overlay.style.backgroundColor = ''; pinching = false;
+      if (mode === 'y' && dy > 110) { close(); pinching = false; return; }
+      if (mode === 'x') {
+        const first = samples[0], v = first && e.timeStamp > first.t ? (e.clientX - first.x) / (e.timeStamp - first.t) : 0;
+        const flick = Math.abs(v) > .45 && Math.abs(dx) > 15 && Math.sign(v) === Math.sign(dx);
+        const atEnd = (dx > 0 && index === 0) || (dx < 0 && index === items.length - 1);
+        if ((Math.abs(dx) > 65 || flick) && !atEnd) go(dx < 0 ? 1 : -1, atEnd ? dx * .35 : dx);
+        else setTrack(0, SNAP_MS);
+      } else if (!moved && e.pointerType === 'touch') { const now = Date.now(); if (now - lastTap < 300 && current().kind !== 'video') { touchZoomAt = now; zoom(); lastTap = 0; } else lastTap = now; }
+    } else if (mode === 'x') setTrack(0, SNAP_MS);
+    pinching = false;
   }
   box.onpointerup = (e) => endPointer(e); box.onpointercancel = (e) => endPointer(e, true);
   window.addEventListener('hashchange', onRoute); window.addEventListener('pagehide', onRoute); document.addEventListener('keydown', keydown);
