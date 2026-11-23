@@ -1,5 +1,6 @@
-const FINAL_SETTLE_MS = 800;
 const STOP_TIMEOUT_MS = 2200;
+const START_TIMEOUT_MS = 20000;
+const NO_TRANSCRIPT_TIMEOUT_MS = 8000;
 const LISTEN_TIMEOUT_MS = 20000;
 
 const START_ERRORS = new Map([
@@ -21,7 +22,7 @@ export function careListener(Recognition, { onState, onText, onFinal, onError })
     clearTimeout(turn.settle);
     clearTimeout(turn.ending);
     const speech = turn.speech;
-    speech.onresult = speech.onerror = speech.onspeechend = speech.onend = null;
+    speech.onaudiostart = speech.onspeechstart = speech.onresult = speech.onerror = speech.onend = null;
     if (!turn.ended) {
       try { speech.abort(); } catch { /* The recognizer may already have stopped. */ }
     }
@@ -39,6 +40,7 @@ export function careListener(Recognition, { onState, onText, onFinal, onError })
   function stop() {
     const turn = current;
     if (!turn || turn.ending) return;
+    clearTimeout(turn.timeout);
     onState('finishing');
     turn.ending = setTimeout(() => finish(turn), STOP_TIMEOUT_MS);
     try { turn.speech.stop(); } catch { finish(turn, turn.finalText ? '' : 'unavailable'); }
@@ -53,25 +55,40 @@ export function careListener(Recognition, { onState, onText, onFinal, onError })
       speech.lang = 'zh-CN';
       speech.interimResults = true;
       speech.continuous = false;
+      const markListening = () => {
+        if (current !== turn || turn.listening || turn.ending) return;
+        turn.listening = true;
+        clearTimeout(turn.timeout);
+        turn.timeout = setTimeout(() => finish(turn, 'no-transcript'), NO_TRANSCRIPT_TIMEOUT_MS);
+        onState('listening');
+      };
+      speech.onaudiostart = speech.onspeechstart = markListening;
       speech.onresult = (event) => {
         if (current !== turn) return;
         const results = Array.from(event.results);
         const text = results.map((result) => result[0].transcript).join(' ').trim();
+        if (text) {
+          markListening();
+          if (!turn.receivedText && !turn.ending) {
+            turn.receivedText = true;
+            clearTimeout(turn.timeout);
+            turn.timeout = setTimeout(stop, LISTEN_TIMEOUT_MS);
+          }
+        }
         turn.finalText = results.every((result) => result.isFinal) ? text : '';
         onText(text);
         clearTimeout(turn.settle);
-        // Some browsers deliver a final result but omit the end event.
-        if (turn.finalText) turn.settle = setTimeout(() => finish(turn), FINAL_SETTLE_MS);
+        // Let single-utterance recognition finish naturally. Use the final text if end never arrives.
+        if (turn.finalText) turn.settle = setTimeout(() => finish(turn), STOP_TIMEOUT_MS);
       };
       speech.onerror = (event) => finish(turn, event.error || 'unavailable');
-      speech.onspeechend = () => { if (current === turn) stop(); };
       speech.onend = () => {
         turn.ended = true;
         finish(turn);
       };
       onText('');
-      onState('listening');
-      turn.timeout = setTimeout(stop, LISTEN_TIMEOUT_MS);
+      onState('starting');
+      turn.timeout = setTimeout(() => finish(turn, 'start-timeout'), START_TIMEOUT_MS);
       speech.start();
     } catch (error) {
       cancel();

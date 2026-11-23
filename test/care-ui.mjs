@@ -165,22 +165,30 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   const conversation = page.getByRole('log', { name: '喂养记录对话' });
   const mic = page.locator('#care-voice-mic');
   const dictation = page.locator('#care-voice-text');
+  const status = page.locator('#care-voice-status');
+  const startCapture = () => page.evaluate(() => window.careRecognizer.onaudiostart());
   const emitSpeech = (text, final, end = false) => page.evaluate(({ text, final, end }) => {
     const recognizer = window.careRecognizer;
     recognizer.onresult({ results: [Object.assign([{ transcript: text }], { isFinal: final })] });
     if (end) recognizer.onend();
   }, { text, final, end });
-  await page.getByRole('status').filter({ hasText: '正在听写' }).waitFor();
+  await status.filter({ hasText: '正在打开麦克风' }).waitFor();
+  await startCapture();
+  await status.filter({ hasText: '正在听写' }).waitFor();
   await emitSpeech('刚才瓶喂了八十毫升', false);
   assert.equal(await page.locator('#care-voice-draft').innerText(), '刚才瓶喂了八十毫升');
   assert.equal(await conversation.getByText(/已记录/).count(), 0);
-  await page.evaluate(() => window.careRecognizer.onspeechend());
-  assert.equal(await page.evaluate(() => window.careRecognizer.stopped), true);
-  await emitSpeech('刚才用奶瓶喂了', true, true);
+  await page.evaluate(() => window.careRecognizer.onspeechend?.());
+  assert.equal(await page.evaluate(() => !!window.careRecognizer.stopped), false);
+  await emitSpeech('早上8:00为了奶', true, true);
+  await conversation.getByText(/母乳亲喂，还是用奶瓶喂/).waitFor();
+  assert.equal(await page.evaluate(() => !!window.careRecognizer.aborted), false);
+  await mic.click();
+  await emitSpeech('瓶喂', true, true);
   await conversation.getByText(/实际喝下了多少毫升/).waitFor();
   await mic.click();
   await emitSpeech('九十五毫升母乳', true);
-  await conversation.getByText(/已记录 1 条.*95 mL/s).waitFor();
+  await conversation.getByText(/已记录 1 条.*08:00.*95 mL/s).waitFor();
   assert.equal(await timeline.getByText('95 mL · 母乳', { exact: true }).count(), 1);
   await page.getByRole('button', { name: '撤销本次记录' }).click();
   assert.equal(await timeline.getByText('95 mL · 母乳', { exact: true }).count(), 0);
@@ -189,6 +197,31 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   await page.getByRole('button', { name: '取消听写' }).click();
   assert.equal(await page.evaluate(() => window.careRecognizer.aborted), true);
   assert.equal(await timeline.getByText('100 mL', { exact: true }).count(), 0);
+
+  await mic.click();
+  await startCapture();
+  await page.getByRole('button', { name: '完成', exact: true }).click();
+  await page.waitForFunction(() => window.careRecognizer.aborted);
+  await voice.click();
+  await status.filter({ hasText: '正在打开麦克风' }).waitFor();
+  await startCapture();
+  await emitSpeech('早上8:00为了奶', true, true);
+  await conversation.getByText(/母乳亲喂，还是用奶瓶喂/).waitFor();
+  await page.clock.install({ time: new Date('2024-03-01T01:10:00Z') });
+  await mic.click();
+  await startCapture();
+  await page.clock.fastForward(8100);
+  await status.filter({ hasText: '识别服务没有返回文字' }).waitFor();
+  assert.equal(await dictation.isVisible(), true);
+  assert.equal(await page.evaluate(() => window.careRecognizer.aborted), true);
+  await dictation.fill('母乳');
+  await conversation.getByText(/已记录 1 条.*08:00.*母乳亲喂/s).waitFor();
+  await page.getByRole('button', { name: '撤销本次记录' }).click();
+
+  await mic.click();
+  await page.clock.fastForward(20100);
+  await status.filter({ hasText: '麦克风未开始收音' }).waitFor();
+  assert.equal(await dictation.isVisible(), true);
 
   for (const [error, feedback] of [
     ['no-speech', '没听清'],
@@ -200,7 +233,7 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
     await mic.click();
     await page.evaluate((error) => window.careRecognizer.onerror({ error }), error);
     await page.getByRole('status').filter({ hasText: feedback }).waitFor();
-    assert.equal(await dictation.isVisible(), error !== 'no-speech');
+    assert.equal(await dictation.isVisible(), true);
   }
   await page.evaluate(() => {
     const start = window.SpeechRecognition.prototype.start;
