@@ -117,6 +117,8 @@ button.care-row { cursor: pointer; }
 .care-import-list label { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .care-import-list input { margin-top: 4px; }
 .care-import-list span { min-width: 0; overflow-wrap: anywhere; }
+.care-paper-page summary { padding: 10px 0; cursor: pointer; font-weight: 700; }
+.care-paper-page summary span { margin-left: 4px; font-weight: 400; }
 .care-voice-thread {
   display: flex;
   flex-direction: column;

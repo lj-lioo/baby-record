@@ -1,4 +1,4 @@
-import { CARE_LABELS as LABEL, STOOL_TYPES, careDetail, careNewest, summarizeCare, validateCare } from '../care.js';
+import { CARE_LABELS as LABEL, STOOL_TYPES, careDay, careDetail, careNewest, summarizeCare, validateCare } from '../care.js';
 import { addDays, cnDate, todayStr, toLocalInput } from '../dates.js';
 import { medDoses } from '../growth.js';
 import { canEditGrowth, requireEditEvents } from '../roles.js';
@@ -58,16 +58,23 @@ function quickActions(today, canUndo) {
 }
 
 function dailyLog(date, records, historical, editable) {
-  const rows = [...records, ...historical].filter((record) => record.date === date).sort(careNewest);
+  const rows = [...records, ...historical].filter((record) => careDay(record) === date).sort(careNewest);
+  const paper = rows.filter((record) => record.paper);
+  const renderRow = (record) => {
+    const time = record.time || (record.kind === 'dose' ? '时间未记' : '—');
+    const content = `<span class="care-time">${record.date !== date ? '次日<br>' : ''}${esc(time)}</span><span class="care-row-content">
+      <strong>${esc(record.title || (record.kind === 'dose' ? record.name : LABEL[record.kind]))}</strong>
+      <small>${[record.legacy, record.legacy ? record.detail : careDetail(record), record.note].filter(Boolean).map(esc).join(' · ')}</small></span>`;
+    return `<li>${editable && !record.legacy
+      ? `<button type="button" class="care-row" data-care-id="${esc(record.id)}">${content}<span class="care-edit">编辑</span></button>`
+      : `<div class="care-row">${content}</div>`}</li>`;
+  };
   return `<section class="card care-timeline"><h2>当天记录</h2>
-    ${rows.length ? `<ul>${rows.map((record) => {
-      const content = `<span class="care-time">${esc(record.time || (record.kind === 'dose' ? '时间未记' : '—'))}</span><span class="care-row-content">
-        <strong>${esc(record.title || (record.kind === 'dose' ? record.name : LABEL[record.kind]))}</strong>
-        <small>${[record.legacy, record.legacy ? record.detail : careDetail(record), record.note].filter(Boolean).map(esc).join(' · ')}</small></span>`;
-      return `<li>${editable && !record.legacy
-        ? `<button type="button" class="care-row" data-care-id="${esc(record.id)}">${content}<span class="care-edit">编辑</span></button>`
-        : `<div class="care-row">${content}</div>`}</li>`;
-    }).join('')}</ul>` : '<p class="small muted">这一天还没有记录。</p>'}
+    ${rows.length ? `<ul>${rows.filter((record) => !record.paper).map(renderRow).join('')}
+      ${paper.length ? `<li><details class="care-paper-page">
+        <summary>纸本记录 <span class="small muted">08:00 至次日 08:00 · ${paper.length} 项</span></summary>
+        <ul>${paper.map(renderRow).join('')}</ul>
+      </details></li>` : ''}</ul>` : '<p class="small muted">这一天还没有记录。</p>'}
     <a class="care-link" href="#/growth">查看原用药记录</a>
   </section>`;
 }
@@ -163,7 +170,7 @@ export function renderCare(root) {
   const importButton = root.querySelector('#care-import');
   if (importButton) importButton.onclick = () => openCareImport((records) => {
     undoRecords = [];
-    setDate(records[0].date);
+    setDate(careDay(records[0]));
   });
   root.querySelectorAll('[data-care-kind]').forEach((button) => {
     button.onclick = () => openEditor(button.dataset.careKind, date, null, (saved) => {
@@ -174,7 +181,7 @@ export function renderCare(root) {
   root.querySelectorAll('[data-care-id]').forEach((button) => {
     button.onclick = () => {
       const existing = store.getCare(button.dataset.careId);
-      if (existing) openEditor(existing.kind, existing.date, existing, (saved) => setDate(saved[0].date));
+      if (existing) openEditor(existing.kind, existing.date, existing, (saved) => setDate(careDay(saved[0])));
     };
   });
   const undo = root.querySelector('#care-undo');
@@ -262,6 +269,7 @@ function openEditor(kind, date, existing, onSaved) {
         ml: selected === 'bottle' ? data.get('ml') : existing?.kind === 'nursing' ? existing.ml : null,
         milk: existing?.milk, minutes: data.get('minutes'),
         stool: data.get('stool'), name: data.get('name'), dose: data.get('dose'),
+        paper: existing?.paper,
       }));
       const latest = toLocalInput(Date.now());
       const error = inputs.map((input) => validateCare(input, latest)).find(Boolean);
