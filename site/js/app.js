@@ -6,6 +6,7 @@ import { renderSettings } from './views/settings.js';
 import { renderHelp } from './views/help.js';
 import { renderAlbum, updateAlbum } from './views/album.js';
 import { renderGrowth } from './views/growth.js';
+import { renderCare } from './views/care.js';
 import { showAlarm, checkDueAlarms, alarmShowing } from './views/alarm.js';
 import { syncReminders, refreshOnLaunch } from './push.js';
 import { unlockAudio } from './sound.js';
@@ -14,7 +15,7 @@ import { openPairSheet } from './views/settings.js';
 import { applyInviteFromParams, hasRole, openRolePicker, roleLabel } from './roles.js';
 
 const view = document.getElementById('view');
-const routes = { home: renderHome, album: renderAlbum, growth: renderGrowth, settings: renderSettings, help: renderHelp };
+const routes = { home: renderHome, care: renderCare, album: renderAlbum, growth: renderGrowth, settings: renderSettings, help: renderHelp };
 
 // 邀请链接 #/join?role=…：模块加载时取出参数并立刻从地址栏去掉（不含同步密钥）
 let pendingJoinParams = null;
@@ -76,7 +77,7 @@ window.addEventListener('select-date', (e) => { selectDate(e.detail); if (parseH
 store.subscribe(() => {
   const p = parseHash().path;
   if (p === 'album') { updateAlbum(view); syncReminders(); return; }
-  if (p === 'home' || p === 'alarm' || p === 'album' || p === 'growth' || p === 'settings') render();
+  if (p === 'home' || p === 'alarm' || p === 'care' || p === 'growth' || p === 'settings') render();
   syncReminders();
 });
 

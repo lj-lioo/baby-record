@@ -10,6 +10,7 @@ const site = path.join(here, '../site');
 const shotDir = path.join(here, '../screenshots');
 fs.mkdirSync(shotDir, { recursive: true });
 const APP_V = /APP_BUILD = '([^']+)'/.exec(fs.readFileSync(path.join(site, 'js/views/settings.js'), 'utf8'))[1];
+const CONFIG_V = /appVersion: '([^']+)'/.exec(fs.readFileSync(path.join(site, 'config.js'), 'utf8'))[1];
 
 function staticServer(root, port) {
   const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
@@ -94,14 +95,14 @@ const ageSmall = await page.locator('.album-day-age').first().evaluate((el) => {
   return { ageFs: parseFloat(s.fontSize), titleFs: parseFloat(h2.fontSize), muted: s.color !== h2.color || el.classList.contains('muted') };
 });
 check(`第X天字号小于标题 (${ageSmall.ageFs}<${ageSmall.titleFs})`, ageSmall.ageFs < ageSmall.titleFs && ageSmall.muted);
-check(`版本 ${APP_V}`, APP_V === '1.15.1');
+check(`设置与发布配置的版本一致 (${APP_V})`, APP_V === CONFIG_V);
 
 await page.screenshot({ path: path.join(shotDir, '69-album-day-age-small.png'), fullPage: true });
 
 await page.goto(`http://127.0.0.1:${APP_PORT}/#/settings`);
 await page.waitForTimeout(500);
 const ver = await page.locator('#appVer').innerText();
-check(`设置页版本 ${ver}`, ver.includes('v1.15.1'));
+check(`设置页版本 ${ver}`, ver.includes(`v${APP_V}`));
 await page.screenshot({ path: path.join(shotDir, '70-settings-v1.12.15.png'), fullPage: true });
 
 check('无页面 JS 错误', errors.length === 0);

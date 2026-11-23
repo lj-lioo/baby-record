@@ -1,7 +1,7 @@
 // 数据层：元数据保存在本机 localStorage，缩略图在 IndexedDB，无需登录。
-// 结构可扩展：以后可加入 growth（生长记录）、feeding（喂养记录）等集合。
 import { fillWindow } from './windows.js';
 import { readThumb, writeThumb, hasStoredThumb, deleteThumb } from './thumbs.js';
+import { normalizeCare } from './care.js';
 const KEY = 'babyrecord.v1';
 const SCHEMA_VERSION = 1;
 export const CATEGORY_KEYS = ['vaccine', 'paidvax', 'checkup', 'other'];
@@ -13,6 +13,7 @@ function defaults() {
     photos: [],          // v1.8.0 相册元数据（原图密文在照片服务 / 本机缓存）
     growth: [],          // v1.9.0 生长记录（身高/体重/头围）
     meds: [],            // v1.12.0 用药记录（按时段）
+    care: [],            // 亲喂、瓶喂、排便和实际用药；包含同步删除标记
     snoozes: [],         // 稍后提醒记录 {id, eventId, fireAt, label}
     fired: {},           // 已响铃/已确认的提醒 id -> 时间戳
     settings: {
@@ -27,7 +28,6 @@ function defaults() {
       profileUpdatedAt: 0, // 宝宝资料的修改时间（云同步用）
       memberRole: '',      // v1.13.0 本机亲友身份：爸爸/妈妈/爷爷/奶奶/姥姥/姥爷（不入云同步 profile）
     },
-    // feeding: []   // 预留：以后的功能
   };
 }
 
@@ -54,6 +54,7 @@ function migrate(data) {
   out.photos = (out.photos || []).map(normalizePhoto);
   out.growth = (out.growth || []).map(normalizeGrowth);
   out.meds = (out.meds || []).map(normalizeMed);
+  out.care = Array.isArray(out.care) ? [...mergeCare([], out.care).values()] : [];
   out.version = SCHEMA_VERSION;
   return out;
 }
@@ -194,6 +195,22 @@ export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+function mergeCare(current, incoming) {
+  const byId = new Map(current.map((record) => [record.id, record]));
+  for (const input of incoming) {
+    const record = normalizeCare(input);
+    if (record && record.updatedAt > (byId.get(record.id)?.updatedAt || 0)) byId.set(record.id, record);
+  }
+  return byId;
+}
+
+function commitCare(next) {
+  const before = state.care;
+  state.care = [...next.values()];
+  try { save(); }
+  catch (e) { state.care = before; throw e; }
+}
+
 export const store = {
   get state() { return state; },
   subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
@@ -237,6 +254,30 @@ export const store = {
   deleteMed(id) {
     state.meds = state.meds.filter((m) => m.id !== id);
     save();
+  },
+  care() { return state.care.filter((record) => !record.deleted); },
+  careForSync() { return state.care; },
+  getCare(id) { return state.care.find((record) => record.id === id && !record.deleted); },
+  upsertCare(input) {
+    const current = input.id ? this.getCare(input.id) : null;
+    if (input.id && !current) throw new Error('这条记录已不存在');
+    const id = current?.id || uid();
+    const updatedAt = Math.max(Date.now(), (current?.updatedAt || 0) + 1);
+    const record = normalizeCare({ ...input, id, updatedAt, deleted: false });
+    if (!record) throw new Error('请检查记录内容');
+    commitCare(mergeCare(state.care, [record]));
+    return record;
+  },
+  deleteCare(id) {
+    const current = this.getCare(id);
+    if (!current) return;
+    const updatedAt = Math.max(Date.now(), current.updatedAt + 1);
+    commitCare(mergeCare(state.care, [{ id, updatedAt, deleted: true }]));
+  },
+  applyRemoteCare(records) {
+    if (!records.length) return;
+    const next = mergeCare(state.care, records);
+    if (next.size !== state.care.length || state.care.some((record) => next.get(record.id) !== record)) commitCare(next);
   },
   eventsOn(date) {
     return state.events.filter((e) => e.date === date)
@@ -351,7 +392,10 @@ export const store = {
     const parsed = JSON.parse(text);
     const data = parsed && parsed.data ? parsed.data : parsed;
     if (!data || !Array.isArray(data.events)) throw new Error('文件格式不正确');
-    state = migrate(data);
+    const next = migrate(data);
+    // 老备份不含照护记录；新版备份按修改时间合并，保留已知的删除标记。
+    next.care = [...mergeCare(state.care, next.care).values()];
+    state = next;
     save();
     return state.events.length;
   },

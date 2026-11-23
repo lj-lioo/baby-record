@@ -4,12 +4,14 @@ import { ensureRemoteThumb } from './photos.js';
 // 合并：每个事项按 updatedAt「最后写入者胜」；删除用 tombstone 同步；一键生成的计划按 scheduleId 去重。
 import { store } from './store.js';
 import * as core from './sync-core.js';
+import { normalizeCare } from './care.js';
 
 const LS = 'babyrecord.sync';
 const EV = core.EVENT_PREFIX;
 const PH = core.PHOTO_PREFIX;
 const GR = core.GROWTH_PREFIX;
 const MD = core.MEDS_PREFIX;
+const CARE = core.CARE_PREFIX;
 let meta = loadMeta();
 
 // 配对链接 https://…/baby-record/#pair=<密钥>：# 后面的内容浏览器不会发给服务器。
@@ -130,6 +132,14 @@ async function collectChanges(enc) {
     if (!meta.dels[rid]) meta.dels[rid] = Math.max(now, meta.acked[rid] + 1);
     if (meta.acked[rid] !== meta.dels[rid]) changes.push({ id: rid, updatedAt: meta.dels[rid], deleted: true, data: null });
   }
+  // 每次喂养独立加密，避免不同手机同时记录同一天时覆盖对方。
+  for (const record of store.careForSync()) {
+    const id = CARE + record.id;
+    if (meta.acked[id] === record.updatedAt) continue;
+    const deleted = record.deleted === true;
+    const data = deleted ? null : await core.seal(enc, id, record.updatedAt, { type: 'care', record });
+    changes.push({ id, updatedAt: record.updatedAt, deleted, data });
+  }
   const st = store.state.settings;
   const pt = profileTime();
   if (pt && meta.acked[core.PROFILE_ID] !== pt) {
@@ -158,6 +168,7 @@ async function applyRemote(records, enc) {
   const photosUpserts = [], photosDeletes = [];
   const growthUpserts = [], growthDeletes = [];
   const medsUpserts = [], medsDeletes = [];
+  const care = [];
   let profile = null;
   const local = new Map(store.events().map((e) => [EV + e.id, e]));
   const localPh = new Map(store.photos().map((p) => [PH + p.id, p]));
@@ -224,6 +235,18 @@ async function applyRemote(records, enc) {
         delete meta.dels[r.id];
       }
       meta.acked[r.id] = r.updatedAt;
+    } else if (r.id.startsWith(CARE)) {
+      const id = r.id.slice(CARE.length);
+      const updatedAt = r.updatedAt;
+      if (r.deleted) {
+        care.push({ id, updatedAt, deleted: true });
+      } else {
+        let obj;
+        try { obj = await core.unseal(enc, r.id, updatedAt, r.data); }
+        catch (e) { console.warn('无法解密照护记录', r.id, e); continue; }
+        const record = obj?.type === 'care' && normalizeCare({ ...obj.record, id, updatedAt, deleted: false });
+        if (record) care.push(record);
+      }
     } else if (r.id === core.PROFILE_ID && !r.deleted) {
       if (r.updatedAt <= profileTime()) { meta.acked[r.id] = Math.max(meta.acked[r.id] || 0, r.updatedAt); continue; }
       try {
@@ -234,7 +257,14 @@ async function applyRemote(records, enc) {
     }
   }
   applying = true;
-  try { store.applyRemote({ upserts, deletes, photosUpserts, photosDeletes, growthUpserts, growthDeletes, medsUpserts, medsDeletes, profile }); } finally { applying = false; }
+  try {
+    store.applyRemote({ upserts, deletes, photosUpserts, photosDeletes, growthUpserts, growthDeletes, medsUpserts, medsDeletes, profile });
+    store.applyRemoteCare(care);
+    for (const record of care) {
+      const id = CARE + record.id;
+      meta.acked[id] = Math.max(meta.acked[id] || 0, record.updatedAt);
+    }
+  } finally { applying = false; }
   return upserts.length + deletes.length + photosUpserts.length + photosDeletes.length + growthUpserts.length + growthDeletes.length + medsUpserts.length + medsDeletes.length + (profile ? 1 : 0);
 }
 
