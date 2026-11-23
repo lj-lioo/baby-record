@@ -68,7 +68,8 @@ export function openAlarmBatchSheet(eventIds) {
     ${excluded ? `<p class="small muted">另有 ${excluded} 项缺少已核对的旧闹钟信息，留待单独核对。</p>` : ''}
     <ul class="small">${plan.groups.map(changes).join('')}${plan.issues.map(({ title, message }) =>
       `<li>${esc(title)} · ${esc(message)}</li>`).join('')}</ul>
-    ${link ? `<p class="small muted">「${esc(alarmBatchShortcutName())}」先核对整组，在 iPhone 上显示清单并确认一次。</p>
+    ${link ? `<p class="small muted">首次使用，请先在 iPhone 的「快捷指令」里配置「${esc(alarmBatchShortcutName())}」。它负责核对清单和实际更新提醒。</p>
+      <p class="small"><a href="https://github.com/lj-lioo/baby-record/blob/main/docs/alarm-batch-pilot.md" target="_blank" rel="noopener">批量快捷指令配置说明</a></p>
       <button type="button" class="btn block" id="al-batch-go">打开批量快捷指令</button>
       <button type="button" class="btn secondary block" id="al-batch-done" hidden>我已看到快捷指令报告全部成功</button>`
       : '<p class="note">这组中有待核对的提醒。请先处理无法确认的条目。</p>'}
