@@ -39,6 +39,7 @@ function numberFromSpeech(raw) {
 
 function normalize(text) {
   return text.normalize('NFKC').trim().replace(/k\s*[一壹1](?![a-z0-9])/gi, 'K1')
+    .replace(/为了奶(?=$|[\s,，。.!！；;？?])/g, '喂了奶')
     .replace(/昨晚/g, '昨天晚上').replace(/昨早/g, '昨天早上')
     .replace(/今早/g, '今天早上').replace(/今晚/g, '今天晚上')
     .replace(/明早/g, '明天早上').replace(/明晚/g, '明天晚上');
@@ -163,9 +164,10 @@ function splitRecords(text) {
 
 function updateDraft(record, info, reply, asking, latest) {
   if (info.kind && record.kind && info.kind !== record.kind) return null;
+  const nursingAnswer = asking === 'kind' && /^(?:是)?母乳$/.test(reply);
   const next = {
     ...record,
-    kind: info.kind || record.kind,
+    kind: info.kind || (nursingAnswer ? 'nursing' : record.kind),
     date: info.date || record.date,
     time: info.time || record.time,
     ml: info.ambiguousMl ? undefined : info.ml ?? record.ml,

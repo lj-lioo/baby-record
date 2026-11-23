@@ -49,6 +49,17 @@ test('对话补充瓶喂奶量、喂养方式和补记时间', () => {
   assert.equal(say('九点', { pending: two.pending }).records[1].date, '2026-11-22');
 });
 
+test('听写把「喂了奶」写成「为了奶」时先确认方式，并保留原时间', () => {
+  const first = say('早上8:00为了奶');
+  assert.match(first.question, /亲喂.*奶瓶/);
+  assert.deepEqual(first.records, []);
+  assert.equal(first.pending[0].time, '08:00');
+  const second = say('母乳', { pending: first.pending });
+  assert.deepEqual(second.records.map(({ kind, time }) => [kind, time]), [['nursing', '08:00']]);
+  assert.match(say('母乳90毫升', { pending: first.pending }).question, /亲喂.*奶瓶/);
+  assert.equal(say('早上8:00为了奶量做了笔记').pending.length, 0);
+});
+
 test('提问、计划、否定、冲泡量及模糊时间不自动入账', () => {
   for (const phrase of [
     '维生素AD能不能吃一滴', '维生素AD吃不吃', '准备喂120毫升配方奶', '还没吃维生素K1',

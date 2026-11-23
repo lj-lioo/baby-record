@@ -14,6 +14,10 @@ const LISTEN_ERRORS = new Map([
   ['audio-capture', '无法录音，请检查麦克风是否被占用'],
   ['network', '语音识别连接失败，请检查网络'],
   ['language-not-supported', '当前语音识别服务不支持普通话'],
+  ['start-timeout', '麦克风未开始收音，可以用键盘听写'],
+  ['no-transcript', '麦克风已开启，但识别服务没有返回文字，可以用键盘听写'],
+  ['no-speech', '没听清，可以再说一次或用键盘听写'],
+  ['aborted', '听写已中断，可以重试或用键盘听写'],
 ]);
 
 export function openCareVoice({ day, onSaved }) {
@@ -54,6 +58,7 @@ export function openCareVoice({ day, onSaved }) {
     const undo = q('#care-voice-undo');
     const reset = q('#care-voice-reset');
     const form = q('#care-voice-form');
+    const listenBar = q('#care-listen-bar');
     const mic = q('#care-voice-mic');
     const stop = q('#care-voice-stop');
     const abort = q('#care-voice-abort');
@@ -108,11 +113,11 @@ export function openCareVoice({ day, onSaved }) {
       onState: (state) => {
         const idle = state === 'idle';
         mic.hidden = !idle;
-        stop.hidden = idle;
+        stop.hidden = idle || state === 'starting';
         stop.disabled = state === 'finishing';
         abort.hidden = idle;
-        status.textContent = { idle: '说完自动记录', listening: '正在听写…', finishing: '正在转换成文字…' }[state];
-        q('#care-listen-bar').classList.toggle('listening', !idle);
+        status.textContent = { idle: '说完自动记录', starting: '正在打开麦克风…', listening: '正在听写…', finishing: '正在转换成文字…' }[state];
+        listenBar.classList.toggle('listening', !idle);
       },
       onText: (text) => { draft.textContent = text; draft.hidden = !text; },
       onFinal: (text) => {
@@ -121,10 +126,6 @@ export function openCareVoice({ day, onSaved }) {
       },
       onError: (error) => {
         draft.hidden = true;
-        if (error === 'no-speech' || error === 'aborted') {
-          status.textContent = error === 'no-speech' ? '没听清，可以再说一次' : '听写已中断，可以重试';
-          return;
-        }
         status.textContent = LISTEN_ERRORS.get(error) || '直接听写启动失败，可以用键盘听写';
         mic.textContent = '🎙️ 重试听写';
         // A fresh tap is needed to bring up the system keyboard on iPhone after an async error.
@@ -206,7 +207,7 @@ export function openCareVoice({ day, onSaved }) {
     observer.observe(sheet, { childList: true });
     if (Recognition) start();
     else {
-      q('#care-listen-bar').hidden = true;
+      listenBar.hidden = true;
       openInput('dictation');
     }
   });
