@@ -5,6 +5,8 @@ import { todayStr, cnDate, weekday, addDays, parseYmd } from '../dates.js';
 import { windowOf, planOutside } from '../windows.js';
 import { maybeCascade } from './paidcat.js';
 import { requireEditEvents } from '../roles.js';
+import { alarmState, openAlarmSheet } from './actions.js';
+import { alarmSig } from '../shortcuts.js';
 
 const fmt = (d) => `${cnDate(d, d.slice(0, 4) !== todayStr().slice(0, 4))} ${weekday(d)}`;
 
@@ -34,7 +36,7 @@ export function openPlannedSheet(ev) {
     </div>
     ${chips.length ? `<div class="quick" id="pd-chips" style="margin:-6px 0 10px">${chips.map((d) => `<button type="button" data-d="${d}">${w && d === w.earliest ? '最早 ' : ''}${esc(fmt(d))}</button>`).join('')}</div>` : ''}
     <div id="pd-warn"></div>
-    ${ev.alarmAdded ? (ev.alarmTagged ? '<p class="note small">⏰ 这个事项已设过 iPhone 闹钟。改了计划日后会显示「需重设闹钟」：再点「⏰ 设为闹钟提醒」会先自动删除旧提醒再新建（需已按帮助页「新增」步骤更新快捷指令）。</p>' : '<p class="note small">⏰ 这个事项已设过 iPhone 闹钟。改了计划日后会显示「需重设闹钟」：请到「提醒事项」的「宝宝」列表删掉旧提醒，再点「⏰ 设为闹钟提醒」。</p>') : ''}
+    ${alarmState(ev) !== 'none' ? '<p class="note small">改计划后，请核对苹果「提醒事项」中的旧闹钟。固定的自定义响铃时间需单独修改。</p>' : ''}
     <p class="small muted" style="margin:4px 0 10px">提醒（默认前一天 20:00）、闹钟和苹果日历都会按计划日期/时间。</p>
     <div class="btn-row">
       <button type="button" class="btn ghost" id="pd-cancel">取消</button>
@@ -61,11 +63,13 @@ export function openPlannedSheet(ev) {
       const cur = store.getEvent(ev.id);
       if (!cur) { closeSheet(); return; }
       if (cur.date === date && (cur.time || '') === time) { closeSheet(); return; }
-      store.upsertEvent({ ...cur, date, time });
+      const saved = store.upsertEvent({ ...cur, date, time });
+      const review = alarmState(saved) === 'changed' && alarmSig(cur) !== alarmSig(saved);
       closeSheet();
-      toast(`计划日已改为 ${cnDate(date)} ${weekday(date)}${time ? ' ' + time : ''}${cur.alarmAdded ? '，请重设闹钟' : ''}`, 3000);
+      toast(`计划日已改为 ${cnDate(date)} ${weekday(date)}${time ? ' ' + time : ''}${review ? '，请核对旧闹钟' : ''}`, 3000);
       window.dispatchEvent(new CustomEvent('select-date', { detail: date }));
-      if (cur.date !== date) maybeCascade(cur.id); // v1.7.0：自费疫苗系列：提示后续剂次一起顺延
+      if (cur.date !== date && maybeCascade(cur.id)) return;
+      if (review) openAlarmSheet(saved);
     };
     check();
   });

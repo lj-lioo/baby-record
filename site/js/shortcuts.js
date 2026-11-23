@@ -8,7 +8,7 @@
 // 所以重设闹钟会先删掉旧的再新建。字段数不变（仍是 时间|标题|备注），没更新的旧快捷指令照常工作（备注里多一个标记）。
 import { store } from './store.js';
 import { ymd, pad, daysBetween, cnDate } from './dates.js';
-import { allReminderInstances } from './reminders.js';
+import { fireAtOf, reminderLabel } from './reminders.js';
 import { CATEGORIES } from './categories.js';
 
 const clean = (s) => String(s || '').replace(/[|\r\n]+/g, ' ').trim();
@@ -22,9 +22,17 @@ function relToFire(evDate, fireAt) {
   return cnDate(evDate);
 }
 
-// 该事项所有“未来的”提醒（已去重）
+// Compute from the supplied event so an editor can compare before and after saving.
 export function futureAlarms(ev, now = Date.now()) {
-  return allReminderInstances().filter((x) => x.eventId === ev.id && x.fireAt > now && !x.rid.startsWith('snz-'));
+  if (ev.done) return [];
+  const byTime = new Map();
+  for (const reminder of ev.reminders || []) {
+    const fireAt = fireAtOf(ev, reminder);
+    if (fireAt > now && !byTime.has(fireAt)) {
+      byTime.set(fireAt, { fireAt, label: reminder.kind === 'abs' ? '自定义时间提醒' : reminderLabel(reminder) + '提醒' });
+    }
+  }
+  return [...byTime.values()].sort((a, b) => a.fireAt - b.fireAt);
 }
 export function alarmTitle(ev, fireAt) {
   return `【宝宝】${relToFire(ev.date, fireAt)}${ev.time ? ' ' + ev.time : ''} ${clean(ev.title)}`;
@@ -50,18 +58,13 @@ export function alarmLines(ev, list = futureAlarms(ev)) {
 export function alarmSig(ev) { return futureAlarms(ev, 0).map((x) => x.fireAt).join(',') + '|' + ev.title; }
 
 export function shortcutName() { return store.state.settings.shortcutName || '宝宝闹钟'; }
+export function createShortcutName() { return shortcutName() + '仅创建'; }
 export function runShortcutUrl(text) {
-  return `shortcuts://run-shortcut?name=${encodeURIComponent(shortcutName())}&input=text&text=${encodeURIComponent(text)}`;
+  return `shortcuts://run-shortcut?name=${encodeURIComponent(createShortcutName())}&input=text&text=${encodeURIComponent(text)}`;
 }
 export function alarmUrl(ev) { return runShortcutUrl(alarmLines(ev).join('\n')); }
 export function testAlarmUrl() {
   const t = Date.now() + 2 * 60000;
-  // 测试提醒也带固定标记 <宝宝#test>：更新快捷指令后，再测一次会替换上一次的测试提醒
+  // The fixed marker makes individual test reminders easy to find.
   return runShortcutUrl(`${stamp(t)}|【宝宝】测试闹钟（2分钟后响）|宝宝记录 · 测试紧急提醒是否会像闹钟一样响 · <宝宝#test>`);
-}
-// v1.7.1：第二个快捷指令「宝宝闹钟删除」（名称 = 闹钟快捷指令名称 + 删除）：传入含标记的文本，删除「宝宝」列表里备注带这些标记的提醒
-export function deleteShortcutName() { return `${shortcutName()}删除`; }
-export function deleteAlarmText(evs) { return [...new Set(evs.map(alarmTag))].join('\n'); }
-export function deleteAlarmUrl(evs) {
-  return `shortcuts://run-shortcut?name=${encodeURIComponent(deleteShortcutName())}&input=text&text=${encodeURIComponent(deleteAlarmText(evs))}`;
 }
