@@ -2,6 +2,14 @@ const FINAL_SETTLE_MS = 800;
 const STOP_TIMEOUT_MS = 2200;
 const LISTEN_TIMEOUT_MS = 20000;
 
+const START_ERRORS = new Map([
+  ['NotAllowedError', 'not-allowed'],
+  ['SecurityError', 'not-allowed'],
+  ['NotSupportedError', 'service-not-allowed'],
+  ['NotFoundError', 'audio-capture'],
+  ['NotReadableError', 'audio-capture'],
+]);
+
 export function careListener(Recognition, { onState, onText, onFinal, onError }) {
   let current;
 
@@ -65,9 +73,9 @@ export function careListener(Recognition, { onState, onText, onFinal, onError })
       onState('listening');
       turn.timeout = setTimeout(stop, LISTEN_TIMEOUT_MS);
       speech.start();
-    } catch {
+    } catch (error) {
       cancel();
-      onError('unavailable');
+      onError(START_ERRORS.get(error?.name) || 'unavailable');
     }
   }
 
