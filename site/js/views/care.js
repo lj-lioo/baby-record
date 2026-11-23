@@ -35,19 +35,28 @@ function oldDoseEntries() {
   return [...entries.values()];
 }
 
-function summaryTiles(day, recordedDays) {
-  const averaging = recordedDays !== undefined;
-  const display = (value, formatter = DAILY_COUNT) => averaging ? formatter.format(value / (recordedDays || 1)) : value;
+function summaryTiles(day, daysWithValues) {
+  const averaging = !!daysWithValues;
+  const display = (key, formatter = DAILY_COUNT) => {
+    if (!averaging) return day[key];
+    const days = daysWithValues[key];
+    return days ? formatter.format(day[key] / days) : '—';
+  };
+  const withUnit = (value, unit) => value === '—' ? value : `${value} ${unit}`;
   const unit = averaging ? '次/天' : '次';
+  const stool = display('stool'), urine = display('urine');
+  const stoolUrine = stool === '—' && urine === '—' ? '—' : `${stool} / ${urine} ${unit}`;
+  const doseNote = day.legacyDose
+    ? (averaging ? `原用药记录 ${display('legacyDose')} 次/天` : `另有 ${day.legacyDose} 条旧记录`) : '已记录';
   const tiles = [
-    ['母乳', `${display(day.nursing)} ${unit}`, averaging ? '母乳亲喂日均次数' : '母乳亲喂次数'],
-    ['瓶喂奶量', `${display(day.bottleMl, DAILY_VOLUME)} mL${averaging ? '/天' : ''}`, '已记录的实际奶量'],
-    ['大小便', `${display(day.stool)} / ${display(day.urine)} ${unit}`, '大便 / 小便'],
-    ['实际用药', `${display(day.dose)} ${unit}`, day.legacyDose
-      ? (averaging ? `原用药记录 ${display(day.legacyDose)} 次/天` : `另有 ${day.legacyDose} 条旧记录`) : '已记录'],
+    ['母乳', withUnit(display('nursing'), unit), averaging ? `母乳亲喂 · ${daysWithValues.nursing} 天` : '母乳亲喂次数'],
+    ['瓶喂奶量', withUnit(display('bottleMl', DAILY_VOLUME), averaging ? 'mL/天' : 'mL'),
+      averaging ? `有奶量记录 · ${daysWithValues.bottleMl} 天` : '已记录的实际奶量'],
+    ['大小便', stoolUrine, averaging ? `大便 ${daysWithValues.stool} 天 / 小便 ${daysWithValues.urine} 天` : '大便 / 小便'],
+    ['实际用药', withUnit(display('dose'), unit), averaging ? `${daysWithValues.dose} 天有记录${day.legacyDose ? ' · ' + doseNote : ''}` : doseNote],
   ];
   return `<div class="care-tiles">${tiles.map(([label, value, sub]) => `<div>
-    <span>${label}</span><strong>${recordedDays === 0 ? '—' : value}</strong><small>${sub}</small>
+    <span>${label}</span><strong>${value}</strong><small>${sub}</small>
   </div>`).join('')}</div>`;
 }
 
@@ -87,21 +96,21 @@ function dailyLog(date, records, historical, editable) {
   </section>`;
 }
 
-function renderStats({ daily, totals, recordedDays, dosesByName, milkByType }, chart) {
+function renderStats({ daily, totals, daysWithValues, recordedDays, dosesByName, milkByType }, chart) {
   const buttons = (list, attr, active) => list.map(([id, label]) =>
     `<button type="button" ${attr}="${id}" aria-pressed="${id === active}">${label}</button>`).join('');
-  const dailyVolume = (ml) => DAILY_VOLUME.format(ml / recordedDays);
-  const dailyCount = (count) => DAILY_COUNT.format(count / recordedDays);
+  const dailyVolume = (ml, days) => DAILY_VOLUME.format(ml / days);
+  const dailyCount = (count, days) => DAILY_COUNT.format(count / days);
   return `
     <section class="card care-stats">
       <div class="care-pills" aria-label="统计区间">${buttons([7, 30, 90].map((n) => [n, `近 ${n} 天`]), 'data-care-period', period)}</div>
       <p class="small muted">${cnDate(daily[0].date, true)} — ${cnDate(daily.at(-1).date, true)} · ${recordedDays
-        ? `按 ${recordedDays} 个有记录的日子计算日均` : '这段时间还没有记录'}</p>
-      ${summaryTiles(totals, recordedDays)}
-      ${milkByType.length ? `<p class="small muted care-average">瓶喂日均 · ${milkByType.map(([label, ml]) => `${label} ${dailyVolume(ml)} mL/天`).join(' · ')}</p>` : ''}
-      ${totals.nursingMeasured ? `<p class="small muted care-average">亲喂实测日均 ${dailyVolume(totals.nursingMl)} mL/天 · ${dailyCount(totals.nursingMeasured)} 次测量/天</p>` : ''}
-      ${dosesByName.length ? `<ul class="care-dose-totals" aria-label="按药品统计">${dosesByName.map(([name, n]) =>
-        `<li><span>${esc(name)}</span><b>${dailyCount(n)} 次/天</b></li>`).join('')}</ul>` : ''}
+        ? '各项日均只计该项大于 0 的日期' : '这段时间还没有记录'}</p>
+      ${summaryTiles(totals, daysWithValues)}
+      ${milkByType.length ? `<p class="small muted care-average">各奶类日均 · ${milkByType.map(([label, ml, days]) => `${label} ${dailyVolume(ml, days)} mL/天`).join(' · ')}</p>` : ''}
+      ${daysWithValues.nursingMl ? `<p class="small muted care-average">亲喂实测日均 ${dailyVolume(totals.nursingMl, daysWithValues.nursingMl)} mL/天 · ${dailyCount(totals.nursingMeasured, daysWithValues.nursingMeasured)} 次测量/天</p>` : ''}
+      ${dosesByName.length ? `<ul class="care-dose-totals" aria-label="按药品统计">${dosesByName.map(([name, n, days]) =>
+        `<li><span>${esc(name)}</span><b>${dailyCount(n, days)} 次/天</b></li>`).join('')}</ul>` : ''}
     </section>
     <section class="card care-stats">
       <h2>每日趋势</h2>

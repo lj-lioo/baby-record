@@ -38,8 +38,32 @@ test('实测奶量和用药分开统计，日期范围两端都包含', () => {
   assert.equal(report.totals.urine, 2);
   assert.equal(report.totals.dose, 1);
   assert.equal(report.totals.legacyDose, 1);
-  assert.deepEqual(report.milkByType, [['未标注', 80.6]]);
-  assert.deepEqual(report.dosesByName, [['示例补充剂', 1]]);
+  assert.deepEqual(report.milkByType, [['未标注', 80.6, 2]]);
+  assert.deepEqual(report.dosesByName, [['示例补充剂', 1, 1]]);
+});
+
+test('日均按每项大于零的日期计数，按奶类和用药分别计数', () => {
+  const bottles = Array.from({ length: 6 }, (_, i) => ({
+    kind: 'bottle', date: '2026-04-' + (17 + i), time: '09:00', ml: 100, milk: 'formula',
+  }));
+  bottles[0].ml = 60;
+  bottles.push({ ...bottles[0], time: '10:00', ml: 40, milk: 'breast' });
+  const doses = [
+    { kind: 'dose', date: '2026-04-22', time: '09:00', name: '示例甲' },
+    { kind: 'dose', date: '2026-04-22', time: '18:00', name: '示例甲' },
+    { kind: 'dose', date: '2026-04-23', time: '09:00', name: '示例乙' },
+  ];
+  const missingDay = summarizeCare(bottles, [], '2026-04-23', 7);
+  assert.equal(missingDay.recordedDays, 6);
+  assert.equal(missingDay.daysWithValues.bottleMl, 6);
+  assert.equal(missingDay.totals.bottleMl / missingDay.daysWithValues.bottleMl, 100);
+  const partiallyRecordedDay = summarizeCare([...bottles, ...doses], [], '2026-04-23', 7);
+  assert.equal(partiallyRecordedDay.recordedDays, 7);
+  assert.equal(partiallyRecordedDay.daysWithValues.bottleMl, 6);
+  assert.equal(partiallyRecordedDay.daysWithValues.dose, 2);
+  assert.equal(partiallyRecordedDay.daysWithValues.nursing, 0);
+  assert.deepEqual(partiallyRecordedDay.milkByType, [['母乳', 40, 1], ['配方奶', 560, 6]]);
+  assert.deepEqual(partiallyRecordedDay.dosesByName, [['示例甲', 2, 1], ['示例乙', 1, 1]]);
 });
 
 test('手动喂奶和纸本记录以早上八点换日', () => {
