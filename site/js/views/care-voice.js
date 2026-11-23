@@ -1,6 +1,7 @@
 import { CARE_LABELS, careDetail } from '../care.js';
 import { interpretCareSpeech } from '../care-voice.js';
 import { cnDate } from '../dates.js';
+import { isIOS } from '../push.js';
 import { requireEditEvents } from '../roles.js';
 import { store } from '../store.js';
 import { closeSheet, openSheet } from '../ui.js';
@@ -23,6 +24,7 @@ const LISTEN_ERRORS = new Map([
 export function openCareVoice({ day, onSaved }) {
   if (!requireEditEvents('当前身份可以查看喂养记录')) return;
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const preferSystemKeyboard = isIOS();
   let pending = [];
   let lastSaved = [];
   openSheet(`<h3>喂养语音记录</h3>
@@ -37,6 +39,7 @@ export function openCareVoice({ day, onSaved }) {
       <button class="care-link" id="care-voice-abort" type="button" hidden>取消听写</button>
     </div>
     <form id="care-voice-form" hidden>
+      <p class="small" id="care-voice-notice" role="status" hidden></p>
       <label class="small muted" id="care-voice-label" for="care-voice-text"></label>
       <textarea class="input" id="care-voice-text" rows="2" maxlength="500" placeholder="说一件刚发生的事"></textarea>
       <button class="btn block" id="care-voice-send" type="submit">发送</button>
@@ -44,6 +47,7 @@ export function openCareVoice({ day, onSaved }) {
     <div class="care-voice-footer">
       <div class="care-voice-actions">
         <button class="care-link" type="button" id="care-voice-keyboard">键盘听写</button>
+        <button class="care-link" type="button" id="care-voice-web" hidden>网页麦克风</button>
         <button class="care-link" type="button" id="care-voice-type">打字</button>
         <button class="care-link" type="button" id="care-voice-close">完成</button>
       </div>
@@ -64,9 +68,26 @@ export function openCareVoice({ day, onSaved }) {
     const abort = q('#care-voice-abort');
     const status = q('#care-voice-status');
     const draft = q('#care-voice-draft');
+    const notice = q('#care-voice-notice');
+    const label = q('#care-voice-label');
+    const send = q('#care-voice-send');
+    const keyboard = q('#care-voice-keyboard');
+    const webMic = q('#care-voice-web');
+    const type = q('#care-voice-type');
+    const viewport = preferSystemKeyboard ? window.visualViewport : null;
     let inputMode = '';
     let dictationTimer;
     let composing = false;
+    const fitKeyboard = () => {
+      if (!thread.isConnected || viewport.scale !== 1) return;
+      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      sheet.style.setProperty('--care-keyboard-inset', `${inset}px`);
+      sheet.style.setProperty('--care-viewport-height', `${viewport.height}px`);
+    };
+    const showNotice = (message) => {
+      notice.textContent = message;
+      notice.hidden = !message;
+    };
     const message = (text, user = false) => {
       const item = document.createElement('p');
       item.className = user ? 'care-voice-user' : 'care-voice-reply';
@@ -80,6 +101,7 @@ export function openCareVoice({ day, onSaved }) {
       const text = raw.trim();
       if (!text || !thread.isConnected || document.hidden || !requireEditEvents()) return;
       if (text.length > 500) { message('请把内容分成几句，每次说短一点。'); return; }
+      showNotice('');
       const result = interpretCareSpeech(text, { day, now: Date.now(), medicines: store.meds().map((m) => m.name), pending });
       message(text, true);
       if (result.question) {
@@ -126,10 +148,9 @@ export function openCareVoice({ day, onSaved }) {
       },
       onError: (error) => {
         draft.hidden = true;
-        status.textContent = LISTEN_ERRORS.get(error) || '直接听写启动失败，可以用键盘听写';
         mic.textContent = '🎙️ 重试听写';
         // A fresh tap is needed to bring up the system keyboard on iPhone after an async error.
-        openInput('dictation', { focus: false });
+        openInput('dictation', { focus: false, reason: LISTEN_ERRORS.get(error) || '网页听写启动失败' });
       },
     });
     const start = () => {
@@ -138,17 +159,27 @@ export function openCareVoice({ day, onSaved }) {
       inputMode = '';
       input.blur();
       form.hidden = true;
+      listenBar.hidden = false;
+      keyboard.textContent = '键盘听写';
+      webMic.hidden = true;
+      type.hidden = false;
       listener.start();
     };
-    const openInput = (mode, { focus = true } = {}) => {
+    const openInput = (mode, { focus = true, reason = '' } = {}) => {
       listener.cancel();
       clearTimeout(dictationTimer);
       composing = false;
       inputMode = mode;
       draft.hidden = true;
+      listenBar.hidden = true;
       form.hidden = false;
-      q('#care-voice-send').hidden = mode === 'dictation';
-      q('#care-voice-label').textContent = mode === 'dictation' ? '轻点输入框，再点键盘上的话筒，转成文字后会自动处理' : '输入要记录的内容';
+      const dictating = mode === 'dictation';
+      send.textContent = dictating ? '处理文字' : '发送';
+      label.textContent = dictating ? '点键盘上的 🎤 说话，文字出现后会自动处理。' : '输入要记录的内容';
+      keyboard.textContent = dictating ? '打开系统键盘' : '键盘听写';
+      webMic.hidden = !Recognition;
+      type.hidden = !dictating;
+      showNotice(reason);
       if (focus) input.focus();
     };
     const awaitDictation = () => {
@@ -161,15 +192,26 @@ export function openCareVoice({ day, onSaved }) {
     input.oncompositionstart = () => { composing = true; clearTimeout(dictationTimer); };
     input.oncompositionend = () => { composing = false; awaitDictation(); };
     input.oninput = (event) => { if (!event.isComposing) awaitDictation(); };
+    input.onchange = awaitDictation;
     form.onsubmit = (event) => {
       event.preventDefault();
-      if (inputMode === 'typing' && !composing) receive(input.value);
+      if (!inputMode) return;
+      composing = false;
+      if (input.value.trim()) receive(input.value);
+      else {
+        showNotice(inputMode === 'dictation' ? '还没有文字。请点系统键盘上的 🎤，或直接打字。' : '请先输入要记录的内容。');
+        input.focus();
+      }
     };
     mic.onclick = start;
+    webMic.onclick = start;
     stop.onclick = listener.stop;
     abort.onclick = () => { listener.cancel(); draft.hidden = true; };
-    q('#care-voice-keyboard').onclick = () => openInput('dictation');
-    q('#care-voice-type').onclick = () => openInput('typing');
+    keyboard.onclick = () => {
+      if (inputMode === 'dictation') input.focus();
+      else openInput('dictation');
+    };
+    type.onclick = () => openInput('typing');
     q('#care-voice-close').onclick = closeSheet;
     reset.onclick = () => {
       pending = [];
@@ -197,18 +239,26 @@ export function openCareVoice({ day, onSaved }) {
       draft.hidden = true;
     };
     document.addEventListener('visibilitychange', cancelInBackground);
+    if (viewport) {
+      fitKeyboard();
+      viewport.addEventListener('resize', fitKeyboard);
+      viewport.addEventListener('scroll', fitKeyboard);
+    }
     const observer = new MutationObserver(() => {
       if (thread.isConnected) return;
       listener.cancel();
       clearTimeout(dictationTimer);
       document.removeEventListener('visibilitychange', cancelInBackground);
+      if (viewport) {
+        viewport.removeEventListener('resize', fitKeyboard);
+        viewport.removeEventListener('scroll', fitKeyboard);
+        sheet.style.removeProperty('--care-keyboard-inset');
+        sheet.style.removeProperty('--care-viewport-height');
+      }
       observer.disconnect();
     });
     observer.observe(sheet, { childList: true });
-    if (Recognition) start();
-    else {
-      listenBar.hidden = true;
-      openInput('dictation');
-    }
+    if (preferSystemKeyboard || !Recognition) openInput('dictation');
+    else start();
   });
 }

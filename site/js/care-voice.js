@@ -5,6 +5,9 @@ const DIGITS = '零〇一二两三四五六七八九';
 const VALUE = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
 const INTEGER = '[\\d' + DIGITS + '十百千]+';
 const NUMBER = INTEGER + '(?:[.点][\\d' + DIGITS + ']+)?';
+const BOTTLE_COUNT = '(?:' + INTEGER + '|半)\\s*瓶\\s*奶';
+const FEEDING_HOMOPHONE = new RegExp('为了(?=(?:' + BOTTLE_COUNT + '|奶)(?:$|[\\s,，。.!！；;？?]))', 'g');
+const COUNTED_BOTTLE_FEEDING = new RegExp('(?:喝|喂)了\\s*' + BOTTLE_COUNT);
 const UNSAVED = /[?？]|还没|没有|不是|没(?:喝|吃|喂|拉|用|服|尿|小便|排尿)|未(?:喝|吃|喂|拉|用|服|尿|小便|排尿)|别记|不要|不用|打算|计划|准备|想喂|想给|想吃|还要|如果|等会|待会|稍后|晚点|稍晚|过一会|过会|提醒|应该|建议|需要|怎么|能不能|要不要|是不是|有没有|吃不吃|喂不喂|能吃|能喝|可以(?:吗|喂|吃|给|用)|多少|吧$|吗$|呢$|还是|大约|大概|好像|可能|改成|删除|取消|冲了|泡了|倒了|装了|挤了|兑了|剩下|剩了|吐了|吐奶/;
 const NURSING = /亲喂|直接(?:喂)?母乳|吸(?:了|过)?母乳|吃(?:了|过)?胸|吸(?:了|过)?奶|(?:吸|嘬|含)(?:了|过|着)?(?:妈妈的)?(?:奶头|乳头)/;
 const BOTTLE = /瓶喂|用奶瓶|奶瓶喂|奶瓶喝|喝奶瓶|半瓶|喝了[一1]瓶/;
@@ -44,7 +47,7 @@ function numberFromSpeech(raw) {
 
 function normalize(text) {
   return text.normalize('NFKC').trim().replace(/k\s*[一壹1](?![a-z0-9])/gi, 'K1')
-    .replace(/为了奶(?=$|[\s,，。.!！；;？?])/g, '喂了奶')
+    .replace(FEEDING_HOMOPHONE, '喂了')
     .replace(/昨晚/g, '昨天晚上').replace(/昨早/g, '昨天早上')
     .replace(/今早/g, '今天早上').replace(/今晚/g, '今天晚上')
     .replace(/明早/g, '明天早上').replace(/明晚/g, '明天晚上');
@@ -121,7 +124,7 @@ function facts(text, context, draft) {
   const feedingContext = draft && (!draft.kind || draft.kind === 'bottle' || draft.kind === 'nursing');
   const feedingEvidence = feedingContext || MILK_CONTEXT.test(text);
   const bottleReference = BOTTLE_REFERENCE.test(text);
-  const bottleMention = BOTTLE.test(text) || (bottleReference && feedingEvidence);
+  const bottleMention = BOTTLE.test(text) || COUNTED_BOTTLE_FEEDING.test(text) || (bottleReference && feedingEvidence);
   const nursing = NURSING.test(text) || (breast && !bottleMention && durations.length === 1) ||
     (feedingEvidence && DIRECT_FEEDING_REFERENCE.test(text));
   const bottle = bottleMention || (!nursing && formula && (amounts.length || /喝|喂/.test(text)));

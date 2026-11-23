@@ -58,6 +58,10 @@ test('听写把「喂了奶」写成「为了奶」时先确认方式，并保�
   assert.deepEqual(second.records.map(({ kind, time }) => [kind, time]), [['nursing', '08:00']]);
   assert.match(say('母乳90毫升', { pending: first.pending }).question, /亲喂.*奶瓶/);
   assert.equal(say('早上8:00为了奶量做了笔记').pending.length, 0);
+  const counted = say('早上8:00为了三瓶奶');
+  assert.equal(counted.pending[0].time, '08:00');
+  assert.match(counted.question, /实际喝下了多少毫升/);
+  assert.deepEqual(counted.records, []);
 });
 
 test('结合上一句理解喂养口语，同时沿用日期和时间', () => {

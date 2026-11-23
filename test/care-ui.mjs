@@ -166,6 +166,9 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   const mic = page.locator('#care-voice-mic');
   const dictation = page.locator('#care-voice-text');
   const status = page.locator('#care-voice-status');
+  const notice = page.locator('#care-voice-notice');
+  const webMic = page.getByRole('button', { name: '网页麦克风' });
+  const processText = page.getByRole('button', { name: '处理文字' });
   const startCapture = () => page.evaluate(() => window.careRecognizer.onaudiostart());
   const emitSpeech = (text, final, end = false) => page.evaluate(({ text, final, end }) => {
     const recognizer = window.careRecognizer;
@@ -209,16 +212,17 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   await mic.click();
   await startCapture();
   await page.clock.fastForward(8100);
-  await status.filter({ hasText: '识别服务没有返回文字' }).waitFor();
+  await notice.filter({ hasText: '识别服务没有返回文字' }).waitFor();
   assert.equal(await dictation.isVisible(), true);
+  assert.equal(await status.isVisible(), false);
   assert.equal(await page.evaluate(() => window.careRecognizer.aborted), true);
   await dictation.fill('母乳');
   await conversation.getByText(/已记录 1 条.*08:00.*母乳亲喂/s).waitFor();
   await page.getByRole('button', { name: '撤销本次记录' }).click();
 
-  await mic.click();
+  await webMic.click();
   await page.clock.fastForward(20100);
-  await status.filter({ hasText: '麦克风未开始收音' }).waitFor();
+  await notice.filter({ hasText: '麦克风未开始收音' }).waitFor();
   assert.equal(await dictation.isVisible(), true);
 
   for (const [error, feedback] of [
@@ -228,9 +232,9 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
     ['audio-capture', '无法录音'],
     ['service-not-allowed', '当前打开方式无法使用语音识别服务'],
   ]) {
-    await mic.click();
+    await webMic.click();
     await page.evaluate((error) => window.careRecognizer.onerror({ error }), error);
-    await page.getByRole('status').filter({ hasText: feedback }).waitFor();
+    await notice.filter({ hasText: feedback }).waitFor();
     assert.equal(await dictation.isVisible(), true);
   }
   await page.evaluate(() => {
@@ -240,12 +244,12 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
       throw new DOMException('Denied', 'NotAllowedError');
     };
   });
-  await mic.click();
-  await page.getByRole('status').filter({ hasText: '麦克风权限受限' }).waitFor();
+  await webMic.click();
+  await notice.filter({ hasText: '麦克风权限受限' }).waitFor();
   assert.equal(await dictation.isVisible(), true);
-  await page.getByRole('button', { name: '键盘听写' }).click();
+  await page.getByRole('button', { name: '打开系统键盘' }).click();
   assert.equal(await dictation.evaluate((input) => input === document.activeElement), true);
-  assert.equal(await page.locator('#care-voice-send').isHidden(), true);
+  assert.equal(await processText.isVisible(), true);
   await dictation.fill('早上八点亲喂了十二分钟');
   await dictation.fill('早上八点亲喂了十二分钟，然后刚刚拉了一次软便');
   await conversation.getByText(/已记录 2 条/).waitFor();
@@ -259,13 +263,39 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   await page.getByRole('button', { name: '完成', exact: true }).click();
 
   await page.evaluate(() => {
+    Object.defineProperty(navigator, 'platform', { value: 'MacIntel' });
+    Object.defineProperty(navigator, 'maxTouchPoints', { value: 5 });
+    window.previousCareRecognizer = window.careRecognizer;
+  });
+  await voice.tap();
+  assert.equal(await page.evaluate(() => window.careRecognizer === window.previousCareRecognizer), true);
+  assert.equal(await mic.isVisible(), false);
+  assert.equal(await dictation.evaluate((input) => input === document.activeElement), true);
+  await processText.tap();
+  await notice.filter({ hasText: '还没有文字' }).waitFor();
+  await page.evaluate(() => {
+    Object.defineProperty(window.visualViewport, 'height', { configurable: true, value: window.innerHeight - 250 });
+    window.visualViewport.dispatchEvent(new Event('resize'));
+  });
+  assert.ok(await page.locator('#sheet').evaluate((sheet) => parseInt(getComputedStyle(sheet).bottom, 10) > 0));
+  // Some keyboards can leave visible text without delivering an input event.
+  await dictation.evaluate((input) => { input.value = '早上8:00为了三瓶奶'; });
+  await processText.tap();
+  await conversation.getByText(/实际喝下了多少毫升/).waitFor();
+  await dictation.fill('实际喝了三十');
+  await conversation.getByText(/已记录 1 条.*08:00.*30 mL/s).waitFor();
+  await page.getByRole('button', { name: '撤销本次记录' }).click();
+  await page.getByRole('button', { name: '完成', exact: true }).click();
+  assert.equal(await page.locator('#sheet').evaluate((sheet) => sheet.style.getPropertyValue('--care-keyboard-inset')), '');
+
+  await page.evaluate(() => {
     window.SpeechRecognition = undefined;
     window.webkitSpeechRecognition = undefined;
   });
   await voice.click();
-  assert.equal(await mic.isVisible(), false);
+  assert.equal(await webMic.isVisible(), false);
   assert.equal(await dictation.isVisible(), true);
-  assert.equal(await page.locator('#care-voice-send').isHidden(), true);
+  assert.equal(await processText.isVisible(), true);
   await dictation.fill('刚才小便了');
   await conversation.getByText(/已记录 1 条.*小便/s).waitFor();
   assert.equal(await timeline.getByRole('button', { name: /09:10.*小便/ }).count(), 1);
