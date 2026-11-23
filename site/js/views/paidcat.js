@@ -4,7 +4,7 @@ import { store, uid } from '../store.js';
 import { esc, openSheet, closeSheet, toast, confirmSheet } from '../ui.js';
 import { todayStr, cnDate, weekday, addDays, parseYmd } from '../dates.js';
 import { defaultReminders } from '../reminders.js';
-import { offerOldAlarmCleanup } from './actions.js';
+import { offerOldAlarmCleanup, openAlarmBatchSheet } from './actions.js';
 import { SERIES, catalogEntries, seriesPlan, seriesStartInfo, seriesOfSid, reflowSeries, PAID_CATEGORY, PAID_DISCLAIMER, PAID_PRICE_NOTE, PAID_REC_NOTE, priceLine, priceBrief, recLine, recBrief } from '../paidvax.js';
 import { canEditEvents, requireEditEvents } from '../roles.js';
 
@@ -238,6 +238,10 @@ export function maybeCascade(id) {
       const al = moved.filter((c) => c.ev.alarmAdded).length;
       toast(`已顺延 ${moved.length} 剂${al ? `，其中 ${al} 剂需重设闹钟` : ''}`, 3000);
       rerender();
+      if (al) {
+        const affected = [ev, ...moved.map((c) => c.ev)].filter((item) => item.alarmAdded);
+        openAlarmBatchSheet(affected.map((item) => item.id));
+      }
     };
   });
   return true;
