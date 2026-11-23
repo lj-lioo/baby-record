@@ -19,6 +19,8 @@ test('实测奶量和用药分开统计，日期范围两端都包含', () => {
   assert.equal(validateCare({ ...base, kind: 'nursing', ml: '', minutes: '' }), '');
   assert.ok(validateCare({ ...base, kind: 'nursing', minutes: '0.5' }));
   assert.ok(validateCare({ ...base, kind: 'dose', name: '' }));
+  assert.equal(validateCare({ ...base, kind: 'dose', name: '示例补充剂', time: '' }), '');
+  assert.ok(validateCare({ ...base, kind: 'dose', name: '示例补充剂', time: '' }, '2024-02-28T23:59'));
   const report = summarizeCare([
     base, { ...base, ml: 0.1, date: '2024-02-24' },
     { ...base, kind: 'nursing' }, { ...base, kind: 'stool', date: '2024-03-01' },
@@ -131,18 +133,23 @@ test('原 Worker 可用原配对协议同步照护记录，重复拉取和旧备
   assert.ok(!cloud[0].data.includes(first.note));
   assert.equal(cloud[1].deleted, 1);
 
-  const second = b.store.upsertCare({ date: first.date, time: first.time, kind: 'dose', name: '示例补充剂' });
+  const dose = { id: 'import-dose-test', date: first.date, time: '', kind: 'dose', name: '示例补充剂' };
+  const [second] = b.store.appendImportedCare([dose]);
+  assert.deepEqual(b.store.appendImportedCare([{ ...dose, name: '重复导入不应修改记录' }]), []);
   const toilet = b.store.addCare(['stool', 'urine'].map((kind) => ({ date: first.date, time: first.time, kind })));
   b.store.deleteCare(first.id);
   await b.run();
   await a.run();
   assert.equal(a.store.getCare(first.id), undefined);
   assert.deepEqual(a.store.getCare(second.id), second);
+  assert.equal(a.store.getCare(second.id).time, '');
   for (const record of toilet) assert.deepEqual(a.store.getCare(record.id), record);
   a.store.deleteCareBatch(toilet.map((record) => record.id));
   await a.run();
   await b.run();
   for (const record of toilet) assert.equal(b.store.getCare(record.id), undefined);
+  b.store.deleteCare(second.id);
+  assert.deepEqual(b.store.appendImportedCare([dose]), []);
   // 已删除的记录不能被迟到的旧响应或旧备份复活。
   a.store.applyRemoteCare([first]);
   a.store.importJSON(JSON.stringify(originalBackup));

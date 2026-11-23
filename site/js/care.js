@@ -16,7 +16,8 @@ const numberInRange = (value, limit) => {
 
 export function validateCare(record, latest) {
   if (!Object.hasOwn(CARE_LABELS, record.kind)) return '请选择记录类型';
-  if (!dateValid(record.date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(record.time)) return '请选择日期和时间';
+  const dateOnlyDose = record.kind === 'dose' && record.time === '';
+  if (!dateValid(record.date) || (!dateOnlyDose && !/^([01]\d|2[0-3]):[0-5]\d$/.test(record.time))) return '请选择日期和时间';
   if (latest && `${record.date}T${record.time}` > latest) return '记录时间不能在未来';
   const hasMl = record.ml != null && record.ml !== '';
   if ((record.kind === 'bottle' || record.kind === 'nursing' && hasMl) && numberInRange(record.ml, 2000) == null) {

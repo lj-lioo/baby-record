@@ -112,6 +112,11 @@ button.care-row { cursor: pointer; }
 .care-error { color: var(--danger); font-weight: 700; }
 .care-delete { margin-top: 8px; }
 .care-voice-button { margin-bottom: 9px; min-height: 46px; }
+.care-import-link { margin-top: 4px; }
+.care-import-list { margin: 8px 0; padding: 0; list-style: none; }
+.care-import-list label { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.care-import-list input { margin-top: 4px; }
+.care-import-list span { min-width: 0; overflow-wrap: anywhere; }
 .care-voice-thread {
   display: flex;
   flex-direction: column;

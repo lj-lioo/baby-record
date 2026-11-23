@@ -5,6 +5,7 @@ import { canEditGrowth, requireEditEvents } from '../roles.js';
 import { store } from '../store.js';
 import { closeSheet, confirmSheet, esc, openSheet, toast } from '../ui.js';
 import { openCareVoice } from './care-voice.js';
+import { openCareImport } from './care-import.js';
 
 const DOSE_SUGGESTIONS = ['维生素AD', '维生素K1'];
 const TREND = { bottleMl: '瓶喂奶量', feeds: '喂奶次数', stool: '大便次数', urine: '小便次数', dose: '用药次数' };
@@ -52,6 +53,7 @@ function quickActions(today, canUndo) {
       <button type="button" data-care-kind="toilet">大小便</button>
       <button type="button" data-care-kind="dose">用药</button>
     </div>
+    <button type="button" class="care-link care-import-link" id="care-import">批量补录</button>
   </section>`;
 }
 
@@ -59,7 +61,7 @@ function dailyLog(date, records, historical, editable) {
   const rows = [...records, ...historical].filter((record) => record.date === date).sort(careNewest);
   return `<section class="card care-timeline"><h2>当天记录</h2>
     ${rows.length ? `<ul>${rows.map((record) => {
-      const content = `<span class="care-time">${esc(record.time || '—')}</span><span class="care-row-content">
+      const content = `<span class="care-time">${esc(record.time || (record.kind === 'dose' ? '时间未记' : '—'))}</span><span class="care-row-content">
         <strong>${esc(record.title || (record.kind === 'dose' ? record.name : LABEL[record.kind]))}</strong>
         <small>${[record.legacy, record.legacy ? record.detail : careDetail(record), record.note].filter(Boolean).map(esc).join(' · ')}</small></span>`;
       return `<li>${editable && !record.legacy
@@ -158,6 +160,11 @@ export function renderCare(root) {
     undoRecords = [];
     setDate(records[0].date);
   } });
+  const importButton = root.querySelector('#care-import');
+  if (importButton) importButton.onclick = () => openCareImport((records) => {
+    undoRecords = [];
+    setDate(records[0].date);
+  });
   root.querySelectorAll('[data-care-kind]').forEach((button) => {
     button.onclick = () => openEditor(button.dataset.careKind, date, null, (saved) => {
       undoRecords = saved;
@@ -199,7 +206,7 @@ function openEditor(kind, date, existing, onSaved) {
   openSheet(`<h3>${existing ? '编辑' : '记录'}${title}</h3>
     <form id="care-form" novalidate>
       <div class="care-form-date">${field('date', '日期', `type="date" value="${esc(date)}" max="${today}"`)}
-        ${field('time', '时间', `type="time" value="${esc(time)}"`)}</div>
+        ${field('time', kind === 'dose' ? '时间（可选）' : '时间', `type="time" value="${esc(time)}"`)}</div>
       ${feeding ? `${options('feed', '喂奶方式', FEED_CHOICES, initialFeed)}
         <div id="care-bottle-fields" ${initialFeed !== 'bottle' ? 'hidden' : ''}>${field('ml', '实际喝下的奶量（mL）',
           `type="number" inputmode="decimal" min="0.1" step="0.1" value="${esc(existing?.kind === 'bottle' ? existing.ml : '')}"`)}</div>

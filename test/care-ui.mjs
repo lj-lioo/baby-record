@@ -301,6 +301,48 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   assert.equal(await timeline.getByRole('button', { name: /09:10.*小便/ }).count(), 1);
   await page.getByRole('button', { name: '完成', exact: true }).click();
 
+  const importButton = page.getByRole('button', { name: '批量补录', exact: true });
+  const importFile = page.locator('#care-import-file');
+  const careFile = (value) => ({
+    name: 'care.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(value)),
+  });
+  const importedDate = '2024-02-29';
+  const records = [
+    { id: 'fixture-bottle', date: importedDate, time: '08:15', kind: 'bottle', ml: 65 },
+    { id: 'fixture-stool', date: importedDate, time: '12:00', kind: 'stool' },
+    { id: 'fixture-dose-1', date: importedDate, time: '', kind: 'dose', name: '示例补充剂' },
+    { id: 'fixture-dose-2', date: importedDate, time: '', kind: 'dose', name: '示例补充剂' },
+  ];
+  const data = { format: 'baby-record-care-v1', records };
+  const readStore = () => page.evaluate(() => JSON.parse(localStorage.getItem('babyrecord.v1')));
+  const before = await readStore();
+  await importButton.click();
+  await importFile.setInputFiles(careFile({ ...data, records: [...records, { ...records[0], id: 'bad', ml: -1 }] }));
+  await page.getByRole('alert').filter({ hasText: '第 5 条' }).waitFor();
+  assert.deepEqual(await readStore(), before);
+  await importFile.setInputFiles(careFile(data));
+  await page.getByRole('heading', { name: '核对补录记录' }).waitFor();
+  assert.equal(await page.getByRole('checkbox', { name: /瓶喂.*可能重复/ }).isChecked(), false);
+  await page.getByText('已选 3 / 4 条记录').waitFor();
+  assert.deepEqual(await readStore(), before);
+  await page.getByRole('button', { name: '确认补录' }).click();
+  await timeline.getByRole('button', { name: /时间未记.*示例补充剂/ }).first().waitFor();
+  assert.equal(await timeline.getByRole('button', { name: /时间未记.*示例补充剂/ }).count(), 2);
+  const after = await readStore();
+  const { care: prevCare, ...prevOther } = before;
+  const { care: nextCare, ...nextOther } = after;
+  assert.deepEqual(nextOther, prevOther);
+  assert.deepEqual(nextCare.slice(0, prevCare.length), prevCare);
+  assert.equal(nextCare.length, prevCare.length + 3);
+
+  await importButton.click();
+  await importFile.setInputFiles(careFile(data));
+  await page.getByText('已处理的 3 条已跳过。').waitFor();
+  assert.equal(await page.getByRole('button', { name: '确认补录' }).isDisabled(), true);
+  assert.deepEqual(await readStore(), after);
+  await page.getByRole('button', { name: '取消' }).click();
+  await page.locator('#care-today').click();
+
   await page.waitForFunction(() => !!navigator.serviceWorker.controller);
   await context.setOffline(true);
   await page.reload();
@@ -308,6 +350,7 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   await timeline.getByText('维生素AD', { exact: true }).waitFor();
   await page.evaluate(async () => (await import('/js/store.js')).store.updateSettings({ memberRole: '奶奶' }));
   assert.equal(await quick('feed').count(), 0);
+  assert.equal(await importButton.count(), 0);
   assert.equal(await timeline.getByRole('button').count(), 0);
   await page.setViewportSize({ width: 320, height: 700 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);
