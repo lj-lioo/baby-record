@@ -137,11 +137,15 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   assert.equal(await page.locator('#care-ml').inputValue(), '65');
   await save();
   assert.match(await timeline.innerText(), /65 mL · 母乳/);
-  await timeline.getByRole('button', { name: /07:30.*母乳亲喂/ }).click();
+  assert.equal(await timeline.getByRole('button', { name: /07:30.*母乳亲喂/ }).count(), 0);
+  await page.getByRole('button', { name: '前一天' }).click();
+  await timeline.getByRole('button', { name: /次日.*07:30.*母乳亲喂/ }).click();
+  assert.equal(await page.locator('#care-date').inputValue(), '2024-02-29');
   assert.equal(await page.locator('#care-ml').isHidden(), true);
   await page.locator('#care-minutes').fill('10');
   await save();
   assert.match(await timeline.innerText(), /10 分钟 · 实测 42 mL/);
+  await page.getByRole('button', { name: '后一天' }).click();
   await quick('feed').click();
   await feed('瓶喂').check();
   assert.equal(await page.locator('#care-time').inputValue(), '');
@@ -362,4 +366,53 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   await page.setViewportSize({ width: 320, height: 700 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);
   assert.deepEqual(errors, []);
+
+  await t.test('凌晨手动喂奶归到前一周期，08:00 自动切换', async () => {
+    const nightContext = await browser.newContext({ timezoneId: 'Asia/Shanghai' });
+    try {
+      await nightContext.addInitScript(() => {
+        if (localStorage.getItem('babyrecord.v1')) return;
+        const care = [
+          ['nursing', '00:40'], ['bottle', '02:15', 45], ['nursing', '04:25'],
+          ['nursing', '05:50'], ['bottle', '05:50', 65],
+        ].map(([kind, time, ml], i) => ({ id: 'night-' + i, date: '2026-02-01', kind, time, ml, updatedAt: i + 1 }));
+        localStorage.setItem('babyrecord.v1', JSON.stringify({ settings: { memberRole: '爸爸' }, care }));
+      });
+      const night = await nightContext.newPage();
+      await night.clock.install({ time: new Date('2026-02-01T06:10:00+08:00') });
+      await night.clock.pauseAt(new Date('2026-02-01T06:11:00+08:00'));
+      await night.goto(base + '/#/care');
+      const nightDay = night.locator('#care-day');
+      const nightLog = night.locator('.care-timeline');
+      await night.getByRole('heading', { name: '1月31日汇总', exact: true }).waitFor();
+      assert.equal(await nightDay.inputValue(), '2026-01-31');
+      assert.match(await night.locator('.care-tiles').innerText(), /5 次.*110 mL/s);
+      assert.equal(await nightLog.getByRole('button', { name: /次日/ }).count(), 5);
+
+      await night.locator('[data-care-kind="feed"]').click();
+      assert.equal(await night.locator('#care-date').inputValue(), '2026-02-01');
+      assert.equal(await night.locator('#care-time').inputValue(), '06:11');
+      await night.getByRole('button', { name: '保存', exact: true }).click();
+      assert.equal(await nightDay.inputValue(), '2026-01-31');
+      await nightLog.getByRole('button', { name: /次日.*06:11.*母乳亲喂/ }).waitFor();
+      await night.getByRole('button', { name: '撤销刚才记录' }).click();
+
+      await night.getByRole('button', { name: '统计', exact: true }).click();
+      await night.locator('.care-breakdown summary').click();
+      const cycleRow = night.getByRole('row').filter({ has: night.getByRole('rowheader', { name: '1月31日', exact: true }) });
+      assert.deepEqual(await cycleRow.getByRole('cell').allTextContents(), ['3', '2', '110', '0', '0', '0']);
+      await night.getByRole('button', { name: '记录', exact: true }).click();
+      await night.clock.fastForward(109 * 60 * 1000);
+      assert.equal(await nightDay.inputValue(), '2026-02-01');
+      assert.equal(await nightLog.getByRole('button', { name: /次日/ }).count(), 0);
+
+      await night.locator('[data-care-kind="feed"]').click();
+      assert.equal(await night.locator('#care-time').inputValue(), '08:00');
+      await night.getByRole('button', { name: '保存', exact: true }).click();
+      assert.equal(await nightDay.inputValue(), '2026-02-01');
+      await nightLog.getByRole('button', { name: /08:00.*母乳亲喂/ }).waitFor();
+    } finally {
+      await nightContext.close();
+    }
+  });
 });

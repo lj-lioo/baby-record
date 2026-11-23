@@ -3,6 +3,7 @@ import { addDays, parseYmd, ymd } from './dates.js';
 export const MILK_TYPES = { breast: '母乳', formula: '配方奶', mixed: '混合', unknown: '未标注' };
 export const STOOL_TYPES = { soft: '软便', loose: '稀便', formed: '成形', hard: '偏硬' };
 export const CARE_LABELS = { nursing: '母乳亲喂', bottle: '瓶喂', stool: '大便', urine: '小便', dose: '用药' };
+export const FEEDING_DAY_START = '08:00';
 
 function dateValid(date) {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) && ymd(parseYmd(date)) === date;
@@ -54,8 +55,15 @@ export function normalizeCare(record) {
   return entry;
 }
 
+export function feedingCycleDate(date, time) {
+  return time && time < FEEDING_DAY_START ? addDays(date, -1) : date;
+}
+
 export function careDay(record) {
-  return record.paper && record.time && record.time < '08:00' ? addDays(record.date, -1) : record.date;
+  if (record.paper || record.kind === 'nursing' || record.kind === 'bottle') {
+    return feedingCycleDate(record.date, record.time);
+  }
+  return record.date;
 }
 
 export function careNewest(a, b) {

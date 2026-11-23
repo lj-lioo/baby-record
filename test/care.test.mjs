@@ -42,15 +42,20 @@ test('实测奶量和用药分开统计，日期范围两端都包含', () => {
   assert.deepEqual(report.dosesByName, [['示例补充剂', 1]]);
 });
 
-test('纸本页以早上八点换日，普通记录仍按实际日期归入统计', () => {
+test('手动喂奶和纸本记录以早上八点换日', () => {
   const base = { kind: 'bottle', date: '2024-03-01', ml: 50 };
   const report = summarizeCare([
     { ...base, time: '07:59', paper: true },
     { ...base, time: '08:00', paper: true },
     { ...base, time: '01:30' },
+    { ...base, time: '08:00', ml: 30 },
+    { ...base, time: '07:59', kind: 'nursing', ml: null },
+    { ...base, time: '07:59', kind: 'urine' },
+    { ...base, time: '07:59', kind: 'stool', paper: true },
     { kind: 'dose', date: '2024-02-29', time: '', name: '示例补充剂', paper: true },
   ], [], '2024-03-01', 2);
-  assert.deepEqual(report.daily.map((day) => [day.bottle, day.bottleMl, day.dose]), [[1, 50, 1], [2, 100, 0]]);
+  assert.deepEqual(report.daily.map((day) => [day.nursing, day.bottle, day.bottleMl, day.stool, day.urine, day.dose]),
+    [[1, 2, 100, 1, 0, 1], [0, 2, 80, 0, 1, 0]]);
 });
 
 test('原 Worker 可用原配对协议同步照护记录，重复拉取和旧备份保留历史', async (t) => {

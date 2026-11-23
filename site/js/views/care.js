@@ -1,5 +1,5 @@
-import { CARE_LABELS as LABEL, STOOL_TYPES, careDay, careDetail, careNewest, summarizeCare, validateCare } from '../care.js';
-import { addDays, cnDate, todayStr, toLocalInput } from '../dates.js';
+import { CARE_LABELS as LABEL, FEEDING_DAY_START, STOOL_TYPES, careDay, careDetail, careNewest, feedingCycleDate, summarizeCare, validateCare } from '../care.js';
+import { addDays, atLocal, cnDate, toLocalInput } from '../dates.js';
 import { medDoses } from '../growth.js';
 import { canEditGrowth, requireEditEvents } from '../roles.js';
 import { store } from '../store.js';
@@ -16,6 +16,7 @@ let section = 'log';
 let period = 7;
 let metric = 'bottleMl';
 let undoRecords = [];
+let cycleRefresh;
 
 function oldDoseEntries() {
   const entries = new Map();
@@ -117,14 +118,20 @@ function renderStats(records, historical, date) {
 }
 
 export function renderCare(root) {
-  const today = todayStr();
-  const date = selectedDate || today;
+  const now = Date.now();
+  const [today, time] = toLocalInput(now).split('T');
+  const currentCycle = feedingCycleDate(today, time);
+  const date = selectedDate || currentCycle;
   const editable = canEditGrowth();
   const records = store.care();
   const historical = oldDoseEntries();
   const canUndo = () => undoRecords.length > 0 &&
-    undoRecords.every((record) => record.date === date && store.getCare(record.id)?.updatedAt === record.updatedAt);
+    undoRecords.every((record) => careDay(record) === date && store.getCare(record.id)?.updatedAt === record.updatedAt);
   const daily = summarizeCare(records, historical, date, 1).totals;
+  clearTimeout(cycleRefresh);
+  cycleRefresh = setTimeout(() => {
+    if (root.querySelector('.care-page')) renderCare(root);
+  }, atLocal(addDays(currentCycle, 1), FEEDING_DAY_START).getTime() - now);
   root.innerHTML = `<div class="care-page">
     <header class="topbar"><h1>喂养记录</h1></header>
     <div class="care-switch care-pills" aria-label="喂养页面">
@@ -135,24 +142,25 @@ export function renderCare(root) {
       <button type="button" id="care-back" aria-label="前一天">‹</button>
       <input type="date" class="input" id="care-day" aria-label="${section === 'stats' ? '统计截止日期' : '记录日期'}" value="${esc(date)}" max="${today}">
       <button type="button" id="care-next" aria-label="后一天" ${date >= today ? 'disabled' : ''}>›</button>
-      ${date !== today ? '<button type="button" class="care-link" id="care-today">今天</button>' : ''}
+      ${date !== currentCycle ? `<button type="button" class="care-link" id="care-today">${currentCycle === today ? '今天' : '当前周期'}</button>` : ''}
     </div>
-    ${section === 'log' ? `${editable ? quickActions(date === today, canUndo()) : ''}
+    <p class="small muted">喂奶按 ${FEEDING_DAY_START} 至次日 ${FEEDING_DAY_START} 统计</p>
+    ${section === 'log' ? `${editable ? quickActions(date === currentCycle, canUndo()) : ''}
       <section class="card"><h2>${date === today ? '今天' : cnDate(date)}汇总</h2>${summaryTiles(daily)}</section>
       ${dailyLog(date, records, historical, editable)}` : renderStats(records, historical, date)}
   </div>`;
 
   const setDate = (next) => {
-    const today = todayStr();
+    const [today, time] = toLocalInput(Date.now()).split('T');
     if (!next || next > today) return;
-    selectedDate = next === today ? '' : next;
+    selectedDate = next === feedingCycleDate(today, time) ? '' : next;
     renderCare(root);
   };
   root.querySelector('#care-day').onchange = (event) => setDate(event.target.value);
   root.querySelector('#care-back').onclick = () => setDate(addDays(date, -1));
   root.querySelector('#care-next').onclick = () => setDate(addDays(date, 1));
   const todayButton = root.querySelector('#care-today');
-  if (todayButton) todayButton.onclick = () => setDate(today);
+  if (todayButton) todayButton.onclick = () => { selectedDate = ''; renderCare(root); };
   root.querySelectorAll('[data-care-section]').forEach((button) => {
     button.onclick = () => { section = button.dataset.careSection; renderCare(root); };
   });
@@ -165,7 +173,7 @@ export function renderCare(root) {
   const voice = root.querySelector('#care-voice');
   if (voice) voice.onclick = () => openCareVoice({ day: selectedDate, onSaved: (records) => {
     undoRecords = [];
-    setDate(records[0].date);
+    setDate(careDay(records[0]));
   } });
   const importButton = root.querySelector('#care-import');
   if (importButton) importButton.onclick = () => openCareImport((records) => {
@@ -173,9 +181,9 @@ export function renderCare(root) {
     setDate(careDay(records[0]));
   });
   root.querySelectorAll('[data-care-kind]').forEach((button) => {
-    button.onclick = () => openEditor(button.dataset.careKind, date, null, (saved) => {
+    button.onclick = () => openEditor(button.dataset.careKind, date === currentCycle ? today : date, null, (saved) => {
       undoRecords = saved;
-      setDate(saved[0].date);
+      setDate(careDay(saved[0]));
     });
   });
   root.querySelectorAll('[data-care-id]').forEach((button) => {
@@ -214,6 +222,7 @@ function openEditor(kind, date, existing, onSaved) {
     <form id="care-form" novalidate>
       <div class="care-form-date">${field('date', '日期', `type="date" value="${esc(date)}" max="${today}"`)}
         ${field('time', kind === 'dose' ? '时间（可选）' : '时间', `type="time" value="${esc(time)}"`)}</div>
+      ${feeding ? `<p class="small muted">填写实际发生的日期和时间，${FEEDING_DAY_START} 前自动计入前一天。</p>` : ''}
       ${feeding ? `${options('feed', '喂奶方式', FEED_CHOICES, initialFeed)}
         <div id="care-bottle-fields" ${initialFeed !== 'bottle' ? 'hidden' : ''}>${field('ml', '实际喝下的奶量（mL）',
           `type="number" inputmode="decimal" min="0.1" step="0.1" value="${esc(existing?.kind === 'bottle' ? existing.ml : '')}"`)}</div>
