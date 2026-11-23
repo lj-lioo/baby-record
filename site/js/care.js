@@ -87,6 +87,17 @@ export function hasCareRecords(day) {
   return day.nursing + day.bottle + day.stool + day.urine + day.dose + day.legacyDose > 0;
 }
 
+function addToGroup(groups, key, date, amount) {
+  if (amount <= 0) return;
+  let group = groups.get(key);
+  if (!group) {
+    group = { total: 0, dates: new Set() };
+    groups.set(key, group);
+  }
+  group.total += amount;
+  group.dates.add(date);
+}
+
 export function summarizeCare(records, legacyDoses, lastDay, days) {
   const daily = Array.from({ length: days }, (_, i) => emptyDay(addDays(lastDay, i + 1 - days)));
   const byDate = new Map(daily.map((day) => [day.date, day]));
@@ -103,7 +114,7 @@ export function summarizeCare(records, legacyDoses, lastDay, days) {
       day.bottleMl += units;
       totals.bottleMl += units;
       const type = r.milk || 'unknown';
-      milk.set(type, (milk.get(type) || 0) + units);
+      addToGroup(milk, type, day.date, units);
     }
     if (r.kind === 'nursing' && r.ml != null) {
       const units = Math.round(r.ml * 10);
@@ -112,7 +123,7 @@ export function summarizeCare(records, legacyDoses, lastDay, days) {
       totals.nursingMl += units;
       totals.nursingMeasured++;
     }
-    if (r.kind === 'dose') names.set(r.name, (names.get(r.name) || 0) + 1);
+    if (r.kind === 'dose') addToGroup(names, r.name, day.date, 1);
   }
   for (const r of legacyDoses) {
     const day = byDate.get(r.date);
@@ -124,10 +135,18 @@ export function summarizeCare(records, legacyDoses, lastDay, days) {
     row.bottleMl /= 10;
     row.nursingMl /= 10;
   }
+  const daysWithValues = {};
+  for (const key of Object.keys(totals)) {
+    if (key !== 'date') daysWithValues[key] = daily.filter((day) => day[key] > 0).length;
+  }
   return {
-    daily, totals,
+    daily, totals, daysWithValues,
     recordedDays: daily.filter(hasCareRecords).length,
-    milkByType: Object.keys(MILK_TYPES).filter((type) => milk.has(type)).map((type) => [MILK_TYPES[type], milk.get(type) / 10]),
-    dosesByName: [...names.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh')),
+    milkByType: Object.keys(MILK_TYPES).filter((type) => milk.has(type)).map((type) => {
+      const { total, dates } = milk.get(type);
+      return [MILK_TYPES[type], total / 10, dates.size];
+    }),
+    dosesByName: [...names].map(([name, { total, dates }]) => [name, total, dates.size])
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh')),
   };
 }
