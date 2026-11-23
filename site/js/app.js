@@ -3,7 +3,7 @@ import { store } from './store.js';
 import { $$, closeSheet, toast } from './ui.js';
 import { renderHome, selectDate } from './views/home.js';
 import { renderSettings } from './views/settings.js';
-import { renderHelp } from './views/help.js';
+import { openHelpSheet } from './views/help.js';
 import { renderAlbum, updateAlbum } from './views/album.js';
 import { renderGrowth } from './views/growth.js';
 import { renderCare } from './views/care.js';
@@ -15,7 +15,7 @@ import { openPairSheet } from './views/settings.js';
 import { applyInviteFromParams, hasRole, openRolePicker, roleLabel } from './roles.js';
 
 const view = document.getElementById('view');
-const routes = { home: renderHome, care: renderCare, album: renderAlbum, growth: renderGrowth, settings: renderSettings, help: renderHelp };
+const routes = { home: renderHome, care: renderCare, album: renderAlbum, growth: renderGrowth, settings: renderSettings };
 
 // 邀请链接 #/join?role=…：模块加载时取出参数并立刻从地址栏去掉（不含同步密钥）
 let pendingJoinParams = null;
@@ -62,6 +62,14 @@ function render() {
     const rid = params.get('rid'), e = params.get('e');
     if (!routes.home.rendered) { renderHome(view); routes.home.rendered = true; setTab('home'); }
     if (rid && e) showAlarm({ rid, eventId: e });
+    return;
+  }
+  if (path === 'help') {
+    history.replaceState(null, '', '#/settings');
+    renderSettings(view);
+    routes.home.rendered = false;
+    setTab('settings');
+    openHelpSheet(params.get('section'), view.querySelector('#openSettingsHelp'));
     return;
   }
   const fn = routes[path] || renderHome;

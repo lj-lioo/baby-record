@@ -11,7 +11,15 @@ export function toast(msg, ms = 2200) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.hidden = true; }, ms);
 }
-export function openSheet(html, onMount) {
+let sheetCleanup;
+function cleanSheet() {
+  const cleanup = sheetCleanup;
+  sheetCleanup = null;
+  if (cleanup) cleanup();
+}
+export function openSheet(html, onMount, onClose) {
+  cleanSheet();
+  sheetCleanup = onClose;
   const sheet = $('#sheet'), bd = $('#sheetBackdrop');
   sheet.innerHTML = `<div class="grab"></div>${html}`;
   sheet.hidden = false; bd.hidden = false;
@@ -29,6 +37,7 @@ export function closeSheet() {
   $('#sheet').hidden = true; $('#sheetBackdrop').hidden = true;
   $('#sheet').innerHTML = '';
   document.body.style.overflow = '';
+  cleanSheet();
 }
 export function confirmSheet(message, okText = '确定', danger = false) {
   return new Promise((resolve) => {

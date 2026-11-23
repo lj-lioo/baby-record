@@ -1,13 +1,12 @@
 // 使用帮助（中文分步说明）
 import { store } from '../store.js';
-import { esc } from '../ui.js';
+import { closeSheet, esc, openSheet } from '../ui.js';
 import { createShortcutName } from '../shortcuts.js';
 
-export function renderHelp(root) {
+function renderHelp(root) {
   const name = esc(store.state.settings.shortcutName || '宝宝闹钟');
   const createName = esc(createShortcutName());
   root.innerHTML = `
-    <header class="topbar"><h1>使用帮助</h1></header>
     <style>/* v1.7.1：「新增」标记（只在帮助页用） */
       .newtag { display: inline-block; font-size: 12px; font-weight: 800; color: #fff; background: #E8590C; border-radius: 6px; padding: 1px 6px; margin-right: 4px; vertical-align: 1px; }
       .h4new { font-size: 15px; margin: 14px 0 4px; padding-left: 8px; border-left: 4px solid #E8590C; }</style>
@@ -96,6 +95,7 @@ export function renderHelp(root) {
         <li>回到本 App 点「我已在提醒事项改好」。如果确认原条目已移除，可以点「我已确认没有旧提醒」，再按当前计划创建。</li>
       </ol>
       <p class="note">找不到对应条目时先核对，尤其是没有编号的老提醒。事项删除后，App 会列出需核对的旧提醒。</p>
+      <p><a href="https://github.com/lj-lioo/baby-record/blob/main/docs/alarm-batch-pilot.md" target="_blank" rel="noopener">批量快捷指令配置说明</a></p>
     </section>
 
     <section class="card" id="h-push">
@@ -125,7 +125,7 @@ export function renderHelp(root) {
         <li>每剂疫苗/体检卡片上有 <b>「🪟 窗口」</b>：<b>最早</b>哪天可以打、<b>最迟</b>哪天前要完成，以及状态（未到窗口 / 窗口中·还剩N天 / <span class="bad">已过最迟</span> / 已完成）。免费疫苗按《国家免疫规划疫苗儿童免疫程序及说明（2026年版）》；自费疫苗按说明书；体检是参考范围。</li>
         <li>点「🪟 窗口」，日历上会显示这个事项的窗口：<b>淡色底</b>=窗口，<b>虚线圈</b>=最早日，<b>实心</b>=计划日，<b>「止」</b>=最迟日。日历上的 ● 实心点是计划日，○ 空心点是最早可接种日。</li>
         <li>那天去不了？点 <b>「📆 改计划日」</b> 选别的日期和时间（不能早于最早日；晚于最迟日会提醒）。提醒、闹钟和苹果日历都按<b>计划日</b>。</li>
-        <li>已经设过闹钟的事项改了计划日后会显示 <b class="bad">「需重设闹钟」</b>：到「提醒事项」删掉旧提醒，再点一次「⏰ 设为闹钟提醒」。<span class="newtag">新增</span> 完成 <a href="#/help" data-jump="h-replace">「重设闹钟时自动删除旧的」</a> 后，直接再点一次就会先删旧的再新建。</li>
+        <li>已设闹钟的事项改期后，打开 <a href="#/help?section=h-replace" data-jump="h-replace">「核对旧闹钟」说明</a>，查看怎么处理苹果「提醒事项」里的旧闹钟。</li>
       </ul>
       <p class="small muted">具体接种时间以接种门诊/社区医院的安排为准。</p>
     </section>
@@ -192,11 +192,68 @@ export function renderHelp(root) {
       <h2>ℹ️ 小贴士与限制</h2>
       <ul class="steps">
         <li>网页App不能直接在 iPhone 上设置闹钟，所以通过「快捷指令」创建紧急提醒事项来实现闹钟效果；日历和推送是备用方式。</li>
-        <li>在本App里修改或删除事项，<b>不会</b>自动修改已经建好的提醒事项，需要到「提醒事项」App的「宝宝」列表里手动修改/删除。<span class="newtag">新增</span> v1.7.1 起：重设闹钟会自动替换旧的，删除事项时可点「🗑 删除旧闹钟」（需先完成上面的「新增」步骤）。</li>
+        <li>在本 App 修改或删除事项后，请按 <a href="#/help?section=h-replace" data-jump="h-replace">「核对旧闹钟」说明</a> 处理原来的提醒。批量更新需要先配置 iPhone 快捷指令。</li>
         <li>App打开时到了提醒时间，会直接弹出全屏提醒页并播放铃声（需要先点过屏幕任意处，iPhone 才允许播放声音）。</li>
         <li>日程数据存在本机并可选云同步；新照片原图以普通文件存极空间，旧加密原图保留。请定期「导出备份」。</li>
       </ul>
     </section>
     </div>`;
-  root.querySelectorAll('[data-jump]').forEach((a) => { a.onclick = (e) => { e.preventDefault(); document.getElementById(a.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }; });
+}
+
+export function openHelpSheet(sectionId = null, trigger = document.activeElement) {
+  const app = document.getElementById('app');
+  let wasInert;
+  let dialog;
+  let keydown;
+  openSheet(`<div class="help-window">
+    <header class="help-window-header">
+      <h2 id="helpWindowTitle">使用帮助</h2>
+      <button class="help-window-close" type="button" aria-label="关闭帮助">×</button>
+    </header>
+    <div class="help-window-body"></div>
+  </div>`, (sheet) => {
+    dialog = sheet;
+    wasInert = app.inert;
+    app.inert = true;
+    sheet.setAttribute('aria-labelledby', 'helpWindowTitle');
+    sheet.ontouchstart = null;
+    sheet.ontouchend = null;
+
+    const body = sheet.querySelector('.help-window-body');
+    const close = sheet.querySelector('.help-window-close');
+    const jumpTo = (id) => {
+      const section = id && document.getElementById(id);
+      if (section && body.contains(section)) {
+        body.scrollTop += section.getBoundingClientRect().top - body.getBoundingClientRect().top - 12;
+      }
+    };
+    renderHelp(body);
+    body.querySelectorAll('[data-jump]').forEach((link) => {
+      link.onclick = (event) => {
+        event.preventDefault();
+        jumpTo(link.dataset.jump);
+      };
+    });
+    close.onclick = closeSheet;
+    keydown = (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); closeSheet(); return; }
+      if (event.key !== 'Tab') return;
+      const controls = sheet.querySelectorAll('button, a[href]');
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      const boundary = event.shiftKey ? first : last;
+      if (document.activeElement === boundary) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      }
+    };
+    sheet.addEventListener('keydown', keydown);
+    close.focus({ preventScroll: true });
+    jumpTo(sectionId);
+  }, () => {
+    app.inert = wasInert;
+    dialog.removeAttribute('aria-labelledby');
+    dialog.removeEventListener('keydown', keydown);
+    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+  });
 }

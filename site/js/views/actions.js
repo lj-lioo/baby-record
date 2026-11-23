@@ -4,6 +4,7 @@ import { requireAlarm } from '../roles.js';
 import { toLocalInput, weekday } from '../dates.js';
 import { futureAlarms, alarmTitle, alarmUrl, alarmSig, alarmTag, createShortcutName } from '../shortcuts.js';
 import { store } from '../store.js';
+import { openHelpSheet } from './help.js';
 import { alarmBatchShortcutName, alarmBatchUrl, buildAlarmBatch } from '../alarm-batch.js';
 
 const PENDING = 'babyrecord.alarmPending.';
@@ -131,7 +132,7 @@ export function openAlarmSheet(ev) {
       <p class="small muted">首次使用请按帮助配置仅创建快捷指令。返回后核对是否创建成功。</p>` : ''}
     ${list.length && state !== 'added' ? `<button type="button" class="btn secondary block" id="al-confirm" style="margin-top:8px">${state === 'changed' ? '我已在提醒事项改好' : '我已确认提醒已设好'}</button>` : ''}
     ${snapshot ? '<button type="button" class="btn ghost block" id="al-cleared" style="margin-top:8px">我已确认没有旧提醒</button>' : ''}
-    <p class="small"><a href="#/help" id="al-help">闹钟设置帮助</a></p>
+    <p class="small"><a href="#/help?section=h-shortcut" id="al-help">闹钟设置帮助</a></p>
     <button class="btn ghost block" id="al-close">关闭</button>`, (s) => {
     s.dataset.kind = 'alarm';
     const currentEvent = () => {
@@ -179,7 +180,10 @@ export function openAlarmSheet(ev) {
       window.dispatchEvent(new CustomEvent('rerender'));
     };
     s.querySelector('#al-close').onclick = closeSheet;
-    s.querySelector('#al-help').onclick = () => { closeSheet(); setTimeout(() => document.getElementById('h-shortcut')?.scrollIntoView(), 300); };
+    s.querySelector('#al-help').onclick = (event) => {
+      event.preventDefault();
+      openHelpSheet('h-shortcut');
+    };
   });
 }
 

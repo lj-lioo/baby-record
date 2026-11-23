@@ -213,6 +213,36 @@ textarea.input { min-height: 70px; resize: vertical; }
 .bad { color: var(--danger); font-weight: 700; }
 .steps { padding-left: 22px; margin: 6px 0; }
 .steps li { margin: 7px 0; }
+.settings-help-entry {
+  display: flex; width: 100%; align-items: center; gap: 10px;
+  border: 1px solid var(--line); padding: 10px 14px; min-height: 48px;
+  text-align: left; font-weight: 700; cursor: pointer;
+}
+.settings-help-icon { font-size: 18px; }
+.settings-help-arrow {
+  margin-left: auto; width: 8px; height: 8px; border: solid var(--muted);
+  border-width: 0 2px 2px 0; transform: rotate(-45deg);
+}
+.sheet:has(> .help-window) {
+  inset: calc(var(--sat) + 12px) calc(var(--sar) + 12px) calc(var(--sab) + 12px) calc(var(--sal) + 12px);
+  max-width: 540px; height: min(82vh, 700px); height: min(82dvh, 700px);
+  max-height: calc(100dvh - var(--sat) - var(--sab) - 24px);
+  margin: auto; padding: 0; border-radius: 24px; overflow: hidden; animation: none;
+}
+.sheet:has(> .help-window) > .grab { display: none; }
+.help-window { display: flex; flex-direction: column; height: 100%; }
+.help-window-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 10px 14px; background: var(--card); border-bottom: 1px solid var(--line);
+}
+.help-window-header h2 { margin: 0; font-size: 18px; }
+.help-window-close {
+  flex: none; width: 44px; height: 44px; border: 0; border-radius: 14px;
+  background: var(--bg); font-size: 24px; line-height: 1; cursor: pointer;
+}
+.help-window-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; overflow-wrap: anywhere; }
+.help-window-body pre { white-space: pre-wrap; }
+.help .card { padding: 14px; margin-bottom: 12px; }
 .help h2 { margin-top: 0; }
 .kbd { display: inline-block; background: #F4ECE6; border-radius: 6px; padding: 0 6px; font-weight: 700; }
 .note { background: #FFF6D8; border-radius: 12px; padding: 10px 12px; font-size: 14px; margin: 8px 0; }
