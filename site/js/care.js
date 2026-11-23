@@ -2,7 +2,7 @@ import { addDays, parseYmd, ymd } from './dates.js';
 
 export const MILK_TYPES = { breast: '母乳', formula: '配方奶', mixed: '混合', unknown: '未标注' };
 export const STOOL_TYPES = { soft: '软便', loose: '稀便', formed: '成形', hard: '偏硬' };
-export const CARE_LABELS = { nursing: '母乳亲喂', bottle: '瓶喂', stool: '排便', dose: '用药' };
+export const CARE_LABELS = { nursing: '母乳亲喂', bottle: '瓶喂', stool: '大便', urine: '小便', dose: '用药' };
 
 function dateValid(date) {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) && ymd(parseYmd(date)) === date;
@@ -57,16 +57,16 @@ export function careNewest(a, b) {
 }
 
 export function careDetail(record) {
-  if (record.kind === 'bottle') return `${record.ml} mL · ${MILK_TYPES[record.milk]}`;
+  if (record.kind === 'bottle') return [`${record.ml} mL`, record.milk !== 'unknown' && MILK_TYPES[record.milk]].filter(Boolean).join(' · ');
   if (record.kind === 'nursing') {
     return [record.minutes && `${record.minutes} 分钟`, record.ml != null && `实测 ${record.ml} mL`].filter(Boolean).join(' · ');
   }
   if (record.kind === 'stool') return STOOL_TYPES[record.stool] || '';
-  return record.dose;
+  return record.dose || '';
 }
 
 function emptyDay(date) {
-  return { date, nursing: 0, nursingMl: 0, nursingMeasured: 0, bottle: 0, bottleMl: 0, stool: 0, dose: 0, legacyDose: 0 };
+  return { date, nursing: 0, nursingMl: 0, nursingMeasured: 0, bottle: 0, bottleMl: 0, stool: 0, urine: 0, dose: 0, legacyDose: 0 };
 }
 
 export function summarizeCare(records, legacyDoses, lastDay, days) {
@@ -108,7 +108,7 @@ export function summarizeCare(records, legacyDoses, lastDay, days) {
   }
   return {
     daily, totals,
-    recordedDays: daily.filter((d) => d.nursing + d.bottle + d.stool + d.dose + d.legacyDose > 0).length,
+    recordedDays: daily.filter((d) => d.nursing + d.bottle + d.stool + d.urine + d.dose + d.legacyDose > 0).length,
     milkByType: Object.keys(MILK_TYPES).filter((type) => milk.has(type)).map((type) => [MILK_TYPES[type], milk.get(type) / 10]),
     dosesByName: [...names.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh')),
   };
