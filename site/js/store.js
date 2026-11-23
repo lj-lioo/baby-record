@@ -258,21 +258,33 @@ export const store = {
   care() { return state.care.filter((record) => !record.deleted); },
   careForSync() { return state.care; },
   getCare(id) { return state.care.find((record) => record.id === id && !record.deleted); },
+  addCare(inputs) {
+    if (!inputs.length) return [];
+    const updatedAt = Date.now();
+    const records = inputs.map((input) => normalizeCare({ ...input, id: uid(), updatedAt, deleted: false }));
+    if (records.some((record) => !record)) throw new Error('请检查记录内容');
+    commitCare(mergeCare(state.care, records));
+    return records;
+  },
   upsertCare(input) {
-    const current = input.id ? this.getCare(input.id) : null;
-    if (input.id && !current) throw new Error('这条记录已不存在');
-    const id = current?.id || uid();
-    const updatedAt = Math.max(Date.now(), (current?.updatedAt || 0) + 1);
-    const record = normalizeCare({ ...input, id, updatedAt, deleted: false });
+    if (!input.id) return this.addCare([input])[0];
+    const current = this.getCare(input.id);
+    if (!current) throw new Error('这条记录已不存在');
+    const updatedAt = Math.max(Date.now(), current.updatedAt + 1);
+    const record = normalizeCare({ ...input, updatedAt, deleted: false });
     if (!record) throw new Error('请检查记录内容');
     commitCare(mergeCare(state.care, [record]));
     return record;
   },
   deleteCare(id) {
-    const current = this.getCare(id);
-    if (!current) return;
-    const updatedAt = Math.max(Date.now(), current.updatedAt + 1);
-    commitCare(mergeCare(state.care, [{ id, updatedAt, deleted: true }]));
+    this.deleteCareBatch([id]);
+  },
+  deleteCareBatch(ids) {
+    const now = Date.now();
+    const entries = ids.map((id) => this.getCare(id)).filter(Boolean).map((record) => ({
+      id: record.id, updatedAt: Math.max(now, record.updatedAt + 1), deleted: true,
+    }));
+    if (entries.length) commitCare(mergeCare(state.care, entries));
   },
   applyRemoteCare(records) {
     if (!records.length) return;

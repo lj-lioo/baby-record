@@ -42,6 +42,11 @@ test('手机喂养页支持快捷记账、补记、编辑撤销、统计和离�
         settings: { memberRole: '爸爸', babyName: '演示宝宝' },
       }));
     }
+    window.SpeechRecognition = class {
+      start() { window.careRecognizer = this; }
+      stop() { this.onend?.(); }
+      abort() {}
+    };
   });
   const page = await context.newPage();
   const errors = [];
@@ -49,6 +54,7 @@ test('手机喂养页支持快捷记账、补记、编辑撤销、统计和离�
   await page.clock.setFixedTime(new Date('2024-03-01T01:10:00Z'));
   await page.goto(base + '/#/care');
   await page.getByRole('heading', { name: '喂养记录', exact: true }).waitFor();
+  assert.deepEqual(await page.locator('#tabbar a').evaluateAll((links) => links.slice(0, 2).map((link) => link.dataset.tab)), ['care', 'home']);
   const timeline = page.locator('.care-timeline');
   const quick = (kind) => page.locator(`.care-quick-grid [data-care-kind="${kind}"]`);
   const save = () => page.locator('#care-form').getByRole('button', { name: '保存' }).click();
@@ -101,6 +107,38 @@ test('手机喂养页支持快捷记账、补记、编辑撤销、统计和离�
   assert.equal(await page.locator('.care-chart > span').count(), 90);
   await page.locator('.care-breakdown summary').click();
   assert.equal(await page.locator('.care-breakdown tbody tr').count(), 90);
+
+  await page.getByRole('button', { name: '记录', exact: true }).click();
+  await page.getByRole('button', { name: /说一句话记录/ }).click();
+  const conversation = page.getByRole('log', { name: '喂养记录对话' });
+  const mic = page.locator('#care-voice-mic');
+  const emitSpeech = (text, final, end = false) => page.evaluate(({ text, final, end }) => {
+    const recognizer = window.careRecognizer;
+    recognizer.onresult({ results: [Object.assign([{ transcript: text }], { isFinal: final })] });
+    if (end) recognizer.onend();
+  }, { text, final, end });
+  await mic.click();
+  await emitSpeech('刚才瓶喂了八十毫升', false);
+  assert.equal(await conversation.getByText(/已记录/).count(), 0);
+  await emitSpeech('刚才用奶瓶喂了', true, true);
+  await conversation.getByText(/实际喝下了多少毫升/).waitFor();
+  await page.clock.setFixedTime(new Date('2024-03-01T01:10:02Z'));
+  await mic.click();
+  await emitSpeech('九十五毫升母乳', true, true);
+  await conversation.getByText(/已记录 1 条.*95 mL/s).waitFor();
+  assert.equal(await timeline.getByText('95 mL · 母乳', { exact: true }).count(), 1);
+  await page.getByRole('button', { name: '撤销本次记录' }).click();
+  assert.equal(await timeline.getByText('95 mL · 母乳', { exact: true }).count(), 0);
+  const send = async (text) => {
+    await page.locator('#care-voice-text').fill(text);
+    await page.getByRole('button', { name: '识别并记录' }).click();
+  };
+  await send('早上八点亲喂了十二分钟，然后刚刚拉了一次软便');
+  await conversation.getByText(/已记录 2 条/).waitFor();
+  assert.equal(await timeline.getByText('12 分钟', { exact: true }).count(), 1);
+  await send('晚点喂70毫升配方奶');
+  assert.equal(await timeline.getByText(/70 mL/).count(), 0);
+  await page.getByRole('button', { name: '完成', exact: true }).click();
 
   await page.waitForFunction(() => !!navigator.serviceWorker.controller);
   await context.setOffline(true);

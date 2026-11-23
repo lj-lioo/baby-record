@@ -88,3 +88,27 @@ button.care-row { cursor: pointer; }
 .care-dose-options { margin: -3px 0 10px; }
 .care-error { color: var(--danger); font-weight: 700; }
 .care-delete { margin-top: 8px; }
+.care-voice-button { margin-bottom: 9px; min-height: 46px; }
+.care-voice-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 33vh;
+  overflow-y: auto;
+  margin: 0 0 12px;
+  padding: 2px;
+}
+.care-voice-thread p {
+  margin: 0;
+  padding: 8px 11px;
+  border-radius: 12px;
+  max-width: 94%;
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.care-voice-reply { align-self: flex-start; background: #fff; border: 1px solid var(--line); }
+.care-voice-user { align-self: flex-end; background: #f4ded0; color: #4e382f; }
+#care-voice-text { display: block; margin-top: 4px; }
+.care-voice-note { margin: 6px 0 10px; }
+.care-voice-actions { display: flex; justify-content: space-between; gap: 8px; }

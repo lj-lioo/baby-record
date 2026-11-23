@@ -2,7 +2,7 @@ import { addDays, parseYmd, ymd } from './dates.js';
 
 export const MILK_TYPES = { breast: '母乳', formula: '配方奶', mixed: '混合', unknown: '未标注' };
 export const STOOL_TYPES = { soft: '软便', loose: '稀便', formed: '成形', hard: '偏硬' };
-const KINDS = ['nursing', 'bottle', 'stool', 'dose'];
+export const CARE_LABELS = { nursing: '母乳亲喂', bottle: '瓶喂', stool: '排便', dose: '用药' };
 
 function dateValid(date) {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) && ymd(parseYmd(date)) === date;
@@ -15,7 +15,7 @@ const numberInRange = (value, limit) => {
 };
 
 export function validateCare(record, latest) {
-  if (!KINDS.includes(record.kind)) return '请选择记录类型';
+  if (!Object.hasOwn(CARE_LABELS, record.kind)) return '请选择记录类型';
   if (!dateValid(record.date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(record.time)) return '请选择日期和时间';
   if (latest && `${record.date}T${record.time}` > latest) return '记录时间不能在未来';
   const hasMl = record.ml != null && record.ml !== '';
@@ -54,6 +54,15 @@ export function normalizeCare(record) {
 
 export function careNewest(a, b) {
   return b.date.localeCompare(a.date) || b.time.localeCompare(a.time) || b.updatedAt - a.updatedAt;
+}
+
+export function careDetail(record) {
+  if (record.kind === 'bottle') return `${record.ml} mL · ${MILK_TYPES[record.milk]}`;
+  if (record.kind === 'nursing') {
+    return [record.minutes && `${record.minutes} 分钟`, record.ml != null && `实测 ${record.ml} mL`].filter(Boolean).join(' · ');
+  }
+  if (record.kind === 'stool') return STOOL_TYPES[record.stool] || '';
+  return record.dose;
 }
 
 function emptyDay(date) {

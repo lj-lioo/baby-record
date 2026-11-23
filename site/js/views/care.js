@@ -1,11 +1,11 @@
-import { MILK_TYPES, STOOL_TYPES, careNewest, summarizeCare, validateCare } from '../care.js';
+import { CARE_LABELS as LABEL, MILK_TYPES, STOOL_TYPES, careDetail, careNewest, summarizeCare, validateCare } from '../care.js';
 import { addDays, cnDate, todayStr, toLocalInput } from '../dates.js';
 import { medDoses } from '../growth.js';
 import { canEditGrowth, requireEditEvents } from '../roles.js';
 import { store } from '../store.js';
 import { closeSheet, confirmSheet, esc, openSheet, toast } from '../ui.js';
+import { openCareVoice } from './care-voice.js';
 
-const LABEL = { nursing: '母乳亲喂', bottle: '瓶喂', stool: '排便', dose: '用药' };
 const DOSE_SUGGESTIONS = ['维生素AD', '维生素K1'];
 const TREND = { bottleMl: '瓶喂奶量', feeds: '喂奶次数', stool: '排便次数', dose: '用药次数' };
 let selectedDate = '';
@@ -27,15 +27,6 @@ function oldDoseEntries() {
     }
   }
   return [...entries.values()];
-}
-
-function detail(record) {
-  if (record.kind === 'bottle') return `${record.ml} mL · ${MILK_TYPES[record.milk]}`;
-  if (record.kind === 'nursing') {
-    return [record.minutes && `${record.minutes} 分钟`, record.ml != null && `实测 ${record.ml} mL`].filter(Boolean).join(' · ');
-  }
-  if (record.kind === 'stool') return STOOL_TYPES[record.stool] || '';
-  return record.dose;
 }
 
 function summaryTiles(day) {
@@ -63,6 +54,7 @@ function quickActions(today, lastBottle, canUndo) {
   return `<section class="card care-quick">
     <div class="care-heading"><h2>${today ? '快捷记录' : '补记当天'}</h2>
       ${canUndo ? '<button type="button" class="care-link" id="care-undo">撤销刚才记录</button>' : ''}</div>
+    <button type="button" class="btn block care-voice-button" id="care-voice">🎙️ 说一句话记录</button>
     <div class="care-quick-grid">${actions.map(([label, hint, kind, quick]) =>
       `<button type="button" data-care-kind="${kind}" data-care-quick="${quick}">
         <strong>${label}</strong><small>${hint}</small></button>`).join('')}</div>
@@ -76,7 +68,7 @@ function dailyLog(date, records, historical, editable) {
     ${rows.length ? `<ul>${rows.map((record) => {
       const content = `<span class="care-time">${esc(record.time || '—')}</span><span class="care-row-content">
         <strong>${esc(record.title || (record.kind === 'dose' ? record.name : LABEL[record.kind]))}</strong>
-        <small>${[record.legacy, record.legacy ? record.detail : detail(record), record.note].filter(Boolean).map(esc).join(' · ')}</small></span>`;
+        <small>${[record.legacy, record.legacy ? record.detail : careDetail(record), record.note].filter(Boolean).map(esc).join(' · ')}</small></span>`;
       return `<li>${editable && !record.legacy
         ? `<button type="button" class="care-row" data-care-id="${esc(record.id)}">${content}<span class="care-edit">编辑</span></button>`
         : `<div class="care-row">${content}</div>`}</li>`;
@@ -167,6 +159,12 @@ export function renderCare(root) {
   root.querySelectorAll('[data-care-metric]').forEach((button) => {
     button.onclick = () => { metric = button.dataset.careMetric; renderCare(root); };
   });
+  const voice = root.querySelector('#care-voice');
+  if (voice) voice.onclick = () => openCareVoice({ day: selectedDate, onSaved: (records) => {
+    undoRecord = null;
+    selectedDate = records[0].date === todayStr() ? '' : records[0].date;
+    renderCare(root);
+  } });
   root.querySelectorAll('[data-care-kind]').forEach((button) => {
     button.onclick = () => {
       if (!requireEditEvents('当前身份可以查看喂养记录')) return;
