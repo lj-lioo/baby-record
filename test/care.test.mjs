@@ -42,6 +42,17 @@ test('实测奶量和用药分开统计，日期范围两端都包含', () => {
   assert.deepEqual(report.dosesByName, [['示例补充剂', 1]]);
 });
 
+test('纸本页以早上八点换日，普通记录仍按实际日期归入统计', () => {
+  const base = { kind: 'bottle', date: '2024-03-01', ml: 50 };
+  const report = summarizeCare([
+    { ...base, time: '07:59', paper: true },
+    { ...base, time: '08:00', paper: true },
+    { ...base, time: '01:30' },
+    { kind: 'dose', date: '2024-02-29', time: '', name: '示例补充剂', paper: true },
+  ], [], '2024-03-01', 2);
+  assert.deepEqual(report.daily.map((day) => [day.bottle, day.bottleMl, day.dose]), [[1, 50, 1], [2, 100, 0]]);
+});
+
 test('原 Worker 可用原配对协议同步照护记录，重复拉取和旧备份保留历史', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'care-sync-'));
   const db = new DatabaseSync(':memory:');
@@ -133,7 +144,7 @@ test('原 Worker 可用原配对协议同步照护记录，重复拉取和旧备
   assert.ok(!cloud[0].data.includes(first.note));
   assert.equal(cloud[1].deleted, 1);
 
-  const dose = { id: 'import-dose-test', date: first.date, time: '', kind: 'dose', name: '示例补充剂' };
+  const dose = { id: 'import-dose-test', date: first.date, time: '', kind: 'dose', name: '示例补充剂', paper: true };
   const [second] = b.store.appendImportedCare([dose]);
   assert.deepEqual(b.store.appendImportedCare([{ ...dose, name: '重复导入不应修改记录' }]), []);
   const toilet = b.store.addCare(['stool', 'urine'].map((kind) => ({ date: first.date, time: first.time, kind })));

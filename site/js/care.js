@@ -37,6 +37,7 @@ export function normalizeCare(record) {
   if (validateCare(record)) return null;
   const { kind, date, time } = record;
   const entry = { id, kind, date, time, updatedAt, note: String(record.note || '').trim().slice(0, 160) };
+  if (record.paper === true) entry.paper = true;
   if (kind === 'nursing') {
     entry.ml = numberInRange(record.ml, 2000);
     entry.minutes = numberInRange(record.minutes, 1440);
@@ -51,6 +52,10 @@ export function normalizeCare(record) {
     entry.dose = String(record.dose || '').trim().slice(0, 80);
   }
   return entry;
+}
+
+export function careDay(record) {
+  return record.paper && record.time && record.time < '08:00' ? addDays(record.date, -1) : record.date;
 }
 
 export function careNewest(a, b) {
@@ -77,7 +82,7 @@ export function summarizeCare(records, legacyDoses, lastDay, days) {
   const names = new Map();
   const milk = new Map();
   for (const r of records) {
-    const day = byDate.get(r.date);
+    const day = byDate.get(careDay(r));
     if (!day || r.deleted) continue;
     day[r.kind]++;
     totals[r.kind]++;

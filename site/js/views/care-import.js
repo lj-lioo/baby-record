@@ -1,4 +1,4 @@
-import { CARE_LABELS, careDetail, normalizeCare, validateCare } from '../care.js';
+import { CARE_LABELS, careDay, careDetail, normalizeCare, validateCare } from '../care.js';
 import { toLocalInput } from '../dates.js';
 import { requireEditEvents } from '../roles.js';
 import { store } from '../store.js';
@@ -40,8 +40,10 @@ function review(records, onSaved, message = '') {
   const rows = preview(records);
   const skipped = records.length - rows.length;
   const duplicates = rows.filter((row) => row.possibleDuplicate).length;
+  const paperDays = [...new Set(rows.filter(({ record }) => record.paper).map(({ record }) => careDay(record)))];
   openSheet(`<h3>核对补录记录</h3>
     <p class="small" aria-live="polite" id="care-import-summary"></p>
+    ${paperDays.length ? `<p class="small muted">纸本共 ${paperDays.length} 页，每页 08:00 至次日 08:00。</p>` : ''}
     ${skipped ? `<p class="small muted">已处理的 ${skipped} 条已跳过。</p>` : ''}
     ${duplicates ? `<p class="small muted">有 ${duplicates} 条可能重复，默认跳过。确认是不同记录时可勾选。</p>` : ''}
     <p class="small care-error" id="care-import-error" role="alert" ${message ? '' : 'hidden'}>${esc(message)}</p>
@@ -51,9 +53,11 @@ function review(records, onSaved, message = '') {
     </div>
     <ul class="care-import-list">${rows.map(({ record, possibleDuplicate }) => {
       const title = record.kind === 'dose' ? record.name : CARE_LABELS[record.kind];
+      const day = careDay(record);
+      const time = record.time || '时间未记';
       const detail = [careDetail(record), record.note, possibleDuplicate && '可能重复'].filter(Boolean);
       return `<li><label><input type="checkbox" value="${esc(record.id)}" ${possibleDuplicate ? '' : 'checked'}>
-        <span>${[record.date, record.time || '时间未记', title, ...detail].map(esc).join(' · ')}</span></label></li>`;
+        <span>${[day, day !== record.date ? '次日 ' + time : time, title, ...detail].map(esc).join(' · ')}</span></label></li>`;
     }).join('')}</ul>`, (sheet) => {
     sheet.querySelector('#care-import-cancel').onclick = closeSheet;
     const save = sheet.querySelector('#care-import-save');
