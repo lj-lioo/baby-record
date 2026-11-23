@@ -266,6 +266,20 @@ export const store = {
     commitCare(mergeCare(state.care, records));
     return records;
   },
+  appendImportedCare(inputs) {
+    const next = new Map(state.care.map((record) => [record.id, record]));
+    const updatedAt = Date.now();
+    const added = [];
+    for (const input of inputs) {
+      const record = normalizeCare({ ...input, updatedAt, deleted: false });
+      if (!record || !record.id.startsWith('import-')) throw new Error('补录记录无效');
+      if (next.has(record.id)) continue;
+      next.set(record.id, record);
+      added.push(record);
+    }
+    if (added.length) commitCare(next);
+    return added;
+  },
   upsertCare(input) {
     if (!input.id) return this.addCare([input])[0];
     const current = this.getCare(input.id);
