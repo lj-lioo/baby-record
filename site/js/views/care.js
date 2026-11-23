@@ -6,9 +6,12 @@ import { store } from '../store.js';
 import { closeSheet, confirmSheet, esc, openSheet, toast } from '../ui.js';
 import { openCareVoice } from './care-voice.js';
 import { openCareImport } from './care-import.js';
+import { careTrend } from './care-trend.js';
 
 const DOSE_SUGGESTIONS = ['维生素AD', '维生素K1'];
-const TREND = { bottleMl: '瓶喂奶量', feeds: '喂奶次数', stool: '大便次数', urine: '小便次数', dose: '用药次数' };
+const TREND = { bottleMl: '瓶喂奶量', nursing: '母乳次数', stool: '大便次数', urine: '小便次数', dose: '用药次数' };
+const DAILY_COUNT = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 });
+const DAILY_VOLUME = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 });
 const FEED_CHOICES = { nursing: '母乳', bottle: '瓶喂' };
 const TOILET_CHOICES = { stool: '大便', urine: '小便' };
 let selectedDate = '';
@@ -32,15 +35,19 @@ function oldDoseEntries() {
   return [...entries.values()];
 }
 
-function summaryTiles(day) {
+function summaryTiles(day, recordedDays) {
+  const averaging = recordedDays !== undefined;
+  const display = (value, formatter = DAILY_COUNT) => averaging ? formatter.format(value / (recordedDays || 1)) : value;
+  const unit = averaging ? '次/天' : '次';
   const tiles = [
-    ['喂奶', `${day.nursing + day.bottle} 次`, `亲喂 ${day.nursing} · 瓶喂 ${day.bottle}`],
-    ['瓶喂奶量', `${day.bottleMl} mL`, '已记录的实际奶量'],
-    ['大小便', `${day.stool} / ${day.urine} 次`, '大便 / 小便'],
-    ['实际用药', `${day.dose} 次`, day.legacyDose ? `另有 ${day.legacyDose} 条旧记录` : '已记录'],
+    ['母乳', `${display(day.nursing)} ${unit}`, averaging ? '母乳亲喂日均次数' : '母乳亲喂次数'],
+    ['瓶喂奶量', `${display(day.bottleMl, DAILY_VOLUME)} mL${averaging ? '/天' : ''}`, '已记录的实际奶量'],
+    ['大小便', `${display(day.stool)} / ${display(day.urine)} ${unit}`, '大便 / 小便'],
+    ['实际用药', `${display(day.dose)} ${unit}`, day.legacyDose
+      ? (averaging ? `原用药记录 ${display(day.legacyDose)} 次/天` : `另有 ${day.legacyDose} 条旧记录`) : '已记录'],
   ];
   return `<div class="care-tiles">${tiles.map(([label, value, sub]) => `<div>
-    <span>${label}</span><strong>${value}</strong><small>${sub}</small>
+    <span>${label}</span><strong>${recordedDays === 0 ? '—' : value}</strong><small>${sub}</small>
   </div>`).join('')}</div>`;
 }
 
@@ -80,37 +87,32 @@ function dailyLog(date, records, historical, editable) {
   </section>`;
 }
 
-function renderStats(records, historical, date) {
-  const { daily, totals, recordedDays, dosesByName, milkByType } = summarizeCare(records, historical, date, period);
-  const values = daily.map((d) => metric === 'feeds' ? d.nursing + d.bottle : d[metric]);
-  const max = Math.max(1, ...values);
+function renderStats({ daily, totals, recordedDays, dosesByName, milkByType }, chart) {
   const buttons = (list, attr, active) => list.map(([id, label]) =>
     `<button type="button" ${attr}="${id}" aria-pressed="${id === active}">${label}</button>`).join('');
-  const average = totals.bottle ? `${Math.round(totals.bottleMl * 10 / totals.bottle) / 10} mL` : '—';
+  const dailyVolume = (ml) => DAILY_VOLUME.format(ml / recordedDays);
+  const dailyCount = (count) => DAILY_COUNT.format(count / recordedDays);
   return `
     <section class="card care-stats">
       <div class="care-pills" aria-label="统计区间">${buttons([7, 30, 90].map((n) => [n, `近 ${n} 天`]), 'data-care-period', period)}</div>
-      <p class="small muted">${cnDate(daily[0].date, true)} — ${cnDate(date, true)} · ${recordedDays} 天有记录</p>
-      ${summaryTiles(totals)}
-      <p class="small care-average">瓶喂平均每次 <b>${average}</b></p>
-      ${milkByType.length ? `<p class="small muted care-average">${milkByType.map(([label, ml]) => `${label} ${ml} mL`).join(' · ')}</p>` : ''}
-      ${totals.nursingMeasured ? `<p class="small muted care-average">亲喂实测 ${totals.nursingMl} mL · 共 ${totals.nursingMeasured} 次测量</p>` : ''}
+      <p class="small muted">${cnDate(daily[0].date, true)} — ${cnDate(daily.at(-1).date, true)} · ${recordedDays
+        ? `按 ${recordedDays} 个有记录的日子计算日均` : '这段时间还没有记录'}</p>
+      ${summaryTiles(totals, recordedDays)}
+      ${milkByType.length ? `<p class="small muted care-average">瓶喂日均 · ${milkByType.map(([label, ml]) => `${label} ${dailyVolume(ml)} mL/天`).join(' · ')}</p>` : ''}
+      ${totals.nursingMeasured ? `<p class="small muted care-average">亲喂实测日均 ${dailyVolume(totals.nursingMl)} mL/天 · ${dailyCount(totals.nursingMeasured)} 次测量/天</p>` : ''}
       ${dosesByName.length ? `<ul class="care-dose-totals" aria-label="按药品统计">${dosesByName.map(([name, n]) =>
-        `<li><span>${esc(name)}</span><b>${n} 次</b></li>`).join('')}</ul>` : ''}
+        `<li><span>${esc(name)}</span><b>${dailyCount(n)} 次/天</b></li>`).join('')}</ul>` : ''}
     </section>
     <section class="card care-stats">
       <h2>每日趋势</h2>
       <div class="care-pills care-trend-pills" aria-label="趋势指标">${buttons(Object.entries(TREND), 'data-care-metric', metric)}</div>
-      <div class="care-chart" style="--care-days:${period}" role="img" aria-label="${TREND[metric]}每日趋势，详细数值见每日明细">
-        ${values.map((value) => `<span style="--care-bar:${100 * value / max}%"></span>`).join('')}
-      </div>
-      <div class="care-axis small muted"><span>${cnDate(daily[0].date)}</span><span>${cnDate(date)}</span></div>
+      ${chart}
       <details class="care-breakdown">
         <summary>查看每日明细</summary>
         <table>
-          <thead><tr><th>日期</th><th>亲喂</th><th>瓶喂</th><th>瓶喂 mL</th><th>大便</th><th>小便</th><th>用药</th></tr></thead>
+          <thead><tr><th>日期</th><th>母乳次数</th><th>瓶喂 mL</th><th>大便</th><th>小便</th><th>用药</th></tr></thead>
           <tbody>${[...daily].reverse().map((d) => `<tr><th scope="row">${cnDate(d.date)}</th>
-            <td>${d.nursing}</td><td>${d.bottle}</td><td>${d.bottleMl}</td><td>${d.stool}</td><td>${d.urine}</td><td>${d.dose}</td></tr>`).join('')}</tbody>
+            <td>${d.nursing}</td><td>${d.bottleMl}</td><td>${d.stool}</td><td>${d.urine}</td><td>${d.dose}</td></tr>`).join('')}</tbody>
         </table>
       </details>
       <p class="small muted care-caption">按实际录入汇总。无记录的日期不代表未喂养或未用药。</p>
@@ -127,7 +129,8 @@ export function renderCare(root) {
   const historical = oldDoseEntries();
   const canUndo = () => undoRecords.length > 0 &&
     undoRecords.every((record) => careDay(record) === date && store.getCare(record.id)?.updatedAt === record.updatedAt);
-  const daily = summarizeCare(records, historical, date, 1).totals;
+  const report = summarizeCare(records, historical, date, section === 'stats' ? period : 1);
+  const trend = section === 'stats' ? careTrend(report.daily, metric, TREND[metric]) : null;
   clearTimeout(cycleRefresh);
   cycleRefresh = setTimeout(() => {
     if (root.querySelector('.care-page')) renderCare(root);
@@ -146,9 +149,10 @@ export function renderCare(root) {
     </div>
     <p class="small muted">喂奶按 ${FEEDING_DAY_START} 至次日 ${FEEDING_DAY_START} 统计</p>
     ${section === 'log' ? `${editable ? quickActions(date === currentCycle, canUndo()) : ''}
-      <section class="card"><h2>${date === today ? '今天' : cnDate(date)}汇总</h2>${summaryTiles(daily)}</section>
-      ${dailyLog(date, records, historical, editable)}` : renderStats(records, historical, date)}
+      <section class="card"><h2>${date === today ? '今天' : cnDate(date)}汇总</h2>${summaryTiles(report.totals)}</section>
+      ${dailyLog(date, records, historical, editable)}` : renderStats(report, trend.html)}
   </div>`;
+  trend?.bind(root);
 
   const setDate = (next) => {
     const [today, time] = toLocalInput(Date.now()).split('T');

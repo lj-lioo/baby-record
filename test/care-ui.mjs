@@ -154,14 +154,54 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   await save();
   await page.getByRole('button', { name: '今天', exact: true }).click();
   await page.getByRole('button', { name: '统计', exact: true }).click();
-  await page.getByRole('button', { name: '近 90 天' }).click();
-  assert.match(await page.locator('.care-stats').first().innerText(), /195.5 mL/);
-  assert.match(await page.locator('.care-stats').first().innerText(), /母乳 65 mL · 未标注 130.5 mL/);
-  await page.getByRole('button', { name: '小便次数' }).click();
-  assert.equal(await page.locator('.care-chart > span').count(), 90);
+  const stats = page.locator('.care-stats').first();
+  const chart = page.locator('.care-chart');
+  const slider = chart.getByRole('slider');
+  const readout = page.locator('#care-chart-readout');
+  for (const days of [7, 30, 90]) {
+    await page.getByRole('button', { name: `近 ${days} 天` }).click();
+    assert.match(await stats.innerText(), /3 个有记录的日子/);
+    assert.match(await stats.innerText(), /母乳\s+0\.67 次\/天/);
+    assert.match(await stats.innerText(), /65\.2 mL\/天/);
+    assert.match(await stats.innerText(), /母乳 21\.7 mL\/天 · 未标注 43\.5 mL\/天/);
+    assert.equal(await slider.getAttribute('max'), String(days - 1));
+  }
+  await page.getByRole('button', { name: '母乳次数', exact: true }).click();
+  assert.match(await chart.locator('.care-chart-line').getAttribute('d'), /M[^L]*L.*L/);
+  assert.equal(await readout.innerText(), '3月1日 · 1 次');
+  await slider.press('ArrowLeft');
+  assert.equal(await slider.getAttribute('aria-valuetext'), '2月29日 · 0 次');
+  await chart.scrollIntoViewIfNeeded();
+  const bounds = await chart.boundingBox();
+  const at = (index) => ({
+    x: Math.round(bounds.x + bounds.width * (0.02 + index / 89 * 0.96)),
+    y: Math.round(bounds.y + bounds.height / 2),
+  });
+  const blank = at(0);
+  await page.mouse.move(blank.x, blank.y);
+  assert.match(await readout.innerText(), /无记录$/);
+  assert.equal(await chart.locator('.care-chart-active').isHidden(), true);
+  const beforeLeapDay = at(87);
+  const leapDay = at(88);
+  await page.touchscreen.tap(beforeLeapDay.x, beforeLeapDay.y);
+  assert.equal(await readout.innerText(), '2月28日 · 1 次');
+  const touch = await context.newCDPSession(page);
+  const dispatchTouch = (type, touchPoints) => touch.send('Input.dispatchTouchEvent', { type, touchPoints });
+  await dispatchTouch('touchStart', [blank]);
+  await dispatchTouch('touchMove', [leapDay]);
+  await dispatchTouch('touchEnd', []);
+  assert.equal(await readout.innerText(), '2月29日 · 0 次');
   await page.locator('.care-breakdown summary').click();
   assert.equal(await page.locator('.care-breakdown tbody tr').count(), 90);
   assert.match(await page.locator('.care-breakdown thead').innerText(), /大便.*小便/s);
+  assert.deepEqual(await page.locator('.care-breakdown thead th').allTextContents(),
+    ['日期', '母乳次数', '瓶喂 mL', '大便', '小便', '用药']);
+
+  await page.locator('#care-day').fill('2023-01-01');
+  assert.match(await stats.innerText(), /这段时间还没有记录/);
+  assert.deepEqual(await stats.locator('.care-tiles strong').allTextContents(), ['—', '—', '—', '—']);
+  assert.equal(await chart.locator('.care-chart-line').getAttribute('d'), '');
+  await page.getByRole('button', { name: '今天', exact: true }).click();
 
   await page.getByRole('button', { name: '记录', exact: true }).click();
   const voice = page.getByRole('button', { name: /语音听写/ });
@@ -386,7 +426,8 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
       const nightLog = night.locator('.care-timeline');
       await night.getByRole('heading', { name: '1月31日汇总', exact: true }).waitFor();
       assert.equal(await nightDay.inputValue(), '2026-01-31');
-      assert.match(await night.locator('.care-tiles').innerText(), /5 次.*110 mL/s);
+      assert.match(await night.locator('.care-tiles').innerText(), /母乳\s+3 次.*110 mL/s);
+      assert.doesNotMatch(await night.locator('.care-tiles').innerText(), /瓶喂\s+2 次/);
       assert.equal(await nightLog.getByRole('button', { name: /次日/ }).count(), 5);
 
       await night.locator('[data-care-kind="feed"]').click();
@@ -400,7 +441,7 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
       await night.getByRole('button', { name: '统计', exact: true }).click();
       await night.locator('.care-breakdown summary').click();
       const cycleRow = night.getByRole('row').filter({ has: night.getByRole('rowheader', { name: '1月31日', exact: true }) });
-      assert.deepEqual(await cycleRow.getByRole('cell').allTextContents(), ['3', '2', '110', '0', '0', '0']);
+      assert.deepEqual(await cycleRow.getByRole('cell').allTextContents(), ['3', '110', '0', '0', '0']);
       await night.getByRole('button', { name: '记录', exact: true }).click();
       await night.clock.fastForward(109 * 60 * 1000);
       assert.equal(await nightDay.inputValue(), '2026-02-01');
