@@ -102,15 +102,17 @@ for (const [tag, ver, wasOk] of [['v141', '1.4.1', (st) => !st.paid], ['v150', '
   setMode(NEW, 600, 600);
   const r = await open(ctx, '全新安装');
   ok('全新安装：直接是新界面，不自动刷新', isNew(r.st) && r.st.navs === 0, `navs=${r.st.navs}`);
-  // 之后 JS 在服务器上改了（没改版本号、HTTP 缓存还没过期）：网络优先 + no-cache，下次打开就拿到
+  // 保持显示版本号，按正式部署流程更新 SW 的 REVISION，验证静态资源热修复。
   await r.page.close();
   fs.rmSync('/tmp/swtest/v141b', { recursive: true, force: true });
   fs.cpSync(NEW, '/tmp/swtest/v141b/site', { recursive: true });
   const f = '/tmp/swtest/v141b/site/js/views/settings.js';
   fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('宝宝记录 v${esc(APP_BUILD)}', '宝宝记录 v${esc(APP_BUILD)} 热修复'));
+  const sw = '/tmp/swtest/v141b/site/sw.js';
+  fs.writeFileSync(sw, fs.readFileSync(sw, 'utf8').replace(/^const REVISION = '[^']*';$/m, "const REVISION = 'hotfix';"));
   setMode('/tmp/swtest/v141b/site', 600, 600);
   const r2 = await open(ctx, '服务器上 JS 改了');
-  ok('JS 在服务器上更新后（不改版本号），下次打开就是新 JS', r2.st.footer.includes('热修复'), r2.st.footer);
+  ok('发布相同版本号的热修复后，下次打开获得新 JS', r2.st.footer.includes('热修复'), r2.st.footer);
   await ctx.close();
 }
 ok('无 JS 报错', errors.length === 0, errors.join(' || '));
