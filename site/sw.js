@@ -1,14 +1,14 @@
 // Service Worker：离线缓存 + Web Push + 通知点击 + 生成 .ics（真实 URL，text/calendar）
 // 安装时直接从网络取齐同一版本的页面和静态文件，再启用该版本的缓存。
 // 已安装的 App 直接从版本缓存启动，Service Worker 更新独立进行。
-const VERSION = 'v1.16.13';
+const VERSION = 'v1.16.14';
 // 发布时写入 site 目录的 Git 树哈希，确保只改静态资源的发布也能触发更新。
 const REVISION = '';
 const CACHE = 'baby-record-' + VERSION + (REVISION ? '-' + REVISION : '');
 const ASSETS = [
   './index.html', './manifest.json', './config.js', './css/app.css', './css/vaxplan.css', './css/care.css',
   './js/app.js', './js/store.js', './js/dates.js', './js/categories.js', './js/reminders.js', './js/ics.js',
-  './js/care.js', './js/care-voice.js', './js/views/care.js', './js/views/care-import.js', './js/views/care-voice.js', './js/views/care-listen.js', './js/views/freevax.js',
+  './js/care.js', './js/care-voice.js', './js/views/care.js', './js/views/care-trend.js', './js/views/care-import.js', './js/views/care-voice.js', './js/views/care-listen.js', './js/views/freevax.js',
   './js/push.js', './js/shortcuts.js', './js/alarm-batch.js', './js/ui.js', './js/sound.js', './js/vaccines.js', './js/checkups.js', './js/paidvax.js', './js/windows.js', './js/sync-core.js', './js/sync.js', './js/photos.js', './js/thumbs.js', './js/growth.js', './js/voice.js', './js/roles.js',
   './js/views/home.js', './js/views/editor.js', './js/views/actions.js', './js/views/alarm.js', './js/views/settings.js', './js/views/help.js', './js/views/vaxplan.js', './js/views/planned.js', './js/views/paidcat.js', './js/views/album.js', './js/views/album-viewer.js', './js/views/growth.js', './js/views/voice.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/badge-72.png', './icons/icon-maskable-512.png',

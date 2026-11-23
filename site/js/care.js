@@ -83,6 +83,10 @@ function emptyDay(date) {
   return { date, nursing: 0, nursingMl: 0, nursingMeasured: 0, bottle: 0, bottleMl: 0, stool: 0, urine: 0, dose: 0, legacyDose: 0 };
 }
 
+export function hasCareRecords(day) {
+  return day.nursing + day.bottle + day.stool + day.urine + day.dose + day.legacyDose > 0;
+}
+
 export function summarizeCare(records, legacyDoses, lastDay, days) {
   const daily = Array.from({ length: days }, (_, i) => emptyDay(addDays(lastDay, i + 1 - days)));
   const byDate = new Map(daily.map((day) => [day.date, day]));
@@ -122,7 +126,7 @@ export function summarizeCare(records, legacyDoses, lastDay, days) {
   }
   return {
     daily, totals,
-    recordedDays: daily.filter((d) => d.nursing + d.bottle + d.stool + d.urine + d.dose + d.legacyDose > 0).length,
+    recordedDays: daily.filter(hasCareRecords).length,
     milkByType: Object.keys(MILK_TYPES).filter((type) => milk.has(type)).map((type) => [MILK_TYPES[type], milk.get(type) / 10]),
     dosesByName: [...names.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh')),
   };
