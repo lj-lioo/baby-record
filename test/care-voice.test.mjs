@@ -60,6 +60,45 @@ test('听写把「喂了奶」写成「为了奶」时先确认方式，并保�
   assert.equal(say('早上8:00为了奶量做了笔记').pending.length, 0);
 });
 
+test('结合上一句理解喂养口语，同时沿用日期和时间', () => {
+  const { pending } = say('昨天早上八点喂了奶');
+  for (const text of [
+    '是用瓶子喝了三十毫升', '用瓶子味的喝了30毫升', '用了那个瓶子喂的，喝了30 mL', '用小瓶子喝了30cc',
+  ]) {
+    const result = say(text, { pending });
+    assert.equal(result.question, '', text);
+    assert.deepEqual(result.records.map(({ kind, date, time, ml }) => [kind, date, time, ml]), [
+      ['bottle', '2026-11-22', '08:00', 30],
+    ], text);
+  }
+  const bottle = say('那个瓶子的', { pending });
+  assert.match(bottle.question, /多少毫升/);
+  assert.equal(say('实际喝了三十', { pending: bottle.pending }).records[0].ml, 30);
+  const nursing = say('直接吸的，吸了十分钟', { pending }).records[0];
+  assert.deepEqual([nursing.kind, nursing.time, nursing.minutes], ['nursing', '08:00', 10]);
+  const explicitMilk = say('刚才用瓶子喝了三十毫升奶').records[0];
+  assert.deepEqual([explicitMilk.kind, explicitMilk.ml], ['bottle', 30]);
+  assert.equal(say('刚刚含着奶头吸了十分钟').records[0].kind, 'nursing');
+});
+
+test('喂养上下文不会把不相干的量或事件当成奶量', () => {
+  const { pending } = say('早上八点喂了奶');
+  for (const text of [
+    '用瓶子装了三十毫升', '用瓶子喝了三十毫升水', '用奶瓶喝了30毫升奶茶',
+    '不是用瓶子喂的', '用瓶子喂三十毫升可以吗', '用瓶子喝了三十还是四十毫升',
+    '刚刚拉了个软便', '吃了维生素AD一滴', '喝了30毫升',
+  ]) {
+    const result = say(text, { pending });
+    assert.deepEqual(result.records, [], text);
+    assert.ok(result.question, text);
+    assert.equal(result.pending[0].time, '08:00', text);
+  }
+  assert.deepEqual(say('用瓶子喝了30毫升').records, []);
+  const bottle = say('用瓶子喂的', { pending });
+  assert.deepEqual(say('喝了三十毫升水', { pending: bottle.pending }).records, []);
+  assert.equal(say('用了开塞露', { medicines: ['开塞露'] }).records[0].kind, 'dose');
+});
+
 test('提问、计划、否定、冲泡量及模糊时间不自动入账', () => {
   for (const phrase of [
     '维生素AD能不能吃一滴', '维生素AD吃不吃', '准备喂120毫升配方奶', '还没吃维生素K1',
