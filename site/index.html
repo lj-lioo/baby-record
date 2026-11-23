@@ -39,8 +39,12 @@
       });
     });
     // 从后台切回时检查有没有新版本（iOS 主屏幕 App 常常只是恢复而不是重新打开）
+    var lastUpdateCheck = Date.now();
     document.addEventListener('visibilitychange', function () {
-      if (!document.hidden && sw.getRegistration) sw.getRegistration().then(function (r) { if (r) r.update(); }).catch(function () {});
+      var now = Date.now();
+      if (document.hidden || !sw.getRegistration || now - lastUpdateCheck < 60000) return;
+      lastUpdateCheck = now;
+      sw.getRegistration().then(function (r) { if (r) return r.update(); }).catch(function () {});
     });
   })();
   </script>

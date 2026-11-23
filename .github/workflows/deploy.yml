@@ -45,6 +45,11 @@ jobs:
             bash site/icons/src/build-icons.sh
           fi
           touch site/.nojekyll
+      - name: Stamp service worker revision
+        run: |
+          site_tree="$(git rev-parse HEAD:site)"
+          sed -i "s/^const REVISION = '';$/const REVISION = '$site_tree';/" site/sw.js
+          grep -Fxq "const REVISION = '$site_tree';" site/sw.js
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
