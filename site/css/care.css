@@ -149,4 +149,13 @@ button.care-row { cursor: pointer; }
 #care-voice-status { margin: 0; color: #694a3f; font-weight: 700; }
 #care-voice-draft { margin: 4px 0 0; }
 #care-voice-send { margin-top: 8px; }
-.care-voice-actions { display: flex; justify-content: space-between; gap: 8px; }
+#care-voice-notice { margin: 0 0 8px; color: #694a3f; font-weight: 700; }
+.care-voice-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.sheet:has(#care-voice-form:not([hidden])) {
+  bottom: var(--care-keyboard-inset, 0px);
+  max-height: calc(var(--care-viewport-height, 100vh) - var(--sat) - 20px);
+  animation: none;
+}
+.sheet:has(#care-voice-form:not([hidden])) .care-voice-thread {
+  max-height: min(33vh, calc(var(--care-viewport-height, 100vh) / 3));
+}
