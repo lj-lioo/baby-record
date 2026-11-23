@@ -5,7 +5,7 @@ import { PRESETS, fireAtOf, reminderLabel, defaultReminders } from '../reminders
 import { fmtDateTime, toLocalInput, addDays, cnDate, weekday } from '../dates.js';
 import { esc, openSheet, closeSheet, toast, confirmSheet } from '../ui.js';
 import { openICS } from '../ics.js';
-import { openAlarmSheet, offerOldAlarmCleanup } from './actions.js';
+import { alarmState, openAlarmSheet, offerOldAlarmCleanup } from './actions.js';
 import { alarmSig } from '../shortcuts.js';
 import { windowOf } from '../windows.js';
 import { maybeCascade } from './paidcat.js';
@@ -60,7 +60,7 @@ export function openEditor({ id = null, date = null } = {}) {
         <button type="button" class="btn" id="f-sc">⏰ 设为闹钟提醒</button>
         <button type="button" class="btn dark" id="f-ics">📅 苹果日历</button>
       </div>
-      <label class="kv" style="margin-top:8px"><span>已设为 iPhone 闹钟（避免重复添加）</span><input type="checkbox" id="f-added" ${ev.alarmAdded ? 'checked' : ''}></label>
+      ${alarmState(ev) !== 'none' ? '<p class="small muted">修改日程或提醒时间后，请核对苹果「提醒事项」里的对应条目。自定义提醒是固定时间，需要单独改。</p>' : ''}
       </div>` : ''}
     <div class="btn-row" style="margin-top:6px">
       ${existing ? '<button type="button" class="btn danger" id="f-del">删除</button>' : '<button type="button" class="btn ghost" id="f-cancel">取消</button>'}
@@ -135,18 +135,24 @@ export function openEditor({ id = null, date = null } = {}) {
       touchedReminders = true;
       renderReminders();
     };
-    q('#f-save').onclick = () => {
+    const saveEvent = () => {
       readForm();
       if (!ev.title) { toast('请填写标题'); q('#f-title').focus(); return; }
       if (!ev.date) { toast('请选择日期'); return; }
       // 去掉无效的提醒（需要时间但未填时间、或自定义时间为空）
       ev.reminders = ev.reminders.filter((r) => fireAtOf(ev, r) != null);
-      store.upsertEvent(ev);
-      if (ev.alarmAdded && !ev.alarmSig) store.setAlarmAdded(ev.id, true, alarmSig(store.getEvent(ev.id)));
+      const current = existing ? store.getEvent(ev.id) : null;
+      if (existing && !current) { toast('这条事项已删除'); closeSheet(); return; }
+      return store.upsertEvent(current ? { ...ev, alarmAdded: current.alarmAdded, alarmSig: current.alarmSig, alarmTagged: current.alarmTagged } : ev);
+    };
+    q('#f-save').onclick = () => {
+      const saved = saveEvent();
+      if (!saved) return;
       closeSheet();
       toast(existing ? '已保存修改' : `已添加到 ${cnDate(ev.date)}${weekday(ev.date)}`);
       window.dispatchEvent(new CustomEvent('select-date', { detail: ev.date }));
-      if (existing && existing.date !== ev.date) maybeCascade(ev.id); // v1.7.0：自费疫苗系列：后续剂次一起顺延
+      if (existing && existing.date !== ev.date && maybeCascade(ev.id)) return;
+      if (existing && alarmState(saved) === 'changed' && alarmSig(existing) !== alarmSig(saved)) openAlarmSheet(saved);
     };
     if (existing) {
       q('#f-del').onclick = async () => {
@@ -158,8 +164,7 @@ export function openEditor({ id = null, date = null } = {}) {
         }
       };
       q('#f-ics').onclick = () => { readForm(); openICS(ev); };
-      q('#f-sc').onclick = () => { readForm(); ev.reminders = ev.reminders.filter((r) => fireAtOf(ev, r) != null); store.upsertEvent(ev); openAlarmSheet(store.getEvent(ev.id)); };
-      q('#f-added').onchange = (e2) => { ev.alarmAdded = e2.target.checked; if (!ev.alarmAdded) { ev.alarmSig = ''; ev.alarmTagged = false; } };
+      q('#f-sc').onclick = () => { const saved = saveEvent(); if (saved) openAlarmSheet(saved); };
     } else {
       q('#f-cancel').onclick = closeSheet;
     }

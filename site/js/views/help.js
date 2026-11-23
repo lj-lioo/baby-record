@@ -1,10 +1,11 @@
 // 使用帮助（中文分步说明）
 import { store } from '../store.js';
 import { esc } from '../ui.js';
+import { createShortcutName } from '../shortcuts.js';
 
 export function renderHelp(root) {
   const name = esc(store.state.settings.shortcutName || '宝宝闹钟');
-  const del = `${name}删除`; // v1.7.1：删除用的快捷指令（名称 = 闹钟快捷指令名称 + 删除）
+  const createName = esc(createShortcutName());
   root.innerHTML = `
     <header class="topbar"><h1>使用帮助</h1></header>
     <style>/* v1.7.1：「新增」标记（只在帮助页用） */
@@ -39,8 +40,8 @@ export function renderHelp(root) {
     </section>
 
     <section class="card" id="h-shortcut">
-      <h2>⏰ 第二步：设置「${name}」快捷指令（只需一次，最重要）</h2>
-      <p class="small" style="margin-top:0">iOS 26.2 起，「提醒事项」可以把提醒设为 <b>紧急</b>：到点时像闹钟一样<b>全屏响铃</b>，静音和专注模式下也会响，并显示提醒标题。本App的「⏰ 设为闹钟提醒」按钮会运行这个快捷指令，为事项的<b>每一个提醒时间</b>各建一条紧急提醒，例如「【宝宝】今天 10:00 打乙肝疫苗第2针」。「紧急」由快捷指令自动打开，不用手动改。以下步骤已在 iOS 26.7.1 真机验证。</p>
+      <h2>⏰ 设置「${createName}」快捷指令</h2>
+      <p class="small" style="margin-top:0">iOS 26.2 起，「提醒事项」可以把提醒设为 <b>紧急</b>：到点时像闹钟一样<b>全屏响铃</b>，静音和专注模式下也会响，并显示提醒标题。本App的「⏰ 设为闹钟提醒」按钮会运行这个快捷指令，为事项的<b>每一个提醒时间</b>各建一条紧急提醒，例如「【宝宝】今天 10:00 打乙肝疫苗第2针」。「紧急」由快捷指令自动打开，不用手动改。创建完成后请在自己的 iPhone 上测试一条提醒。</p>
 
       <h3 style="font-size:16px;margin:12px 0 4px">准备工作</h3>
       <ul class="checklist">
@@ -50,8 +51,11 @@ export function renderHelp(root) {
         <li>允许闹钟：设置 → App → 提醒事项 → 打开 <b>闹钟</b>。</li>
       </ul>
 
-      <h3 style="font-size:16px;margin:12px 0 4px">创建快捷指令</h3>
-      <p class="small" style="margin:4px 0">打开「快捷指令」App →「快捷指令」页右上角 <b>＋</b>。点顶部名称 →「重新命名」→ 改为 <b>${name}</b>（必须与本App「设置」里的名称完全一致）。然后按顺序添加下面的操作：</p>
+      <h3 style="font-size:16px;margin:12px 0 4px">已有快捷指令时</h3>
+      <p>复制原来的「${name}」，将副本命名为「${createName}」。在副本中删除调用旧删除指令的「运行快捷指令」动作，以及任何查找、移除提醒事项的动作。保留原来的文本拆分和添加新提醒步骤。</p>
+      <p>如果之前开启了「允许不确认直接删除」，可在 iPhone「设置 → App → 快捷指令 → 高级」里关掉它。</p>
+      <h3 style="font-size:16px;margin:12px 0 4px">从头创建快捷指令</h3>
+      <p class="small" style="margin:4px 0">打开「快捷指令」App →「快捷指令」页右上角 <b>＋</b>。点顶部名称 →「重新命名」→ 改为 <b>${createName}</b>（需与本 App 设置里显示的实际调用名称一致）。然后按顺序添加下面的操作：</p>
       <ol class="steps">
         <li>（自动出现在最上面）「从 <b>无处</b> 接收 <b>App和其他18个</b>」、「如果没有输入：<b>继续</b>」——保持不动。</li>
         <li>添加 <b>「拆分文本」</b>：按 <b>新行</b> 拆分 <b>快捷指令输入</b>（点文本参数选「快捷指令输入」，也可能显示为「输入快捷指令的信息」）。</li>
@@ -85,56 +89,13 @@ export function renderHelp(root) {
         <li>第一次运行会询问是否允许输出提醒事项，选 <b>「始终允许」</b>。</li>
         <li>锁屏等待 2 分钟，应全屏响铃。测试成功后可在「提醒事项」的「宝宝」列表里删除这条。</li>
       </ol>
-      <p class="note">以后每个事项点 <b>「⏰ 设为闹钟提醒」</b> 即可；设置后事项会显示「✅ 已设闹钟」，避免重复添加。如果之后改了时间，会提示「时间已改，重设闹钟」，请先在「提醒事项」里删除旧的再重设。<span class="newtag">新增</span> 完成下面的步骤后，直接再点一次即可，旧的会自动删除。</p>
-
-      <h3 style="font-size:16px;margin:16px 0 4px" id="h-replace"><span class="newtag">新增</span> 重设闹钟时自动删除旧的（v1.7.1，做一次）</h3>
-      <p class="small" style="margin:4px 0">完成下面 A、B、C 三部分后：改了计划日再点「⏰ 设为闹钟提醒」，会<b>先删掉这个事项的旧闹钟提醒，再新建</b>，不会重复响铃；删除事项或「移出计划」时还可以点 <b>「🗑 删除旧闹钟」</b>。</p>
-
-      <h4 class="h4new"><span class="newtag">新增</span> A. 允许快捷指令直接删除（不弹确认）</h4>
+      <h3 style="font-size:16px;margin:16px 0 4px" id="h-replace">改时间后核对旧闹钟</h3>
       <ol class="steps">
-        <li>打开「设置」→ 点 <b>「App」</b> → 点 <b>「快捷指令」</b> → 点 <b>「高级」</b>。</li>
-        <li>打开 <b>「允许不确认直接删除」</b>。（不打开也能用，但每次删除都会弹窗，需要点确认。）</li>
+        <li>在 App 保存修改后，打开「核对旧闹钟」，对照原响铃时间和当前计划的响铃时间。</li>
+        <li>在苹果「提醒事项」的「宝宝」列表里，按名称、旧响铃时间和备注里的事项编号找到原条目。确认对应后，点详情修改这条提醒的日期与时间，确认「紧急」仍打开。</li>
+        <li>回到本 App 点「我已在提醒事项改好」。如果确认原条目已移除，可以点「我已确认没有旧提醒」，再按当前计划创建。</li>
       </ol>
-
-      <h4 class="h4new"><span class="newtag">新增</span> B. 新建快捷指令「${del}」</h4>
-      <p class="small" style="margin:4px 0">打开「快捷指令」App →「快捷指令」页右上角 <b>＋</b>。点顶部名称 →「重新命名」→ 改为 <b>${del}</b>（就是「${name}」后面加「删除」两个字）。然后按顺序添加：</p>
-      <ol class="steps">
-        <li>点底部「搜索操作」，输入「匹配」，点 <b>「匹配文本」</b>。这一行有两个蓝色参数：
-          <ul class="steps">
-            <li>点<b>模式</b>（正则表达式那一格），删掉原来的内容，输入 <span class="kbd">宝宝#[0-9a-z]+&gt;</span>
-              <div class="note">⚠️ 「宝宝」用中文键盘打；<span class="kbd">#[0-9a-z]+&gt;</span> 必须切到<b>英文键盘</b>打：点 <span class="kbd">123</span> → <span class="kbd">#+=</span> 可以找到 <span class="kbd">#</span> <span class="kbd">[</span> <span class="kbd">]</span> <span class="kbd">+</span> <span class="kbd">&gt;</span>，<span class="kbd">-</span> 在 <span class="kbd">123</span> 页。中文键盘打出的全角「＃【】＋＞」不能用。前后不要有空格。</div></li>
-            <li>点<b>文本</b> →「选择变量」→ <b>「快捷指令输入」</b>。</li>
-          </ul></li>
-        <li>添加 <b>「重复每一项」</b>：重复 <b>匹配项</b> 中的每一项（一般自动选好；不是的话点它 →「选择变量」→ 第1步正下方的「匹配项」）。<b>下面第3～4步都放在「重复」和「结束重复」之间。</b></li>
-        <li>在重复里添加 <b>「查找提醒事项」</b>：
-          <ul class="steps">
-            <li>点 <b>「添加过滤条件」</b>，把这一条改成 <b>列表</b> · <b>是</b> · <b>宝宝</b>。</li>
-            <li>再点 <b>「添加过滤条件」</b>，改成 <b>备注</b> · <b>包含</b>，右边的值 →「选择变量」→ <b>「重复项目」</b>。</li>
-            <li>有两个条件时上面会出现「全部 / 任一」，要选 <b>全部</b>。排序、限制都不用改。</li>
-          </ul></li>
-        <li>添加 <b>「如果」</b>：如果 <b>提醒事项</b>（第3步的结果，一般自动选好）<b>有任何值</b>。会自动出现「否则」和「结束如果」。
-          <ul class="steps">
-            <li>在「如果」和「否则」之间添加 <b>「移除提醒事项」</b>，移除的是 <b>提醒事项</b>（第3步的结果；不是的话点它 →「选择变量」→ 第3步正下方的「提醒事项」）。</li>
-            <li>「否则」下面什么都不放。</li>
-          </ul></li>
-      </ol>
-      <p class="small">点左上角 <b>&lt;</b> 返回（自动保存）。</p>
-
-      <h4 class="h4new"><span class="newtag">新增</span> C. 在「${name}」最上面加一步</h4>
-      <ol class="steps">
-        <li>点开「${name}」，点底部「搜索操作」，输入「运行」，找到 <b>「运行快捷指令」</b>。<b>按住它拖到最上面</b>，放在原来第2步「拆分文本（按 新行）」的上面。（如果直接点了它，它会加到最下面，再按住它拖到最上面。）</li>
-        <li>点蓝色的「快捷指令」→ 选 <b>${del}</b>。</li>
-        <li>点 <b>›</b> 展开（如果这一行本身就有「输入」两个字，直接点它），把 <b>输入</b> 设为 <b>「快捷指令输入」</b>（点它 →「选择变量」→「快捷指令输入」）。</li>
-        <li>检查原来的「拆分文本」仍然是「按 <b>新行</b> 拆分 <b>快捷指令输入</b>」。如果变成了「快捷指令的结果」或别的，点它 →「选择变量」→ <b>「快捷指令输入」</b>。其余步骤都不用改（加了这一步后，原来各步的编号会往后推一位，比如原来的第2步变成第3步，内容不变）。</li>
-        <li>点左上角 <b>&lt;</b> 返回。</li>
-      </ol>
-      <h4 class="h4new"><span class="newtag">新增</span> 测试</h4>
-      <ol class="steps">
-        <li>到本App「设置」→ 连续点两次 <b>「测试闹钟（2分钟后响）」</b>（中间回到本App再点）。第一次运行「${del}」时如果询问权限，选 <b>「始终允许」</b>；如果弹出删除确认，点确认删除（或按 A 打开开关）。</li>
-        <li>打开「提醒事项」→「宝宝」：应该<b>只有一条</b>「【宝宝】测试闹钟」（第二次把第一次的替换掉了）。</li>
-      </ol>
-      <p class="note">⚠️ v1.7.1 之前建的闹钟提醒备注里没有标记，不会被自动删除：请打开「提醒事项」→ 点「宝宝」列表 → 在旧提醒上向左轻扫 → 点「删除」，手动删一次。以后新建的都会自动替换。<br>💡 删除事项或「移出计划」时，如果它设过闹钟，App 会弹出 <b>「🗑 删除旧闹钟」</b>（运行「${del}」）。事项卡片的「⏰」面板里也有这个按钮。</p>
-      <p class="small muted">说明：我们没有提供可直接导入的快捷指令文件——这类文件需要苹果设备签名，无法在这里可靠生成，所以请按上面步骤手动创建一次。</p>
+      <p class="note">找不到对应条目时先核对，尤其是没有编号的老提醒。事项删除后，App 会列出需核对的旧提醒。</p>
     </section>
 
     <section class="card" id="h-push">

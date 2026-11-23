@@ -5,7 +5,7 @@ import { pushStatus, enablePush, disablePush, sendTestPush, isIOS, isStandalone,
 import { showAlarm } from './alarm.js';
 import { unlockAudio } from '../sound.js';
 import { todayStr, cnDate } from '../dates.js';
-import { testAlarmUrl } from '../shortcuts.js';
+import { createShortcutName, testAlarmUrl } from '../shortcuts.js';
 import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 import { openPaidCatalog, catalogCounts } from './paidcat.js';
 import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../sync.js';
@@ -16,7 +16,7 @@ import {
   ROLES, ADMIN_ROLES, ELDER_ROLES, roleCapabilityText, openRolePicker, copyInviteFor,
 } from '../roles.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.16.6';
+export const APP_BUILD = '1.16.7';
 
 /** 编辑宝宝名字 + 生日（云同步 profile）；保存后触发 rerender */
 export function openBabyProfile({ onSaved } = {}) {
@@ -101,11 +101,11 @@ export function renderSettings(root) {
     <section class="card">
       <h2>⏰ iPhone 闹钟提醒（推荐）</h2>
       <p class="small muted" style="margin-top:0">通过「快捷指令」在「提醒事项」的「宝宝」列表中创建<b>紧急</b>提醒：到点全屏响铃，静音也会响。需要 iOS 26.2+，并按 <a href="#/help">帮助页</a> 创建一次快捷指令。</p>
-      <div class="field"><label for="scName">快捷指令名称（需与「快捷指令」App 里的名称完全一致）</label>
+      <div class="field"><label for="scName">快捷指令基础名称</label>
         <input id="scName" class="input" value="${esc(st.shortcutName)}"></div>
       <button class="btn block" id="btnTestAlarm">测试闹钟（2分钟后响）</button>
       <p class="small muted">会在「宝宝」列表新建一条「【宝宝】测试闹钟」紧急提醒，2 分钟后响铃。测试后可在「提醒事项」里删除它。</p>
-      <p class="small muted">v1.7.1：重设闹钟时自动删除旧的，需要再建一个快捷指令「<b>${esc(st.shortcutName || '宝宝闹钟')}删除</b>」（名称自动 = 上面的名称 + 删除），见 <a href="#/help" id="lnkReplace">帮助页「新增」步骤</a>。完成后再测一次会替换上一次的测试提醒。</p>
+      <p class="small muted">实际调用「<b>${esc(createShortcutName())}</b>」。首次请按<a href="#/help" id="lnkReplace">帮助</a>配置仅创建的副本。改时间时，App 会显示旧时间和新时间供你在「提醒事项」里核对。</p>
       <button class="btn secondary block" id="btnPreview">预览App内全屏提醒页（含铃声）</button>
     </section>
 
@@ -226,7 +226,7 @@ export function renderSettings(root) {
     showAlarm({ rid: `demo-${uid()}`, eventId: 'demo', ev: demo, fireAt: Date.now(), label: '提前2小时提醒' });
   };
   q('#btnDisable').onclick = async () => { await disablePush(); toast('已关闭推送'); refreshStatus(q('#pushStatus')); };
-  q('#lnkReplace').onclick = (e) => { e.preventDefault(); location.hash = '#/help'; setTimeout(() => document.getElementById('h-replace')?.scrollIntoView({ block: 'start' }), 300); };
+  q('#lnkReplace').onclick = (e) => { e.preventDefault(); location.hash = '#/help'; setTimeout(() => document.getElementById('h-shortcut')?.scrollIntoView({ block: 'start' }), 300); };
   q('#scName').onchange = (e) => { store.updateSettings({ shortcutName: e.target.value.trim() || '宝宝闹钟' }); toast('已保存'); };
   q('#soundOn').onchange = (e) => store.updateSettings({ sound: e.target.checked });
   q('#pushApi').onchange = (e) => { store.updateSettings({ pushApi: e.target.value.trim() }); toast('已保存'); refreshStatus(q('#pushStatus')); };

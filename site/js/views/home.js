@@ -138,12 +138,13 @@ export function openEventDetail(e) {
 function alarmBtn(e) {
   const st = alarmState(e);
   if (st === 'added') return '<button class="chip-btn alarm-btn added" data-act="alarm">✅ 已设闹钟</button>';
-  if (st === 'changed') return '<button class="chip-btn alarm-btn warn" data-act="alarm">⚠️ 时间已改，重设闹钟</button>';
+  if (st === 'changed') return '<button class="chip-btn alarm-btn warn" data-act="alarm">⚠️ 核对旧闹钟</button>';
+  if (st === 'pending') return '<button class="chip-btn alarm-btn warn" data-act="alarm">⏰ 待确认闹钟</button>';
   return '<button class="chip-btn alarm-btn" data-act="alarm">⏰ 设为闹钟提醒</button>';
 }
 function alarmMini(e) {
   const st = alarmState(e);
-  return st === 'added' ? ' · <span class="ok">已设闹钟</span>' : st === 'changed' ? ' · <span class="bad">需重设闹钟</span>' : ' · <span class="bad">未设闹钟</span>';
+  return st === 'added' ? ' · <span class="ok">已设闹钟</span>' : st === 'changed' ? ' · <span class="bad">核对旧闹钟</span>' : st === 'pending' ? ' · <span class="bad">待确认闹钟</span>' : ' · <span class="bad">未设闹钟</span>';
 }
 
 function nextRemText(e) {
