@@ -8,6 +8,13 @@ import { careListener } from './care-listen.js';
 
 const EXAMPLE = '例如「今天早上八点瓶喂了九十毫升配方奶，然后九点拉了一次软便」。';
 const DICTATION_PAUSE_MS = 2300;
+const LISTEN_ERRORS = new Map([
+  ['not-allowed', '麦克风权限受限，请检查此网站的权限'],
+  ['service-not-allowed', '当前打开方式无法使用语音识别服务'],
+  ['audio-capture', '无法录音，请检查麦克风是否被占用'],
+  ['network', '语音识别连接失败，请检查网络'],
+  ['language-not-supported', '当前语音识别服务不支持普通话'],
+]);
 
 export function openCareVoice({ day, onSaved }) {
   if (!requireEditEvents('当前身份可以查看喂养记录')) return;
@@ -113,8 +120,15 @@ export function openCareVoice({ day, onSaved }) {
         receive(text);
       },
       onError: (error) => {
-        status.textContent = error === 'no-speech' ? '没听清，可以再说一次' : '麦克风暂不可用，可以用键盘听写';
         draft.hidden = true;
+        if (error === 'no-speech' || error === 'aborted') {
+          status.textContent = error === 'no-speech' ? '没听清，可以再说一次' : '听写已中断，可以重试';
+          return;
+        }
+        status.textContent = LISTEN_ERRORS.get(error) || '直接听写启动失败，可以用键盘听写';
+        mic.textContent = '🎙️ 重试听写';
+        // A fresh tap is needed to bring up the system keyboard on iPhone after an async error.
+        openInput('dictation', { focus: false });
       },
     });
     const start = () => {
@@ -125,7 +139,7 @@ export function openCareVoice({ day, onSaved }) {
       form.hidden = true;
       listener.start();
     };
-    const openInput = (mode) => {
+    const openInput = (mode, { focus = true } = {}) => {
       listener.cancel();
       clearTimeout(dictationTimer);
       composing = false;
@@ -133,8 +147,8 @@ export function openCareVoice({ day, onSaved }) {
       draft.hidden = true;
       form.hidden = false;
       q('#care-voice-send').hidden = mode === 'dictation';
-      q('#care-voice-label').textContent = mode === 'dictation' ? '点键盘上的话筒，文字出来后会自动记录' : '输入要记录的内容';
-      input.focus();
+      q('#care-voice-label').textContent = mode === 'dictation' ? '轻点输入框，再点键盘上的话筒，转成文字后会自动处理' : '输入要记录的内容';
+      if (focus) input.focus();
     };
     const awaitDictation = () => {
       clearTimeout(dictationTimer);

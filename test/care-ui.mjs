@@ -190,10 +190,30 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   assert.equal(await page.evaluate(() => window.careRecognizer.aborted), true);
   assert.equal(await timeline.getByText('100 mL', { exact: true }).count(), 0);
 
+  for (const [error, feedback] of [
+    ['no-speech', '没听清'],
+    ['not-allowed', '麦克风权限受限'],
+    ['network', '语音识别连接失败'],
+    ['audio-capture', '无法录音'],
+    ['service-not-allowed', '当前打开方式无法使用语音识别服务'],
+  ]) {
+    await mic.click();
+    await page.evaluate((error) => window.careRecognizer.onerror({ error }), error);
+    await page.getByRole('status').filter({ hasText: feedback }).waitFor();
+    assert.equal(await dictation.isVisible(), error !== 'no-speech');
+  }
+  await page.evaluate(() => {
+    const start = window.SpeechRecognition.prototype.start;
+    window.SpeechRecognition.prototype.start = function () {
+      window.SpeechRecognition.prototype.start = start;
+      throw new DOMException('Denied', 'NotAllowedError');
+    };
+  });
   await mic.click();
-  await page.evaluate(() => window.careRecognizer.onerror({error: 'not-allowed'}));
-  await page.getByRole('status').filter({ hasText: '麦克风暂不可用' }).waitFor();
+  await page.getByRole('status').filter({ hasText: '麦克风权限受限' }).waitFor();
+  assert.equal(await dictation.isVisible(), true);
   await page.getByRole('button', { name: '键盘听写' }).click();
+  assert.equal(await dictation.evaluate((input) => input === document.activeElement), true);
   assert.equal(await page.locator('#care-voice-send').isHidden(), true);
   await dictation.fill('早上八点亲喂了十二分钟');
   await dictation.fill('早上八点亲喂了十二分钟，然后刚刚拉了一次软便');
