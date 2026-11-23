@@ -71,11 +71,12 @@ const HOLD_ON = '🔴 正在听…再点一下结束';
 export const HOLD_WATCHDOG_MS = 15000;
 const TAP_DEBOUNCE_MS = 350;
 
-function setupTap(btn, ta) {
+export function setupTap(btn, ta, { append = true, onFinal } = {}) {
   if (!speechSupported()) return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   btn.hidden = false;
   let rec = null, listening = false, gotText = false, fails = 0, watchdog = 0, endTimer = 0, base = '', lastTap = 0;
+  let finalText = '';
   const tip = document.createElement('div');
   tip.className = 'small v-hold-tip'; tip.id = 'v-hold-tip'; tip.hidden = true;
   btn.after(tip);
@@ -95,22 +96,30 @@ function setupTap(btn, ta) {
       setTimeout(() => ta.focus(), 0);
     }
   };
-  const finish = (ok) => { if (ok) { fails = 0; } else fail(); reset(); };
+  const finish = (ok, ended = false) => {
+    if (ok) { fails = 0; } else fail();
+    const complete = ok && ended && btn.isConnected ? finalText : '';
+    reset();
+    if (complete) onFinal?.(complete);
+  };
   const start = () => {
     reset(); // 不论之前状态如何，先彻底清掉旧实例
     let r;
     try {
       r = new SR(); rec = r; r.lang = 'zh-CN'; r.interimResults = true; r.continuous = false;
       gotText = false;
-      base = ta.value ? ta.value.replace(/[\s。]*$/, '') : '';
+      finalText = '';
+      base = append && ta.value ? ta.value.replace(/[\s。]*$/, '') : '';
       r.onresult = (ev) => {
         if (r !== rec) return;
-        let s = ''; for (const x of ev.results) s += x[0].transcript;
+        let s = '', allFinal = true;
+        for (const x of ev.results) { s += x[0].transcript; allFinal = allFinal && x.isFinal === true; }
         s = s.trim();
+        finalText = allFinal ? s : '';
         if (s) { gotText = true; ta.value = (base ? base + '。' : '') + s; ta.dispatchEvent(new Event('input')); }
       };
       r.onerror = (ev) => { if (r !== rec) return; finish(gotText && ev.error !== 'not-allowed' && ev.error !== 'service-not-allowed'); };
-      r.onend = () => { if (r !== rec) return; finish(gotText || !listening); };
+      r.onend = () => { if (r !== rec) return; finish(gotText || !listening, true); };
       r.start();
       listening = true;
       btn.classList.add('on'); btn.textContent = HOLD_ON;

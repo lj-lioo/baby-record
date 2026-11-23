@@ -1,0 +1,114 @@
+.care-switch { margin-bottom: 14px; }
+.care-switch button { flex: 1; }
+.care-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.care-pills button, .care-date-nav button, .care-link {
+  border: 0;
+  border-radius: 10px;
+  background: #f4ede8;
+  color: var(--ink);
+  padding: 8px 11px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  min-height: 36px;
+}
+.care-pills button[aria-pressed="true"] { background: #694a3f; color: #fff; font-weight: 700; }
+.care-switch button { min-height: 42px; }
+.care-date-nav { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
+.care-date-nav input { min-width: 0; flex: 1; text-align: center; font-size: 16px; }
+.care-date-nav button { min-width: 42px; min-height: 46px; font-weight: 700; }
+.care-date-nav button[disabled] { opacity: .42; cursor: default; }
+.care-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 10px; }
+.care-heading h2 { margin: 0; }
+.care-link { display: inline-flex; align-items: center; background: transparent; padding-left: 0; color: #85503e; font-weight: 700; }
+.care-quick-grid, .care-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.care-quick-grid button {
+  border: 1px solid #ebd8cc;
+  background: #f8e7da;
+  border-radius: 14px;
+  color: #553829;
+  text-align: left;
+  font: inherit;
+  padding: 11px 12px;
+  min-height: 68px;
+  cursor: pointer;
+}
+.care-quick-grid button:nth-child(n+3) { background: #fcf6f0; }
+.care-quick-grid strong, .care-quick-grid small, .care-tiles strong, .care-tiles small { display: block; }
+.care-quick-grid small { margin-top: 2px; font-size: 12px; }
+.care-other { margin-top: 4px; }
+.care-tiles div { background: #faf5f0; border-radius: 12px; padding: 9px 10px; min-width: 0; }
+.care-tiles span { font-size: 12px; color: #6b605a; }
+.care-tiles strong { color: #4e382f; font-size: 19px; font-variant-numeric: tabular-nums; margin: 2px 0; }
+.care-tiles small { color: #6b605a; font-size: 11px; }
+.care-timeline ul, .care-dose-totals { list-style: none; padding: 0; margin: 0 0 8px; }
+.care-timeline li + li, .care-dose-totals li + li { border-top: 1px solid var(--line); }
+.care-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  text-align: left;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+button.care-row { cursor: pointer; }
+.care-time, .care-row small, .care-edit { color: #6b605a; font-size: 12px; }
+.care-time { font-variant-numeric: tabular-nums; }
+.care-row-content { min-width: 0; overflow-wrap: anywhere; }
+.care-row-content small { display: block; white-space: pre-line; }
+.care-row-content small:empty { display: none; }
+.care-average { margin: 9px 0 0; }
+.care-dose-totals { margin: 12px 0 0; }
+.care-dose-totals li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; overflow-wrap: anywhere; }
+.care-trend-pills { margin: 3px 0 10px; }
+.care-chart {
+  display: grid;
+  grid-template-columns: repeat(var(--care-days), minmax(0, 1fr));
+  height: 94px;
+  gap: min(2px, 16px / var(--care-days));
+  align-items: end;
+  background: repeating-linear-gradient(#fff 0 22px, #eadbd3 22px 23px);
+  border-bottom: 1px solid #eadbd3;
+}
+.care-chart span { height: var(--care-bar); border-radius: 3px 3px 0 0; background: #9d6653; }
+.care-axis { display: flex; justify-content: space-between; margin-top: 4px; }
+.care-breakdown { margin-top: 10px; overflow-x: auto; }
+.care-breakdown summary { font-size: 13px; font-weight: 700; padding: 8px 0; cursor: pointer; }
+.care-breakdown table { border-collapse: collapse; width: 100%; font-size: 11px; }
+.care-breakdown th, .care-breakdown td { border-bottom: 1px solid var(--line); padding: 6px 3px; text-align: center; white-space: nowrap; }
+.care-caption { margin-bottom: 0; }
+.care-form-date { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 8px; }
+.care-form-date .field, .care-form-date input { min-width: 0; }
+.care-select { appearance: auto; }
+.care-dose-options { margin: -3px 0 10px; }
+.care-error { color: var(--danger); font-weight: 700; }
+.care-delete { margin-top: 8px; }
+.care-voice-button { margin-bottom: 9px; min-height: 46px; }
+.care-voice-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 33vh;
+  overflow-y: auto;
+  margin: 0 0 12px;
+  padding: 2px;
+}
+.care-voice-thread p {
+  margin: 0;
+  padding: 8px 11px;
+  border-radius: 12px;
+  max-width: 94%;
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.care-voice-reply { align-self: flex-start; background: #fff; border: 1px solid var(--line); }
+.care-voice-user { align-self: flex-end; background: #f4ded0; color: #4e382f; }
+#care-voice-text { display: block; margin-top: 4px; }
+.care-voice-note { margin: 6px 0 10px; }
+.care-voice-actions { display: flex; justify-content: space-between; gap: 8px; }
