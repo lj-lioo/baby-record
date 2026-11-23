@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
-test('手机喂养页支持快捷记账、补记、编辑撤销、统计和离线重开', async (t) => {
+test('手机喂养页支持喂奶切换、大小便多选和补记，以及语音、统计和离线重开', async (t) => {
   const site = fileURLToPath(new URL('../site/', import.meta.url));
   const version = /appVersion: '([^']+)'/.exec(fs.readFileSync(path.join(site, 'config.js'), 'utf8'))[1];
   const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png' };
@@ -39,6 +39,10 @@ test('手机喂养页支持快捷记账、补记、编辑撤销、统计和离�
     if (!localStorage.getItem('babyrecord.v1')) {
       localStorage.setItem('babyrecord.v1', JSON.stringify({
         events: [], meds: [{ id: 'old', name: '演示旧用药', start: '2024-03-01', end: '2024-03-01' }],
+        care: [
+          { id: 'old-bottle', kind: 'bottle', date: '2024-02-29', time: '08:15', ml: 65, milk: 'breast', updatedAt: 1 },
+          { id: 'old-nursing', kind: 'nursing', date: '2024-02-29', time: '07:30', ml: 42, minutes: 9, updatedAt: 1 },
+        ],
         settings: { memberRole: '爸爸', babyName: '演示宝宝' },
       }));
     }
@@ -58,31 +62,67 @@ test('手机喂养页支持快捷记账、补记、编辑撤销、统计和离�
   const timeline = page.locator('.care-timeline');
   const quick = (kind) => page.locator(`.care-quick-grid [data-care-kind="${kind}"]`);
   const save = () => page.locator('#care-form').getByRole('button', { name: '保存' }).click();
+  const confirmToilet = () => page.getByRole('button', { name: '确认记录' }).click();
+  const feed = (label) => page.getByRole('radio', { name: label, exact: true });
+  const toilet = (label) => page.getByRole('checkbox', { name: label, exact: true });
 
-  await quick('nursing').click();
-  await timeline.getByRole('button', { name: /09:10.*母乳亲喂/ }).click();
+  assert.equal(await page.locator('.care-quick-grid button').count(), 3);
+  await quick('feed').click();
+  assert.equal(await page.locator('#care-date').inputValue(), '2024-03-01');
+  assert.equal(await page.locator('#care-time').inputValue(), '09:10');
+  assert.equal(await feed('母乳').isChecked(), true);
+  assert.equal(await page.locator('#care-ml').isHidden(), true);
+  assert.equal(await page.locator('#care-milk').count(), 0);
+  await feed('瓶喂').check();
+  await page.locator('#care-ml').fill('200');
+  await feed('母乳').check();
   await page.locator('#care-minutes').fill('13');
   await save();
   assert.match(await timeline.innerText(), /13 分钟/);
+  assert.doesNotMatch(await timeline.innerText(), /200 mL/);
 
-  await quick('bottle').click();
+  await quick('feed').click();
+  await feed('瓶喂').check();
   await page.locator('#care-ml').fill('0');
   await save();
   await page.getByRole('alert').filter({ hasText: '请填写有效的奶量' }).waitFor();
   await page.locator('#care-ml').fill('90.5');
-  await page.locator('#care-milk').selectOption('formula');
   await save();
-  assert.match(await quick('bottle').innerText(), /瓶喂 90.5 mL/);
-  await quick('bottle').click();
-  assert.equal(await timeline.getByRole('button', { name: /瓶喂/ }).count(), 2);
-  await page.getByRole('button', { name: '撤销刚才记录' }).click();
-  assert.equal(await timeline.getByRole('button', { name: /瓶喂/ }).count(), 1);
+  assert.match(await timeline.innerText(), /瓶喂\s+90.5 mL/);
 
-  await quick('stool').click();
-  await timeline.getByRole('button', { name: /排便/ }).click();
+  await quick('toilet').click();
+  assert.equal(await page.locator('#care-time').inputValue(), '09:10');
+  await confirmToilet();
+  await page.getByRole('alert').filter({ hasText: '至少选择大便或小便' }).waitFor();
+  await toilet('大便').check();
+  await toilet('小便').check();
   await page.locator('#care-stool').selectOption('soft');
-  await save();
+  assert.equal(await timeline.getByRole('button', { name: /大便|小便/ }).count(), 0);
+  await confirmToilet();
+  assert.equal(await timeline.getByRole('button', { name: /09:10.*(?:大便|小便)/ }).count(), 2);
   assert.match(await timeline.innerText(), /软便/);
+  await page.getByRole('button', { name: '撤销刚才记录' }).click();
+  assert.equal(await timeline.getByRole('button', { name: /大便|小便/ }).count(), 0);
+
+  await quick('toilet').click();
+  await toilet('大便').check();
+  await page.locator('#care-time').fill('09:00');
+  await page.locator('#care-stool').selectOption('soft');
+  await confirmToilet();
+  assert.equal(await timeline.getByRole('button', { name: /09:00.*大便/ }).count(), 1);
+  assert.equal(await timeline.getByRole('button', { name: /小便/ }).count(), 0);
+
+  await quick('toilet').click();
+  await toilet('小便').check();
+  assert.equal(await page.locator('#care-stool').isHidden(), true);
+  await page.locator('#care-date').fill('2024-02-29');
+  await page.locator('#care-time').fill('08:40');
+  await confirmToilet();
+  assert.equal(await page.locator('#care-day').inputValue(), '2024-02-29');
+  assert.equal(await timeline.getByRole('button', { name: /08:40.*小便/ }).count(), 1);
+  assert.equal(await timeline.getByRole('button', { name: /大便/ }).count(), 0);
+  await page.getByRole('button', { name: '今天', exact: true }).click();
+
   await quick('dose').click();
   await page.getByRole('button', { name: '维生素AD', exact: true }).click();
   await page.locator('#care-dose').fill('示例用量');
@@ -92,21 +132,32 @@ test('手机喂养页支持快捷记账、补记、编辑撤销、统计和离�
 
   await page.getByRole('button', { name: '前一天' }).click();
   assert.equal(await page.locator('#care-day').inputValue(), '2024-02-29');
-  await quick('bottle').click();
+  await timeline.getByRole('button', { name: /08:15.*瓶喂/ }).click();
+  assert.equal(await feed('瓶喂').isChecked(), true);
+  assert.equal(await page.locator('#care-ml').inputValue(), '65');
+  await save();
+  assert.match(await timeline.innerText(), /65 mL · 母乳/);
+  await timeline.getByRole('button', { name: /07:30.*母乳亲喂/ }).click();
+  assert.equal(await page.locator('#care-ml').isHidden(), true);
+  await page.locator('#care-minutes').fill('10');
+  await save();
+  assert.match(await timeline.innerText(), /10 分钟 · 实测 42 mL/);
+  await quick('feed').click();
+  await feed('瓶喂').check();
   assert.equal(await page.locator('#care-time').inputValue(), '');
   await page.locator('#care-time').fill('08:30');
-  await page.locator('#care-ml').fill('65');
-  await page.locator('#care-milk').selectOption('breast');
+  await page.locator('#care-ml').fill('40');
   await save();
   await page.getByRole('button', { name: '今天', exact: true }).click();
   await page.getByRole('button', { name: '统计', exact: true }).click();
   await page.getByRole('button', { name: '近 90 天' }).click();
-  assert.match(await page.locator('.care-stats').first().innerText(), /155.5 mL/);
-  assert.match(await page.locator('.care-stats').first().innerText(), /母乳 65 mL · 配方奶 90.5 mL/);
-  await page.getByRole('button', { name: '排便次数' }).click();
+  assert.match(await page.locator('.care-stats').first().innerText(), /195.5 mL/);
+  assert.match(await page.locator('.care-stats').first().innerText(), /母乳 65 mL · 未标注 130.5 mL/);
+  await page.getByRole('button', { name: '小便次数' }).click();
   assert.equal(await page.locator('.care-chart > span').count(), 90);
   await page.locator('.care-breakdown summary').click();
   assert.equal(await page.locator('.care-breakdown tbody tr').count(), 90);
+  assert.match(await page.locator('.care-breakdown thead').innerText(), /大便.*小便/s);
 
   await page.getByRole('button', { name: '记录', exact: true }).click();
   await page.getByRole('button', { name: /说一句话记录/ }).click();
@@ -146,7 +197,7 @@ test('手机喂养页支持快捷记账、补记、编辑撤销、统计和离�
   assert.equal(await page.locator('#care-day').inputValue(), '2024-03-01');
   await timeline.getByText('维生素AD', { exact: true }).waitFor();
   await page.evaluate(async () => (await import('/js/store.js')).store.updateSettings({ memberRole: '奶奶' }));
-  assert.equal(await quick('bottle').count(), 0);
+  assert.equal(await quick('feed').count(), 0);
   assert.equal(await timeline.getByRole('button').count(), 0);
   await page.setViewportSize({ width: 320, height: 700 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);

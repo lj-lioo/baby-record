@@ -1,4 +1,4 @@
-import { CARE_LABELS as LABEL, MILK_TYPES, STOOL_TYPES, careDetail, careNewest, summarizeCare, validateCare } from '../care.js';
+import { CARE_LABELS as LABEL, STOOL_TYPES, careDetail, careNewest, summarizeCare, validateCare } from '../care.js';
 import { addDays, cnDate, todayStr, toLocalInput } from '../dates.js';
 import { medDoses } from '../growth.js';
 import { canEditGrowth, requireEditEvents } from '../roles.js';
@@ -7,13 +7,14 @@ import { closeSheet, confirmSheet, esc, openSheet, toast } from '../ui.js';
 import { openCareVoice } from './care-voice.js';
 
 const DOSE_SUGGESTIONS = ['维生素AD', '维生素K1'];
-const TREND = { bottleMl: '瓶喂奶量', feeds: '喂奶次数', stool: '排便次数', dose: '用药次数' };
+const TREND = { bottleMl: '瓶喂奶量', feeds: '喂奶次数', stool: '大便次数', urine: '小便次数', dose: '用药次数' };
+const FEED_CHOICES = { nursing: '母乳', bottle: '瓶喂' };
+const TOILET_CHOICES = { stool: '大便', urine: '小便' };
 let selectedDate = '';
 let section = 'log';
 let period = 7;
 let metric = 'bottleMl';
-let undoRecord;
-let lastQuickTap;
+let undoRecords = [];
 
 function oldDoseEntries() {
   const entries = new Map();
@@ -33,7 +34,7 @@ function summaryTiles(day) {
   const tiles = [
     ['喂奶', `${day.nursing + day.bottle} 次`, `亲喂 ${day.nursing} · 瓶喂 ${day.bottle}`],
     ['瓶喂奶量', `${day.bottleMl} mL`, '已记录的实际奶量'],
-    ['排便', `${day.stool} 次`, '已记录'],
+    ['大小便', `${day.stool} / ${day.urine} 次`, '大便 / 小便'],
     ['实际用药', `${day.dose} 次`, day.legacyDose ? `另有 ${day.legacyDose} 条旧记录` : '已记录'],
   ];
   return `<div class="care-tiles">${tiles.map(([label, value, sub]) => `<div>
@@ -41,24 +42,16 @@ function summaryTiles(day) {
   </div>`).join('')}</div>`;
 }
 
-function quickActions(today, lastBottle, canUndo) {
-  const bottle = today && lastBottle
-    ? [`瓶喂 ${lastBottle.ml} mL`, MILK_TYPES[lastBottle.milk], 'bottle', true]
-    : ['瓶喂', '填写实际奶量', 'bottle', false];
-  const actions = [
-    ['母乳亲喂', today ? '一键记录当前时间' : '补记亲喂时间', 'nursing', today],
-    bottle,
-    ['记录排便', today ? '一键记录当前时间' : '补记时间和性状', 'stool', today],
-    ['记录用药', '记录实际服用', 'dose', false],
-  ];
+function quickActions(today, canUndo) {
   return `<section class="card care-quick">
     <div class="care-heading"><h2>${today ? '快捷记录' : '补记当天'}</h2>
       ${canUndo ? '<button type="button" class="care-link" id="care-undo">撤销刚才记录</button>' : ''}</div>
     <button type="button" class="btn block care-voice-button" id="care-voice">🎙️ 说一句话记录</button>
-    <div class="care-quick-grid">${actions.map(([label, hint, kind, quick]) =>
-      `<button type="button" data-care-kind="${kind}" data-care-quick="${quick}">
-        <strong>${label}</strong><small>${hint}</small></button>`).join('')}</div>
-    ${today && lastBottle ? '<button type="button" class="care-link care-other" data-care-kind="bottle">输入其他奶量</button>' : ''}
+    <div class="care-quick-grid">
+      <button type="button" data-care-kind="feed">喂奶</button>
+      <button type="button" data-care-kind="toilet">大小便</button>
+      <button type="button" data-care-kind="dose">用药</button>
+    </div>
   </section>`;
 }
 
@@ -105,9 +98,9 @@ function renderStats(records, historical, date) {
       <details class="care-breakdown">
         <summary>查看每日明细</summary>
         <table>
-          <thead><tr><th>日期</th><th>亲喂</th><th>瓶喂</th><th>瓶喂 mL</th><th>排便</th><th>用药</th></tr></thead>
+          <thead><tr><th>日期</th><th>亲喂</th><th>瓶喂</th><th>瓶喂 mL</th><th>大便</th><th>小便</th><th>用药</th></tr></thead>
           <tbody>${[...daily].reverse().map((d) => `<tr><th scope="row">${cnDate(d.date)}</th>
-            <td>${d.nursing}</td><td>${d.bottle}</td><td>${d.bottleMl}</td><td>${d.stool}</td><td>${d.dose}</td></tr>`).join('')}</tbody>
+            <td>${d.nursing}</td><td>${d.bottle}</td><td>${d.bottleMl}</td><td>${d.stool}</td><td>${d.urine}</td><td>${d.dose}</td></tr>`).join('')}</tbody>
         </table>
       </details>
       <p class="small muted care-caption">按实际录入汇总。无记录的日期不代表未喂养或未用药。</p>
@@ -120,8 +113,8 @@ export function renderCare(root) {
   const editable = canEditGrowth();
   const records = store.care();
   const historical = oldDoseEntries();
-  const lastBottle = records.filter((record) => record.kind === 'bottle').sort(careNewest)[0];
-  const canUndo = undoRecord && store.getCare(undoRecord.id)?.updatedAt === undoRecord.updatedAt;
+  const canUndo = () => undoRecords.length > 0 &&
+    undoRecords.every((record) => record.date === date && store.getCare(record.id)?.updatedAt === record.updatedAt);
   const daily = summarizeCare(records, historical, date, 1).totals;
   root.innerHTML = `<div class="care-page">
     <header class="topbar"><h1>喂养记录</h1></header>
@@ -135,12 +128,13 @@ export function renderCare(root) {
       <button type="button" id="care-next" aria-label="后一天" ${date >= today ? 'disabled' : ''}>›</button>
       ${date !== today ? '<button type="button" class="care-link" id="care-today">今天</button>' : ''}
     </div>
-    ${section === 'log' ? `${editable ? quickActions(date === today, lastBottle, canUndo && undoRecord.date === date) : ''}
+    ${section === 'log' ? `${editable ? quickActions(date === today, canUndo()) : ''}
       <section class="card"><h2>${date === today ? '今天' : cnDate(date)}汇总</h2>${summaryTiles(daily)}</section>
       ${dailyLog(date, records, historical, editable)}` : renderStats(records, historical, date)}
   </div>`;
 
   const setDate = (next) => {
+    const today = todayStr();
     if (!next || next > today) return;
     selectedDate = next === today ? '' : next;
     renderCare(root);
@@ -161,60 +155,59 @@ export function renderCare(root) {
   });
   const voice = root.querySelector('#care-voice');
   if (voice) voice.onclick = () => openCareVoice({ day: selectedDate, onSaved: (records) => {
-    undoRecord = null;
-    selectedDate = records[0].date === todayStr() ? '' : records[0].date;
-    renderCare(root);
+    undoRecords = [];
+    setDate(records[0].date);
   } });
   root.querySelectorAll('[data-care-kind]').forEach((button) => {
-    button.onclick = () => {
-      if (!requireEditEvents('当前身份可以查看喂养记录')) return;
-      const kind = button.dataset.careKind;
-      if (button.dataset.careQuick !== 'true') { openEditor(kind, date, null, lastBottle?.milk); return; }
-      if (lastQuickTap?.kind === kind && Date.now() - lastQuickTap.at < 1000) return;
-      const [dateNow, time] = toLocalInput(Date.now()).split('T');
-      const input = { kind, date: dateNow, time, ml: kind === 'bottle' ? lastBottle.ml : null, milk: lastBottle?.milk };
-      try {
-        undoRecord = store.upsertCare(input);
-        lastQuickTap = { kind, at: Date.now() };
-        renderCare(root);
-        toast(`已记录 ${time} ${LABEL[kind]}`);
-      } catch { toast('本机保存失败，请稍后重试'); }
-    };
+    button.onclick = () => openEditor(button.dataset.careKind, date, null, (saved) => {
+      undoRecords = saved;
+      setDate(saved[0].date);
+    });
   });
   root.querySelectorAll('[data-care-id]').forEach((button) => {
     button.onclick = () => {
       const existing = store.getCare(button.dataset.careId);
-      if (existing) openEditor(existing.kind, existing.date, existing);
+      if (existing) openEditor(existing.kind, existing.date, existing, (saved) => setDate(saved[0].date));
     };
   });
   const undo = root.querySelector('#care-undo');
   if (undo) undo.onclick = () => {
-    if (!requireEditEvents() || store.getCare(undoRecord.id)?.updatedAt !== undoRecord.updatedAt) return;
-    try { store.deleteCare(undoRecord.id); undoRecord = null; renderCare(root); toast('已撤销'); }
+    if (!requireEditEvents() || !canUndo()) return;
+    try { store.deleteCareBatch(undoRecords.map((record) => record.id)); undoRecords = []; renderCare(root); toast('已撤销'); }
     catch { toast('撤销未保存，请重试'); }
   };
 }
 
-function openEditor(kind, date, existing, defaultMilk = 'unknown') {
+function openEditor(kind, date, existing, onSaved) {
   if (!requireEditEvents('当前身份可以查看喂养记录')) return;
-  const isFeed = kind === 'bottle' || kind === 'nursing';
-  const isNursing = kind === 'nursing';
-  const time = existing?.time ?? (date === todayStr() ? toLocalInput(Date.now()).slice(11) : '');
+  const feeding = kind === 'feed' || Object.hasOwn(FEED_CHOICES, kind);
+  const pickingToilet = kind === 'toilet';
+  const initialFeed = feeding ? existing?.kind || 'nursing' : '';
+  const [today, now] = toLocalInput(Date.now()).split('T');
+  const time = existing?.time ?? (date === today ? now : '');
+  const title = feeding ? '喂奶' : pickingToilet ? '大小便' : LABEL[kind];
   const field = (name, label, attrs) => `<div class="field"><label for="care-${name}">${label}</label>
     <input class="input" id="care-${name}" name="${name}" ${attrs}></div>`;
   const select = (name, label, choices, value) => `<div class="field"><label for="care-${name}">${label}</label>
     <select class="input care-select" id="care-${name}" name="${name}">${Object.entries(choices).map(([id, option]) =>
       `<option value="${id}" ${id === value ? 'selected' : ''}>${option}</option>`).join('')}</select></div>`;
-  openSheet(`<h3>${existing ? '编辑' : '记录'}${LABEL[kind]}</h3>
+  const options = (name, legend, choices, checked = '') => `<fieldset class="care-options" aria-label="${legend}">
+    ${Object.entries(choices).map(([id, label]) => `<label>
+      <input type="${name === 'feed' ? 'radio' : 'checkbox'}" name="${name}" value="${id}" ${id === checked ? 'checked' : ''}>
+      <span>${label}</span></label>`).join('')}
+    </fieldset>`;
+  openSheet(`<h3>${existing ? '编辑' : '记录'}${title}</h3>
     <form id="care-form" novalidate>
-      <div class="care-form-date">${field('date', '日期', `type="date" value="${esc(date)}" max="${todayStr()}"`)}
+      <div class="care-form-date">${field('date', '日期', `type="date" value="${esc(date)}" max="${today}"`)}
         ${field('time', '时间', `type="time" value="${esc(time)}"`)}</div>
-      ${kind === 'bottle' ? select('milk', '奶瓶里装的是', MILK_TYPES, existing?.milk || defaultMilk) : ''}
-      ${isFeed ? field('ml', isNursing ? '实测奶量（mL · 可选）' : '实际喝下的奶量（mL）',
-        `type="number" inputmode="decimal" min="0.1" step="0.1" value="${esc(existing?.ml)}"`) : ''}
-      ${isNursing ? field('minutes', '亲喂时长（分钟 · 可选）',
-        `type="number" inputmode="numeric" min="1" step="1" value="${esc(existing?.minutes)}"`) : ''}
-      ${kind === 'stool' ? select('stool', '性状（可选）', { '': '未标注', ...STOOL_TYPES }, existing?.stool || '') : ''}
+      ${feeding ? `${options('feed', '喂奶方式', FEED_CHOICES, initialFeed)}
+        <div id="care-bottle-fields" ${initialFeed !== 'bottle' ? 'hidden' : ''}>${field('ml', '实际喝下的奶量（mL）',
+          `type="number" inputmode="decimal" min="0.1" step="0.1" value="${esc(existing?.kind === 'bottle' ? existing.ml : '')}"`)}</div>
+        <div id="care-nursing-fields" ${initialFeed !== 'nursing' ? 'hidden' : ''}>${field('minutes', '亲喂时长（分钟 · 可选）',
+          `type="number" inputmode="numeric" min="1" step="1" value="${esc(existing?.minutes)}"`)}</div>` : ''}
+      ${pickingToilet ? options('toilet', '大小便类型', TOILET_CHOICES) : ''}
+      ${pickingToilet || kind === 'stool' ? `<div id="care-stool-fields" ${pickingToilet ? 'hidden' : ''}>
+        ${select('stool', '性状（可选）', { '': '未标注', ...STOOL_TYPES }, existing?.stool || '')}</div>` : ''}
       ${kind === 'dose' ? `${field('name', '药品或补充剂', `maxlength="60" value="${esc(existing?.name)}"`)}
         <div class="care-pills care-dose-options">${[...new Set([...DOSE_SUGGESTIONS, ...store.meds().map((m) => m.name).filter(Boolean)])].slice(0, 8)
           .map((name) => `<button type="button" data-dose-name="${esc(name)}">${esc(name)}</button>`).join('')}</div>
@@ -222,7 +215,7 @@ function openEditor(kind, date, existing, defaultMilk = 'unknown') {
       ${field('note', '备注（可选）', `maxlength="160" value="${esc(existing?.note)}"`)}
       <p class="care-error small" role="alert" id="care-error" hidden></p>
       <div class="btn-row"><button type="button" class="btn ghost" id="care-cancel">取消</button>
-        <button type="submit" class="btn">保存</button></div>
+        <button type="submit" class="btn">${pickingToilet ? '确认记录' : '保存'}</button></div>
       ${existing ? '<button type="button" class="btn danger block care-delete" id="care-delete">删除这条记录</button>' : ''}
     </form>`, (sheet) => {
     const form = sheet.querySelector('#care-form');
@@ -236,18 +229,43 @@ function openEditor(kind, date, existing, defaultMilk = 'unknown') {
     sheet.querySelectorAll('[data-dose-name]').forEach((button) => {
       button.onclick = () => { form.elements.namedItem('name').value = button.dataset.doseName; };
     });
+    if (feeding) {
+      const bottle = sheet.querySelector('#care-bottle-fields');
+      const nursing = sheet.querySelector('#care-nursing-fields');
+      form.elements.namedItem('feed').forEach((radio) => {
+        radio.onchange = () => {
+          bottle.hidden = radio.value !== 'bottle';
+          nursing.hidden = radio.value !== 'nursing';
+        };
+      });
+    }
+    if (pickingToilet) {
+      const stool = form.querySelector('[name="toilet"][value="stool"]');
+      stool.onchange = () => { sheet.querySelector('#care-stool-fields').hidden = !stool.checked; };
+    }
     form.onsubmit = (event) => {
       event.preventDefault();
       if (!requireEditEvents()) return;
       if (outdated()) { showError('这条记录已更新，请关闭后重新打开'); return; }
-      const input = { ...Object.fromEntries(new FormData(form)), id: existing?.id, kind };
-      const error = validateCare(input, toLocalInput(Date.now()));
+      const data = new FormData(form);
+      const kinds = pickingToilet ? data.getAll('toilet') : [feeding ? data.get('feed') : kind];
+      if (!kinds.length) { showError('至少选择大便或小便'); return; }
+      const inputs = kinds.map((selected) => ({
+        id: existing?.id, kind: selected, date: data.get('date'), time: data.get('time'), note: data.get('note'),
+        ml: selected === 'bottle' ? data.get('ml') : existing?.kind === 'nursing' ? existing.ml : null,
+        milk: existing?.milk, minutes: data.get('minutes'),
+        stool: data.get('stool'), name: data.get('name'), dose: data.get('dose'),
+      }));
+      const latest = toLocalInput(Date.now());
+      const error = inputs.map((input) => validateCare(input, latest)).find(Boolean);
       if (error) { showError(error); return; }
+      let saved;
       try {
-        store.upsertCare(input);
-        closeSheet();
-        toast('已保存');
-      } catch { showError('本机保存失败，请保留这次输入后重试'); }
+        saved = existing ? [store.upsertCare(inputs[0])] : store.addCare(inputs);
+      } catch { showError('本机保存失败，请重试'); return; }
+      closeSheet();
+      onSaved(saved);
+      toast('已保存');
     };
     const del = sheet.querySelector('#care-delete');
     if (del) del.onclick = async () => {
