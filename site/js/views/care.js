@@ -46,7 +46,7 @@ function quickActions(today, canUndo) {
   return `<section class="card care-quick">
     <div class="care-heading"><h2>${today ? '快捷记录' : '补记当天'}</h2>
       ${canUndo ? '<button type="button" class="care-link" id="care-undo">撤销刚才记录</button>' : ''}</div>
-    <button type="button" class="btn block care-voice-button" id="care-voice">🎙️ 说一句话记录</button>
+    <button type="button" class="btn block care-voice-button" id="care-voice">🎙️ 语音听写</button>
     <div class="care-quick-grid">
       <button type="button" data-care-kind="feed">喂奶</button>
       <button type="button" data-care-kind="toilet">大小便</button>

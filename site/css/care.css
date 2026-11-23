@@ -133,5 +133,20 @@ button.care-row { cursor: pointer; }
 .care-voice-reply { align-self: flex-start; background: #fff; border: 1px solid var(--line); }
 .care-voice-user { align-self: flex-end; background: #f4ded0; color: #4e382f; }
 #care-voice-text { display: block; margin-top: 4px; }
-.care-voice-note { margin: 6px 0 10px; }
+.care-listen-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 8px;
+  border: 1px solid #ead8cc;
+  border-radius: 16px;
+  background: #faf1e9;
+}
+.care-listen-bar.listening { background: #f8e3d6; }
+.care-listen-feedback { flex: 1 1 110px; min-width: 0; overflow-wrap: anywhere; }
+#care-voice-status { margin: 0; color: #694a3f; font-weight: 700; }
+#care-voice-draft { margin: 4px 0 0; }
+#care-voice-send { margin-top: 8px; }
 .care-voice-actions { display: flex; justify-content: space-between; gap: 8px; }

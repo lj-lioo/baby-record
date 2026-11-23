@@ -5,11 +5,12 @@ const DIGITS = '零〇一二两三四五六七八九';
 const VALUE = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
 const INTEGER = '[\\d' + DIGITS + '十百千]+';
 const NUMBER = INTEGER + '(?:[.点][\\d' + DIGITS + ']+)?';
-const UNSAVED = /[?？]|还没|没有|没(?:喝|吃|喂|拉|用|服)|未(?:喝|吃|喂|拉|用|服)|别记|不要|不用|打算|计划|准备|想喂|想给|想吃|还要|如果|等会|待会|稍后|晚点|稍晚|过一会|过会|提醒|应该|建议|需要|怎么|能不能|要不要|是不是|有没有|吃不吃|喂不喂|能吃|能喝|可以(?:吗|喂|吃|给|用)|多少|吧$|吗$|呢$|还是|大约|大概|好像|可能|改成|删除|取消|冲了|泡了|倒了|剩下|剩了|吐了|吐奶/;
-const ACTION = /亲喂|瓶喂|吸了|喝|喂|排便|大便|拉|便便|粑粑|臭臭|用了|用药|吃了|服了|补了|滴了/;
+const UNSAVED = /[?？]|还没|没有|没(?:喝|吃|喂|拉|用|服|尿|小便|排尿)|未(?:喝|吃|喂|拉|用|服|尿|小便|排尿)|别记|不要|不用|打算|计划|准备|想喂|想给|想吃|还要|如果|等会|待会|稍后|晚点|稍晚|过一会|过会|提醒|应该|建议|需要|怎么|能不能|要不要|是不是|有没有|吃不吃|喂不喂|能吃|能喝|可以(?:吗|喂|吃|给|用)|多少|吧$|吗$|呢$|还是|大约|大概|好像|可能|改成|删除|取消|冲了|泡了|倒了|剩下|剩了|吐了|吐奶/;
 const NURSING = /亲喂|直接(?:喂)?母乳|吸(?:了|过)?母乳|吃(?:了|过)?胸|吸(?:了|过)?奶/;
 const BOTTLE = /瓶喂|用奶瓶|奶瓶喂|奶瓶喝|喝奶瓶|半瓶|喝了[一1]瓶/;
 const STOOL = /排便|大便|便便|粑粑|臭臭|软便|稀便|硬便|水样便|拉了|拉稀/;
+const URINE = /小便|排尿|尿(?:了|过|尿|湿)|撒(?:了|过)?尿|拉(?:了|过)?尿/;
+const ACTION = /亲喂|瓶喂|吸了|喝|喂|排便|大便|拉|便便|粑粑|臭臭|小便|排尿|尿(?:了|过|尿|湿)|撒(?:了|过)?尿|用了|用药|吃了|服了|补了|滴了/;
 const DOSE_ACTION = /用药|服(?:了|用)|(?:吃|喂)(?:了|过).*药|用了|滴了|补了|打了/;
 const FEED = /母乳|配方奶|奶粉|奶瓶|喂奶|喝奶|喝了|喂了|亲喂|瓶喂/;
 const PART_OF_DAY = '凌晨|半夜|早上|早晨|上午|中午|下午|傍晚|晚上|夜里';
@@ -55,7 +56,7 @@ function readWhen(text, now) {
   const relative = [...text.matchAll(RELATIVE)];
   const dates = [...clockText.matchAll(/(\d{4})-(\d{1,2})-(\d{1,2})|(?:(\d{4})年|去年)?\s*(\d{1,2})月\s*(\d{1,2})(?:日|号)/g)];
   const dayWords = [...text.matchAll(/大前天|前天|昨天|昨日|今天|今日|当天|明天|后天/g)];
-  const current = /刚刚|刚才|现在|刚(?:喂|喝|吃|拉|用|亲喂)/.test(text);
+  const current = /刚刚|刚才|现在|刚(?:喂|喝|吃|拉|用|亲喂|尿)/.test(text);
   if (/\d+\s*[点时]\s*(?:左右|多)/.test(clockText)) return { problem: '请再说具体是几点几分。' };
   const clocks = [...clockText.matchAll(CLOCK)];
   if (relative.length > 1 || dates.length + dayWords.length > 1 || clocks.length > 1 ||
@@ -114,9 +115,11 @@ function facts(text, context) {
   const nursing = NURSING.test(text) || (breast && !BOTTLE.test(text) && durations.length === 1);
   const bottle = BOTTLE.test(text) || (!nursing && formula && (amounts.length || /喝|喂/.test(text)));
   const isDose = names.length > 0 || DOSE_ACTION.test(text);
-  const kinds = [nursing && 'nursing', bottle && 'bottle', STOOL.test(text) && 'stool', isDose && 'dose'].filter(Boolean);
+  const urine = URINE.test(text);
+  const stoolRecord = STOOL.test(urine ? text.replace(/拉(?:了|过)?尿/g, '') : text);
+  const kinds = [nursing && 'nursing', bottle && 'bottle', stoolRecord && 'stool', urine && 'urine', isDose && 'dose'].filter(Boolean);
   const kind = kinds[0] || '';
-  if (kinds.length > 1 || (kind === 'stool' && FEED.test(text)) || (kind === 'dose' && /母乳|奶瓶|奶粉|配方奶|喂奶|喝奶/.test(text))) {
+  if (kinds.length > 1 || ((kind === 'stool' || kind === 'urine') && FEED.test(text)) || (kind === 'dose' && /母乳|奶瓶|奶粉|配方奶|喂奶|喝奶/.test(text))) {
     return { problem: '一句里有不同类型的记录，请用「然后」或分句隔开。' };
   }
   const doseText = names.reduce((value, name) => value.replaceAll(name, ' '), text).replace(/(?:维生素|维他命)?\s*K\s*1(?![a-z])/gi, ' ');
@@ -145,7 +148,7 @@ function fieldToAsk(record, latest) {
 function splitRecords(text) {
   const lines = text.split(/[。！!；;\n]+/).map((line) => line.trim()).filter(Boolean);
   return lines.flatMap((line) => {
-    const parts = line.split(/[，,]|然后|接着|另外|后来|并且|又|还(?=(?:拉|排便|吃了|服了|用了|喝了|喂了))/).map((part) => part.trim()).filter(Boolean);
+    const parts = line.split(/[，,]|然后|接着|另外|后来|并且|又|[还也](?=(?:拉|排便|尿了|小便|排尿|吃了|服了|用了|喝了|喂了))/).map((part) => part.trim()).filter(Boolean);
     const clauses = [];
     for (const part of parts) {
       const last = clauses.at(-1);
@@ -206,7 +209,7 @@ export function interpretCareSpeech(raw, { now, day, medicines = [], pending = [
     for (const chunk of chunks) {
       const info = facts(chunk, context);
       if (info.problem) return wait(info.problem);
-      if (!info.kind && !FEED.test(chunk)) return wait('没听清记录类型。可以说喂奶、排便或实际用药。');
+      if (!info.kind && !FEED.test(chunk)) return wait('没听清记录类型。可以说喂奶、大便、小便或实际用药。');
       if (info.kind === 'dose' && !info.dose && !/已用|已服|已吃|服用|吃了|服了|用了|喂了|补了|打了|滴了|滴.{0,20}了|用药/.test(chunk)) {
         return wait('请说这次已经服用的药品，例如「刚才吃了维生素AD」。');
       }

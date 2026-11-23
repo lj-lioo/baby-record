@@ -4,35 +4,57 @@ import { cnDate } from '../dates.js';
 import { requireEditEvents } from '../roles.js';
 import { store } from '../store.js';
 import { closeSheet, openSheet } from '../ui.js';
-import { setupTap, speechSupported } from './voice.js';
+import { careListener } from './care-listen.js';
 
 const EXAMPLE = '例如「今天早上八点瓶喂了九十毫升配方奶，然后九点拉了一次软便」。';
+const DICTATION_PAUSE_MS = 2300;
 
 export function openCareVoice({ day, onSaved }) {
   if (!requireEditEvents('当前身份可以查看喂养记录')) return;
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   let pending = [];
   let lastSaved = [];
   openSheet(`<h3>喂养语音记录</h3>
     <div class="care-voice-thread" id="care-voice-thread" role="log" aria-label="喂养记录对话"></div>
-    <form id="care-voice-form">
-      <label class="small muted" for="care-voice-text">也可以用键盘话筒或文字输入</label>
+    <div class="care-listen-bar" id="care-listen-bar">
+      <button class="btn secondary" id="care-voice-mic" type="button">🎙️ 开始听写</button>
+      <div class="care-listen-feedback">
+        <p id="care-voice-status" class="small" role="status">说完自动记录</p>
+        <p id="care-voice-draft" class="small" hidden></p>
+      </div>
+      <button class="btn secondary" id="care-voice-stop" type="button" hidden>结束</button>
+      <button class="care-link" id="care-voice-abort" type="button" hidden>取消听写</button>
+    </div>
+    <form id="care-voice-form" hidden>
+      <label class="small muted" id="care-voice-label" for="care-voice-text"></label>
       <textarea class="input" id="care-voice-text" rows="2" maxlength="500" placeholder="说一件刚发生的事"></textarea>
-      <button class="btn secondary v-hold" id="care-voice-mic" type="button" hidden>🎙️ 点一下说话</button>
-      <p class="care-voice-note small muted">${speechSupported() ? '说完会自动识别并记录。' : '用键盘话筒转成文字后，点「识别并记录」。'}</p>
-      <div class="btn-row">
-        <button class="btn ghost" id="care-voice-close" type="button">完成</button>
-        <button class="btn" type="submit">识别并记录</button>
+      <button class="btn block" id="care-voice-send" type="submit">发送</button>
+    </form>
+    <div class="care-voice-footer">
+      <div class="care-voice-actions">
+        <button class="care-link" type="button" id="care-voice-keyboard">键盘听写</button>
+        <button class="care-link" type="button" id="care-voice-type">打字</button>
+        <button class="care-link" type="button" id="care-voice-close">完成</button>
       </div>
       <div class="care-voice-actions">
         <button class="care-link" type="button" id="care-voice-reset" hidden>重新开始</button>
         <button class="care-link" type="button" id="care-voice-undo" hidden>撤销本次记录</button>
       </div>
-    </form>`, (sheet) => {
+    </div>`, (sheet) => {
     const q = (query) => sheet.querySelector(query);
     const thread = q('#care-voice-thread');
     const input = q('#care-voice-text');
     const undo = q('#care-voice-undo');
     const reset = q('#care-voice-reset');
+    const form = q('#care-voice-form');
+    const mic = q('#care-voice-mic');
+    const stop = q('#care-voice-stop');
+    const abort = q('#care-voice-abort');
+    const status = q('#care-voice-status');
+    const draft = q('#care-voice-draft');
+    let inputMode = '';
+    let dictationTimer;
+    let composing = false;
     const message = (text, user = false) => {
       const item = document.createElement('p');
       item.className = user ? 'care-voice-user' : 'care-voice-reply';
@@ -42,8 +64,9 @@ export function openCareVoice({ day, onSaved }) {
     };
     message(EXAMPLE);
     const receive = (raw) => {
+      clearTimeout(dictationTimer);
       const text = raw.trim();
-      if (!text || !requireEditEvents()) return;
+      if (!text || !thread.isConnected || document.hidden || !requireEditEvents()) return;
       if (text.length > 500) { message('请把内容分成几句，每次说短一点。'); return; }
       const result = interpretCareSpeech(text, { day, now: Date.now(), medicines: store.meds().map((m) => m.name), pending });
       message(text, true);
@@ -52,6 +75,7 @@ export function openCareVoice({ day, onSaved }) {
         input.value = '';
         reset.hidden = !pending.length;
         message(result.question);
+        mic.textContent = '🎙️ 继续听写';
         return;
       }
       try {
@@ -70,12 +94,71 @@ export function openCareVoice({ day, onSaved }) {
         return [cnDate(record.date), record.time, title, careDetail(record)].filter(Boolean).join(' · ');
       });
       message(`已记录 ${lines.length} 条\n${lines.join('\n')}`);
+      mic.textContent = '🎙️ 再记一条';
       onSaved(lastSaved);
     };
-    q('#care-voice-form').onsubmit = (event) => { event.preventDefault(); receive(input.value); };
+    const listener = careListener(Recognition, {
+      onState: (state) => {
+        const idle = state === 'idle';
+        mic.hidden = !idle;
+        stop.hidden = idle;
+        stop.disabled = state === 'finishing';
+        abort.hidden = idle;
+        status.textContent = { idle: '说完自动记录', listening: '正在听写…', finishing: '正在转换成文字…' }[state];
+        q('#care-listen-bar').classList.toggle('listening', !idle);
+      },
+      onText: (text) => { draft.textContent = text; draft.hidden = !text; },
+      onFinal: (text) => {
+        draft.hidden = true;
+        receive(text);
+      },
+      onError: (error) => {
+        status.textContent = error === 'no-speech' ? '没听清，可以再说一次' : '麦克风暂不可用，可以用键盘听写';
+        draft.hidden = true;
+      },
+    });
+    const start = () => {
+      clearTimeout(dictationTimer);
+      composing = false;
+      inputMode = '';
+      input.blur();
+      form.hidden = true;
+      listener.start();
+    };
+    const openInput = (mode) => {
+      listener.cancel();
+      clearTimeout(dictationTimer);
+      composing = false;
+      inputMode = mode;
+      draft.hidden = true;
+      form.hidden = false;
+      q('#care-voice-send').hidden = mode === 'dictation';
+      q('#care-voice-label').textContent = mode === 'dictation' ? '点键盘上的话筒，文字出来后会自动记录' : '输入要记录的内容';
+      input.focus();
+    };
+    const awaitDictation = () => {
+      clearTimeout(dictationTimer);
+      if (inputMode !== 'dictation' || composing || !input.value.trim()) return;
+      dictationTimer = setTimeout(() => {
+        if (form.isConnected && inputMode === 'dictation' && !composing && !document.hidden) receive(input.value);
+      }, DICTATION_PAUSE_MS);
+    };
+    input.oncompositionstart = () => { composing = true; clearTimeout(dictationTimer); };
+    input.oncompositionend = () => { composing = false; awaitDictation(); };
+    input.oninput = (event) => { if (!event.isComposing) awaitDictation(); };
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      if (inputMode === 'typing' && !composing) receive(input.value);
+    };
+    mic.onclick = start;
+    stop.onclick = listener.stop;
+    abort.onclick = () => { listener.cancel(); draft.hidden = true; };
+    q('#care-voice-keyboard').onclick = () => openInput('dictation');
+    q('#care-voice-type').onclick = () => openInput('typing');
     q('#care-voice-close').onclick = closeSheet;
     reset.onclick = () => {
       pending = [];
+      clearTimeout(dictationTimer);
       input.value = '';
       reset.hidden = true;
       message('已清除待补充的内容，可以重新说。');
@@ -92,6 +175,25 @@ export function openCareVoice({ day, onSaved }) {
       lastSaved = [];
       undo.hidden = true;
     };
-    setupTap(q('#care-voice-mic'), input, { append: false, onFinal: receive });
+    const cancelInBackground = () => {
+      if (!document.hidden) return;
+      listener.cancel();
+      clearTimeout(dictationTimer);
+      draft.hidden = true;
+    };
+    document.addEventListener('visibilitychange', cancelInBackground);
+    const observer = new MutationObserver(() => {
+      if (thread.isConnected) return;
+      listener.cancel();
+      clearTimeout(dictationTimer);
+      document.removeEventListener('visibilitychange', cancelInBackground);
+      observer.disconnect();
+    });
+    observer.observe(sheet, { childList: true });
+    if (Recognition) start();
+    else {
+      q('#care-listen-bar').hidden = true;
+      openInput('dictation');
+    }
   });
 }
