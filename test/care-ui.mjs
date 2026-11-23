@@ -48,8 +48,8 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
     }
     window.SpeechRecognition = class {
       start() { window.careRecognizer = this; }
-      stop() { this.onend?.(); }
-      abort() {}
+      stop() { this.stopped = true; }
+      abort() { this.aborted = true; }
     };
   });
   const page = await context.newPage();
@@ -160,35 +160,64 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   assert.match(await page.locator('.care-breakdown thead').innerText(), /大便.*小便/s);
 
   await page.getByRole('button', { name: '记录', exact: true }).click();
-  await page.getByRole('button', { name: /说一句话记录/ }).click();
+  const voice = page.getByRole('button', { name: /语音听写/ });
+  await voice.click();
   const conversation = page.getByRole('log', { name: '喂养记录对话' });
   const mic = page.locator('#care-voice-mic');
+  const dictation = page.locator('#care-voice-text');
   const emitSpeech = (text, final, end = false) => page.evaluate(({ text, final, end }) => {
     const recognizer = window.careRecognizer;
     recognizer.onresult({ results: [Object.assign([{ transcript: text }], { isFinal: final })] });
     if (end) recognizer.onend();
   }, { text, final, end });
-  await mic.click();
+  await page.getByRole('status').filter({ hasText: '正在听写' }).waitFor();
   await emitSpeech('刚才瓶喂了八十毫升', false);
+  assert.equal(await page.locator('#care-voice-draft').innerText(), '刚才瓶喂了八十毫升');
   assert.equal(await conversation.getByText(/已记录/).count(), 0);
+  await page.evaluate(() => window.careRecognizer.onspeechend());
+  assert.equal(await page.evaluate(() => window.careRecognizer.stopped), true);
   await emitSpeech('刚才用奶瓶喂了', true, true);
   await conversation.getByText(/实际喝下了多少毫升/).waitFor();
-  await page.clock.setFixedTime(new Date('2024-03-01T01:10:02Z'));
   await mic.click();
-  await emitSpeech('九十五毫升母乳', true, true);
+  await emitSpeech('九十五毫升母乳', true);
   await conversation.getByText(/已记录 1 条.*95 mL/s).waitFor();
   assert.equal(await timeline.getByText('95 mL · 母乳', { exact: true }).count(), 1);
   await page.getByRole('button', { name: '撤销本次记录' }).click();
   assert.equal(await timeline.getByText('95 mL · 母乳', { exact: true }).count(), 0);
-  const send = async (text) => {
-    await page.locator('#care-voice-text').fill(text);
-    await page.getByRole('button', { name: '识别并记录' }).click();
-  };
-  await send('早上八点亲喂了十二分钟，然后刚刚拉了一次软便');
+  await mic.click();
+  await emitSpeech('上午八点瓶喂了一百毫升', true);
+  await page.getByRole('button', { name: '取消听写' }).click();
+  assert.equal(await page.evaluate(() => window.careRecognizer.aborted), true);
+  assert.equal(await timeline.getByText('100 mL', { exact: true }).count(), 0);
+
+  await mic.click();
+  await page.evaluate(() => window.careRecognizer.onerror({error: 'not-allowed'}));
+  await page.getByRole('status').filter({ hasText: '麦克风暂不可用' }).waitFor();
+  await page.getByRole('button', { name: '键盘听写' }).click();
+  assert.equal(await page.locator('#care-voice-send').isHidden(), true);
+  await dictation.fill('早上八点亲喂了十二分钟');
+  await dictation.fill('早上八点亲喂了十二分钟，然后刚刚拉了一次软便');
   await conversation.getByText(/已记录 2 条/).waitFor();
   assert.equal(await timeline.getByText('12 分钟', { exact: true }).count(), 1);
-  await send('晚点喂70毫升配方奶');
+
+  await page.getByRole('button', { name: '打字' }).click();
+  await dictation.fill('晚点喂70毫升配方奶');
+  await page.getByRole('button', { name: '发送' }).click();
+  await conversation.getByText(/疑问、否定或计划/).waitFor();
   assert.equal(await timeline.getByText(/70 mL/).count(), 0);
+  await page.getByRole('button', { name: '完成', exact: true }).click();
+
+  await page.evaluate(() => {
+    window.SpeechRecognition = undefined;
+    window.webkitSpeechRecognition = undefined;
+  });
+  await voice.click();
+  assert.equal(await mic.isVisible(), false);
+  assert.equal(await dictation.isVisible(), true);
+  assert.equal(await page.locator('#care-voice-send').isHidden(), true);
+  await dictation.fill('刚才小便了');
+  await conversation.getByText(/已记录 1 条.*小便/s).waitFor();
+  assert.equal(await timeline.getByRole('button', { name: /09:10.*小便/ }).count(), 1);
   await page.getByRole('button', { name: '完成', exact: true }).click();
 
   await page.waitForFunction(() => !!navigator.serviceWorker.controller);
