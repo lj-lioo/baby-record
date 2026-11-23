@@ -5,18 +5,23 @@ const DIGITS = '零〇一二两三四五六七八九';
 const VALUE = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
 const INTEGER = '[\\d' + DIGITS + '十百千]+';
 const NUMBER = INTEGER + '(?:[.点][\\d' + DIGITS + ']+)?';
-const UNSAVED = /[?？]|还没|没有|没(?:喝|吃|喂|拉|用|服|尿|小便|排尿)|未(?:喝|吃|喂|拉|用|服|尿|小便|排尿)|别记|不要|不用|打算|计划|准备|想喂|想给|想吃|还要|如果|等会|待会|稍后|晚点|稍晚|过一会|过会|提醒|应该|建议|需要|怎么|能不能|要不要|是不是|有没有|吃不吃|喂不喂|能吃|能喝|可以(?:吗|喂|吃|给|用)|多少|吧$|吗$|呢$|还是|大约|大概|好像|可能|改成|删除|取消|冲了|泡了|倒了|剩下|剩了|吐了|吐奶/;
-const NURSING = /亲喂|直接(?:喂)?母乳|吸(?:了|过)?母乳|吃(?:了|过)?胸|吸(?:了|过)?奶/;
+const UNSAVED = /[?？]|还没|没有|不是|没(?:喝|吃|喂|拉|用|服|尿|小便|排尿)|未(?:喝|吃|喂|拉|用|服|尿|小便|排尿)|别记|不要|不用|打算|计划|准备|想喂|想给|想吃|还要|如果|等会|待会|稍后|晚点|稍晚|过一会|过会|提醒|应该|建议|需要|怎么|能不能|要不要|是不是|有没有|吃不吃|喂不喂|能吃|能喝|可以(?:吗|喂|吃|给|用)|多少|吧$|吗$|呢$|还是|大约|大概|好像|可能|改成|删除|取消|冲了|泡了|倒了|装了|挤了|兑了|剩下|剩了|吐了|吐奶/;
+const NURSING = /亲喂|直接(?:喂)?母乳|吸(?:了|过)?母乳|吃(?:了|过)?胸|吸(?:了|过)?奶|(?:吸|嘬|含)(?:了|过|着)?(?:妈妈的)?(?:奶头|乳头)/;
 const BOTTLE = /瓶喂|用奶瓶|奶瓶喂|奶瓶喝|喝奶瓶|半瓶|喝了[一1]瓶/;
+const BOTTLE_REFERENCE = /(?:用|拿|从)(?:了|着)?\s*(?:[这那]个)?\s*(?:小)?(?:奶瓶|瓶子|瓶)\s*(?:里\s*)?(?:喂|喝|味的(?=\s*(?:喝|喂)))|瓶子\s*(?:喂|喝)|^(?:是)?(?:用|拿)?\s*(?:[这那]个)?\s*(?:小)?(?:奶瓶|瓶子|瓶)(?:的)?$/;
+const DIRECT_FEEDING_REFERENCE = /直接\s*(?:吸|嘬)(?:奶|了|着|的|$)|贴着妈妈(?:身上)?(?:吸|嘬)/;
+const MILK_CONTEXT = /母乳|妈妈的奶|配方奶|奶粉|(?:喝|喂)(?:了|过)?奶|(?:毫升|m\s*l|cc)\s*(?:的)?奶/i;
+const OTHER_DRINK = /奶茶|果汁|饮料|药水|药液|口服液|(?:温|白|凉)?开水|矿泉水|纯净水|(?:喝|喂|毫升|m\s*l|cc|装的是)(?:了|过|下)?\s*(?:一点|一口|点|的)?\s*(?:[温凉热糖盐]?水(?!样)|茶|汤|药)/i;
 const STOOL = /排便|大便|便便|粑粑|臭臭|软便|稀便|硬便|水样便|拉了|拉稀/;
 const URINE = /小便|排尿|尿(?:了|过|尿|湿)|撒(?:了|过)?尿|拉(?:了|过)?尿/;
 const ACTION = /亲喂|瓶喂|吸了|喝|喂|排便|大便|拉|便便|粑粑|臭臭|小便|排尿|尿(?:了|过|尿|湿)|撒(?:了|过)?尿|用了|用药|吃了|服了|补了|滴了/;
-const DOSE_ACTION = /用药|服(?:了|用)|(?:吃|喂)(?:了|过).*药|用了|滴了|补了|打了/;
+const DOSE_ACTION = /用药|服(?:了|用)|(?:吃|喂)(?:了|过).*药|滴了|补了|打了/;
 const FEED = /母乳|配方奶|奶粉|奶瓶|喂奶|喝奶|喝了|喂了|亲喂|瓶喂/;
 const PART_OF_DAY = '凌晨|半夜|早上|早晨|上午|中午|下午|傍晚|晚上|夜里';
 const CLOCK = new RegExp('(?:(' + PART_OF_DAY + ')\\s*)?(?<!\\d)(\\d{1,2})(?:\\s*:\\s*(\\d{1,2})(?!\\d)|\\s*[点时]\\s*(?:(半|一刻|三刻)|(\\d{1,2})(?!\\d)(?:\\s*分)?)?)', 'g');
 const RELATIVE = new RegExp('(' + NUMBER + '|半)\\s*(?:个)?\\s*(小时|钟头|分钟|分)\\s*前', 'g');
 const MILK_AMOUNT = new RegExp('(' + NUMBER + ')\\s*(毫升|m\\s*l|cc)', 'gi');
+const AMOUNT_ANSWER = new RegExp('^(?:(?:实际|一共|总共|就)?\\s*喝(?:了|下|下了)?\\s*)?(' + NUMBER + ')$');
 const MINUTES = new RegExp('(' + INTEGER + ')\\s*分钟(?!\\s*前)', 'g');
 const DOSE_AMOUNT = new RegExp('(' + NUMBER + '|半)\\s*(毫升|毫克|微克|国际单位|单位|mg|m\\s*l|滴|粒|颗|片|袋|支)(?!剂)', 'gi');
 const MULTIPLE = new RegExp('(' + INTEGER + ')\\s*次', 'g');
@@ -102,20 +107,28 @@ function doseNames(text, medicines) {
   return [...new Set(names)].filter((name, _, all) => !all.some((longer) => longer !== name && longer.includes(name)));
 }
 
-function facts(text, context) {
+function facts(text, context, draft) {
   const when = readWhen(text, context.now);
   if (when.problem) return when;
   if ([...text.matchAll(MULTIPLE)].some((m) => numberFromSpeech(m[1]) > 1)) return { problem: '请把每一次的时间分别说一下。' };
   const names = doseNames(text, context.medicines);
   if (names.length > 1) return { problem: '一次用药请说一个药名和对应用量，不同药品分开说。' };
   const formula = /配方奶|奶粉/.test(text);
-  const breast = /母乳/.test(text);
+  const breast = /母乳|妈妈的奶/.test(text);
   const milk = /混合/.test(text) || (formula && breast) ? 'mixed' : formula ? 'formula' : breast ? 'breast' : '';
   const amounts = [...text.matchAll(MILK_AMOUNT)].map((m) => numberFromSpeech(m[1]));
   const durations = [...text.matchAll(MINUTES)].map((m) => numberFromSpeech(m[1]));
-  const nursing = NURSING.test(text) || (breast && !BOTTLE.test(text) && durations.length === 1);
-  const bottle = BOTTLE.test(text) || (!nursing && formula && (amounts.length || /喝|喂/.test(text)));
-  const isDose = names.length > 0 || DOSE_ACTION.test(text);
+  const feedingContext = draft && (!draft.kind || draft.kind === 'bottle' || draft.kind === 'nursing');
+  const feedingEvidence = feedingContext || MILK_CONTEXT.test(text);
+  const bottleReference = BOTTLE_REFERENCE.test(text);
+  const bottleMention = BOTTLE.test(text) || (bottleReference && feedingEvidence);
+  const nursing = NURSING.test(text) || (breast && !bottleMention && durations.length === 1) ||
+    (feedingEvidence && DIRECT_FEEDING_REFERENCE.test(text));
+  const bottle = bottleMention || (!nursing && formula && (amounts.length || /喝|喂/.test(text)));
+  const isDose = names.length > 0 || DOSE_ACTION.test(text) || (!bottleReference && /用了/.test(text));
+  if ((feedingContext || bottle || nursing || (!isDose && FEED.test(text))) && OTHER_DRINK.test(text)) {
+    return { problem: '我听到了其他饮品或用药。如果这次喝的是奶，请再说一下。' };
+  }
   const urine = URINE.test(text);
   const stoolRecord = STOOL.test(urine ? text.replace(/拉(?:了|过)?尿/g, '') : text);
   const kinds = [nursing && 'nursing', bottle && 'bottle', stoolRecord && 'stool', urine && 'urine', isDose && 'dose'].filter(Boolean);
@@ -153,8 +166,8 @@ function splitRecords(text) {
     const clauses = [];
     for (const part of parts) {
       const last = clauses.at(-1);
-      const addsAmount = last && BOTTLE.test(last) && ![...last.matchAll(MILK_AMOUNT)].length &&
-        /^实际|^一共|^喝(?:下|了)/.test(part) && [...part.matchAll(MILK_AMOUNT)].length;
+      const addsAmount = last && (BOTTLE.test(last) || BOTTLE_REFERENCE.test(last)) && ![...last.matchAll(MILK_AMOUNT)].length &&
+        /^(?:实际|一共|总共|喝(?:下|了))/.test(part) && [...part.matchAll(MILK_AMOUNT)].length;
       if (last && (addsAmount || !(ACTION.test(last) && ACTION.test(part)))) clauses[clauses.length - 1] += '，' + part;
       else clauses.push(part);
     }
@@ -163,7 +176,7 @@ function splitRecords(text) {
 }
 
 function updateDraft(record, info, reply, asking, latest) {
-  if (info.kind && record.kind && info.kind !== record.kind) return null;
+  if (info.kind && (record.kind ? info.kind !== record.kind : !['bottle', 'nursing'].includes(info.kind))) return null;
   const nursingAnswer = asking === 'kind' && /^(?:是)?母乳$/.test(reply);
   const next = {
     ...record,
@@ -177,7 +190,8 @@ function updateDraft(record, info, reply, asking, latest) {
     name: info.name || record.name,
     dose: info.dose || record.dose,
   };
-  if (asking === 'ml' && info.ml == null && new RegExp('^' + NUMBER + '$').test(reply)) next.ml = numberFromSpeech(reply);
+  const amountAnswer = asking === 'ml' && info.ml == null && AMOUNT_ANSWER.exec(reply);
+  if (amountAnswer) next.ml = numberFromSpeech(amountAnswer[1]);
   if (asking === 'name' && !info.name && /^[\p{L}\p{N}·\-]{1,32}$/u.test(reply) &&
     !ACTION.test(reply) && !info.time && ![...reply.matchAll(DOSE_AMOUNT)].length) next.name = reply;
   if (asking === 'time' && /刚刚|刚才|现在/.test(reply) && !info.time) next.time = latest.slice(11);
@@ -201,7 +215,7 @@ export function interpretCareSpeech(raw, { now, day, medicines = [], pending = [
     const index = pending.findIndex((record) => fieldToAsk(record, latest));
     if (index < 0) return wait('请重新说这次记录的日期和时间。', []);
     const record = pending[index];
-    const reply = facts(chunks[0], context);
+    const reply = facts(chunks[0], context, record);
     if (reply.problem) return wait(reply.problem);
     const next = updateDraft(record, reply, chunks[0], fieldToAsk(record, latest)[0], latest);
     if (!next) return wait('这像是一条新记录，请先补充刚才那条，或点「重新开始」。');
