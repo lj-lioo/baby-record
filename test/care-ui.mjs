@@ -161,8 +161,11 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   for (const days of [7, 30, 90]) {
     await page.getByRole('button', { name: `近 ${days} 天` }).click();
     assert.match(await stats.innerText(), /各项日均只计该项大于 0 的日期/);
-    assert.match(await stats.innerText(), /母乳\s+1 次\/天\s+母乳亲喂 · 2 天/);
-    assert.match(await stats.innerText(), /97\.8 mL\/天\s+有奶量记录 · 2 天/);
+    assert.equal(await stats.getByRole('heading', { name: `近 ${days} 天日均汇总`, exact: true }).isVisible(), true);
+    assert.deepEqual(await stats.locator('.care-tiles > div > span').allTextContents(),
+      ['日均母乳次数', '日均瓶喂奶量', '日均大小便次数', '日均实际用药次数']);
+    assert.match(await stats.innerText(), /日均母乳次数\s+1 次\/天\s+母乳亲喂 · 2 天/);
+    assert.match(await stats.innerText(), /日均瓶喂奶量\s+97\.8 mL\/天\s+有奶量记录 · 2 天/);
     assert.match(await stats.innerText(), /母乳 65 mL\/天 · 未标注 65\.3 mL\/天/);
     assert.match(await stats.innerText(), /亲喂实测日均 42 mL\/天 · 1 次测量\/天/);
     assert.equal(await slider.getAttribute('max'), String(days - 1));

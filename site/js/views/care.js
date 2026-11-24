@@ -49,11 +49,11 @@ function summaryTiles(day, daysWithValues) {
   const doseNote = day.legacyDose
     ? (averaging ? `原用药记录 ${display('legacyDose')} 次/天` : `另有 ${day.legacyDose} 条旧记录`) : '已记录';
   const tiles = [
-    ['母乳', withUnit(display('nursing'), unit), averaging ? `母乳亲喂 · ${daysWithValues.nursing} 天` : '母乳亲喂次数'],
-    ['瓶喂奶量', withUnit(display('bottleMl', DAILY_VOLUME), averaging ? 'mL/天' : 'mL'),
+    [averaging ? '日均母乳次数' : '母乳', withUnit(display('nursing'), unit), averaging ? `母乳亲喂 · ${daysWithValues.nursing} 天` : '母乳亲喂次数'],
+    [averaging ? '日均瓶喂奶量' : '瓶喂奶量', withUnit(display('bottleMl', DAILY_VOLUME), averaging ? 'mL/天' : 'mL'),
       averaging ? `有奶量记录 · ${daysWithValues.bottleMl} 天` : '已记录的实际奶量'],
-    ['大小便', stoolUrine, averaging ? `大便 ${daysWithValues.stool} 天 / 小便 ${daysWithValues.urine} 天` : '大便 / 小便'],
-    ['实际用药', withUnit(display('dose'), unit), averaging ? `${daysWithValues.dose} 天有记录${day.legacyDose ? ' · ' + doseNote : ''}` : doseNote],
+    [averaging ? '日均大小便次数' : '大小便', stoolUrine, averaging ? `大便 ${daysWithValues.stool} 天 / 小便 ${daysWithValues.urine} 天` : '大便 / 小便'],
+    [averaging ? '日均实际用药次数' : '实际用药', withUnit(display('dose'), unit), averaging ? `${daysWithValues.dose} 天有记录${day.legacyDose ? ' · ' + doseNote : ''}` : doseNote],
   ];
   return `<div class="care-tiles">${tiles.map(([label, value, sub]) => `<div>
     <span>${label}</span><strong>${value}</strong><small>${sub}</small>
@@ -104,6 +104,7 @@ function renderStats({ daily, totals, daysWithValues, recordedDays, dosesByName,
   return `
     <section class="card care-stats">
       <div class="care-pills" aria-label="统计区间">${buttons([7, 30, 90].map((n) => [n, `近 ${n} 天`]), 'data-care-period', period)}</div>
+      <h2 class="care-average-heading">近 ${period} 天日均汇总</h2>
       <p class="small muted">${cnDate(daily[0].date, true)} — ${cnDate(daily.at(-1).date, true)} · ${recordedDays
         ? '各项日均只计该项大于 0 的日期' : '这段时间还没有记录'}</p>
       ${summaryTiles(totals, daysWithValues)}
