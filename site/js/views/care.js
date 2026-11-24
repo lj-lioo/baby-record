@@ -15,6 +15,7 @@ const DAILY_VOLUME = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 }
 const FEED_CHOICES = { nursing: '母乳', bottle: '瓶喂' };
 const TOILET_CHOICES = { stool: '大便', urine: '小便' };
 let selectedDate = '';
+let statsEndDate = '';
 let section = 'log';
 let period = 7;
 let metric = 'bottleMl';
@@ -133,14 +134,18 @@ export function renderCare(root) {
   const now = Date.now();
   const [today, time] = toLocalInput(now).split('T');
   const currentCycle = feedingCycleDate(today, time);
-  const date = selectedDate || currentCycle;
+  const isStats = section === 'stats';
+  const defaultDate = isStats ? addDays(currentCycle, -1) : currentCycle;
+  const latestDate = isStats ? defaultDate : today;
+  const chosenDate = isStats ? statsEndDate : selectedDate;
+  const date = chosenDate && chosenDate <= latestDate ? chosenDate : defaultDate;
   const editable = canEditGrowth();
   const records = store.care();
   const historical = oldDoseEntries();
   const canUndo = () => undoRecords.length > 0 &&
     undoRecords.every((record) => careDay(record) === date && store.getCare(record.id)?.updatedAt === record.updatedAt);
-  const report = summarizeCare(records, historical, date, section === 'stats' ? period : 1);
-  const trend = section === 'stats' ? careTrend(report.daily, metric, TREND[metric]) : null;
+  const report = summarizeCare(records, historical, date, isStats ? period : 1);
+  const trend = isStats ? careTrend(report.daily, metric, TREND[metric]) : null;
   clearTimeout(cycleRefresh);
   cycleRefresh = setTimeout(() => {
     if (root.querySelector('.care-page')) renderCare(root);
@@ -153,11 +158,11 @@ export function renderCare(root) {
     </div>
     <div class="care-date-nav">
       <button type="button" id="care-back" aria-label="前一天">‹</button>
-      <input type="date" class="input" id="care-day" aria-label="${section === 'stats' ? '统计截止日期' : '记录日期'}" value="${esc(date)}" max="${today}">
-      <button type="button" id="care-next" aria-label="后一天" ${date >= today ? 'disabled' : ''}>›</button>
-      ${date !== currentCycle ? `<button type="button" class="care-link" id="care-today">${currentCycle === today ? '今天' : '当前周期'}</button>` : ''}
+      <input type="date" class="input" id="care-day" aria-label="${isStats ? '统计截止日期' : '记录日期'}" value="${esc(date)}" max="${latestDate}">
+      <button type="button" id="care-next" aria-label="后一天" ${date >= latestDate ? 'disabled' : ''}>›</button>
+      ${date !== defaultDate ? `<button type="button" class="care-link" id="care-today">${isStats ? '最近一期' : currentCycle === today ? '今天' : '当前周期'}</button>` : ''}
     </div>
-    <p class="small muted">喂奶按 ${FEEDING_DAY_START} 至次日 ${FEEDING_DAY_START} 统计</p>
+    <p class="small muted">${isStats ? `每天 ${FEEDING_DAY_START} 纳入刚结束的喂养周期` : `喂奶按 ${FEEDING_DAY_START} 至次日 ${FEEDING_DAY_START} 统计`}</p>
     ${section === 'log' ? `${editable ? quickActions(date === currentCycle, canUndo()) : ''}
       <section class="card"><h2>${date === today ? '今天' : cnDate(date)}汇总</h2>${summaryTiles(report.totals)}</section>
       ${dailyLog(date, records, historical, editable)}` : renderStats(report, trend.html)}
@@ -165,16 +170,24 @@ export function renderCare(root) {
   trend?.bind(root);
 
   const setDate = (next) => {
-    const [today, time] = toLocalInput(Date.now()).split('T');
-    if (!next || next > today) return;
-    selectedDate = next === feedingCycleDate(today, time) ? '' : next;
+    if (isStats) {
+      if (next && next <= latestDate) statsEndDate = next === defaultDate ? '' : next;
+    } else {
+      const [today, time] = toLocalInput(Date.now()).split('T');
+      if (!next || next > today) return;
+      selectedDate = next === feedingCycleDate(today, time) ? '' : next;
+    }
     renderCare(root);
   };
   root.querySelector('#care-day').onchange = (event) => setDate(event.target.value);
   root.querySelector('#care-back').onclick = () => setDate(addDays(date, -1));
   root.querySelector('#care-next').onclick = () => setDate(addDays(date, 1));
-  const todayButton = root.querySelector('#care-today');
-  if (todayButton) todayButton.onclick = () => { selectedDate = ''; renderCare(root); };
+  const resetDate = root.querySelector('#care-today');
+  if (resetDate) resetDate.onclick = () => {
+    if (isStats) statsEndDate = '';
+    else selectedDate = '';
+    renderCare(root);
+  };
   root.querySelectorAll('[data-care-section]').forEach((button) => {
     button.onclick = () => { section = button.dataset.careSection; renderCare(root); };
   });
