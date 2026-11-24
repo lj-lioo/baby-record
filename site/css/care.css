@@ -63,6 +63,8 @@ button.care-row { cursor: pointer; }
 .care-row-content small { display: block; white-space: pre-line; }
 .care-row-content small:empty { display: none; }
 .care-average { margin: 9px 0 0; }
+.care-stats .care-average-heading { margin: 14px 0 6px; }
+.care-stats .care-tiles > div > span { color: #694a3f; font-weight: 700; font-size: 13px; }
 .care-dose-totals { margin: 12px 0 0; }
 .care-dose-totals li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; overflow-wrap: anywhere; }
 .care-trend-pills { margin: 3px 0 10px; }
