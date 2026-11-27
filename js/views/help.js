@@ -1,0 +1,264 @@
+// 使用帮助（中文分步说明）
+import { store } from '../store.js';
+import { closeSheet, esc, openSheet } from '../ui.js';
+import { createShortcutName } from '../shortcuts.js';
+
+function renderHelp(root) {
+  const name = esc(store.state.settings.shortcutName || '宝宝闹钟');
+  const createName = esc(createShortcutName());
+  root.innerHTML = `
+    <style>/* v1.7.1：「新增」标记（只在帮助页用） */
+      .newtag { display: inline-block; font-size: 12px; font-weight: 800; color: #fff; background: #E8590C; border-radius: 6px; padding: 1px 6px; margin-right: 4px; vertical-align: 1px; }
+      .h4new { font-size: 15px; margin: 14px 0 4px; padding-left: 8px; border-left: 4px solid #E8590C; }</style>
+    <div class="help">
+
+    <section class="card" id="h-home">
+      <h2>📲 第一步：添加到主屏幕（像App一样使用）</h2>
+      <ol class="steps">
+        <li>用 iPhone 自带的 <b>Safari</b> 打开本页面网址（微信里打开的请先点右上角「…」选「在 Safari 中打开」）。</li>
+        <li>点 Safari 底部的 <b>分享按钮</b>（方框带向上箭头 <span class="kbd">⎋↑</span>）。iOS 26 如果底部只有「…」，先点「…」再点「分享」。</li>
+        <li>在弹出的菜单里向下滑，点 <b>「添加到主屏幕」</b>。</li>
+        <li>名称保持「家有朝朝」，如有「作为网页App打开」开关请保持打开，点右上角 <b>「添加」</b>。</li>
+        <li>以后都从主屏幕的「家有朝朝」图标打开（全屏、没有地址栏）。</li>
+        <li>若主屏幕上还是旧名字「宝宝记录」：长按旧图标 → 删除，再用 Safari / Chrome 打开本站，重新「添加到主屏幕」（iOS 不会自动改已添加图标的名字）。</li>
+      </ol>
+      <p class="note">⚠️ 主屏幕App和Safari里的数据是分开保存的。请在主屏幕App里记录，并定期在「设置 → 数据备份」导出。</p>
+    </section>
+
+    <section class="card" id="h-voice">
+      <h2><span class="newtag">新增</span> 🎤 说一句话记事（v1.11.2）</h2>
+      <ol class="steps">
+        <li>首页点 <b>「🎤 说一句话记事」</b>，点键盘上的 <b>🎤 话筒</b> 说话，比如「11月5号买奶粉」「下周六上午10点打疫苗」「明天下午3点体检」。</li>
+        <li>下面会自动认出日期、时间和事项，不对可以当场改；点 <b>「记上」</b> 就保存，全家云同步。</li>
+        <li>一次说几件事：中间说「句号」或换行，会拆成多条。没说日期默认今天；说的日期今年已过会记到明年。</li>
+      </ol>
+      <p><b>iPhone 键盘没有 🎤？</b> 打开 <b>设置 → 通用 → 键盘</b>，打开 <b>「启用听写」</b>。</p>
+      <p><b>安卓 / 华为：</b> 用输入法（搜狗、百度、讯飞、华为小艺输入法等）键盘上的 <b>话筒</b> 按钮说话。若出现「🎙️ 点一下说话」按钮：点一下开始听，说完再点一下结束；按钮不灵时请改用键盘话筒。</p>
+      <p><b>「🎙️ 点一下说话」：</b> 点一下开始识别（按钮变红「正在听…再点一下结束」），说完再点一下结束；识别结果会追加到输入框。</p>
+      <p class="note">识别在手机本地完成，不用额外付费。</p>
+    </section>
+
+    <section class="card" id="h-shortcut">
+      <h2>⏰ 设置「${createName}」快捷指令</h2>
+      <p class="small" style="margin-top:0">iOS 26.2 起，「提醒事项」可以把提醒设为 <b>紧急</b>：到点时像闹钟一样<b>全屏响铃</b>，静音和专注模式下也会响，并显示提醒标题。本App的「⏰ 设为闹钟提醒」按钮会运行这个快捷指令，为事项的<b>每一个提醒时间</b>各建一条紧急提醒，例如「【宝宝】今天 10:00 打乙肝疫苗第2针」。「紧急」由快捷指令自动打开，不用手动改。创建完成后请在自己的 iPhone 上测试一条提醒。</p>
+
+      <h3 style="font-size:16px;margin:12px 0 4px">准备工作</h3>
+      <ul class="checklist">
+        <li>iPhone 需要 <b>iOS 26.2 或更高</b>（设置 → 通用 → 软件更新）。</li>
+        <li>打开 iCloud 提醒事项：设置 → 点最上面你的名字 → iCloud → 打开「提醒事项」。</li>
+        <li>打开「提醒事项」App → 点右上角（搜索图标旁边）的添加列表 → 名称填 <b>宝宝</b>，账户选 <b>iCloud</b> → 完成。</li>
+        <li>允许闹钟：设置 → App → 提醒事项 → 打开 <b>闹钟</b>。</li>
+      </ul>
+
+      <h3 style="font-size:16px;margin:12px 0 4px">已有快捷指令时</h3>
+      <p>iPhone 提示「未找到快捷指令」时，在苹果「快捷指令」里长按「${name}」并选「复制」，再把副本命名为「${createName}」。</p>
+      <p>打开副本的编辑页。如果有“运行快捷指令”去调用旧删除指令，或有查找、移除提醒事项的动作，从副本里移除这些动作。保留文本拆分和添加提醒事项的步骤。</p>
+      <p>回到事项的闹钟弹窗，在「提醒事项」核对没有创建后，点「确认未创建，返回重试」。</p>
+      <p>如果之前开启了「允许不确认直接删除」，可在 iPhone「设置 → App → 快捷指令 → 高级」里关掉它。</p>
+      <h3 style="font-size:16px;margin:12px 0 4px">从头创建快捷指令</h3>
+      <p class="small" style="margin:4px 0">打开「快捷指令」App →「快捷指令」页右上角 <b>＋</b>。点顶部名称 →「重新命名」→ 改为 <b>${createName}</b>（需与本 App 设置里显示的实际调用名称一致）。然后按顺序添加下面的操作：</p>
+      <ol class="steps">
+        <li>（自动出现在最上面）「从 <b>无处</b> 接收 <b>App和其他18个</b>」、「如果没有输入：<b>继续</b>」——保持不动。</li>
+        <li>添加 <b>「拆分文本」</b>：按 <b>新行</b> 拆分 <b>快捷指令输入</b>（点文本参数选「快捷指令输入」，也可能显示为「输入快捷指令的信息」）。</li>
+        <li>添加 <b>「重复每一项」</b>：重复 <b>拆分文本</b> 中的每一项。<b>下面第4～9步都放在「重复」和「结束重复」之间。</b></li>
+        <li>在重复里添加 <b>「拆分文本」</b>：按 <b>自定义</b> 拆分 <b>重复项目</b>，自定义分隔符填竖线 <span class="kbd">|</span>。
+          <div class="note">⚠️ 必须是<b>半角</b>竖线：切到英文键盘，点 <span class="kbd">123</span> → <span class="kbd">#+=</span> → <span class="kbd">|</span>。中文键盘打出的是全角「｜」，不能用。前后不要有空格。</div></li>
+        <li>添加 <b>「从列表中获取项目」</b>，选 <b>第一项</b>。输入要改成第4步的结果：点「拆分文本」→「选择变量」→ 点「按 自定义 | 拆分」那一步<b>正下方</b>的蓝色「拆分文本」。
+          <div class="note">⚠️ 默认会选成第2步（按新行拆分）的「拆分文本」，一定要改。</div></li>
+        <li>添加 <b>「从输入中获取日期」</b>：输入选第5步（第一项）正下方的蓝色「来自列表的项目」。</li>
+        <li>添加 <b>「从列表中获取项目」</b>，选 <b>索引处的项目</b>，填 <b>2</b>。输入同样改成第4步的「拆分文本」（同上，别用默认的）。</li>
+        <li>添加 <b>「从列表中获取项目」</b>，选 <b>最后一项</b>。输入同样改成第4步的「拆分文本」。</li>
+        <li>添加 <b>「添加新提醒事项」</b>：
+          <ul class="steps">
+            <li>提醒事项：选第7步（索引处的项目 2）正下方的「来自列表的项目」；列表选 <b>宝宝</b>。</li>
+            <li>点「不提醒」→ 选 <b>「提醒」</b>。再点触发条件的值，如果显示的是变量，点开它 →「清除变量」，让这句变成「并在 <b>时间是</b> 下午2:00 时 提醒」。</li>
+            <li>点时间（下午2:00）→「选择变量」→ 第6步正下方的蓝色 <b>「日期」</b>。</li>
+            <li>点 <b>›</b> 展开选项：打开 <b>「紧急」</b>（选了「时间是」之后才会出现）；优先级选 <b>高</b>；旗标可开可不开；备注 →「选择变量」→ 第8步（最后一项）正下方的「来自列表的项目」。备注填好后不显示名称，就是「标签」下面那一栏。</li>
+          </ul></li>
+        <li>「结束重复」（自动添加）。</li>
+      </ol>
+      <p class="note">💡 第5、7、8步的结果都叫「来自列表的项目」，选变量时一定要点<b>对应步骤正下方</b>的蓝色标签。</p>
+      <p class="small">快捷指令会自动保存，没有「完成」按钮，点左上角 <b>&lt;</b> 返回即可。</p>
+      <p class="small">传给快捷指令的内容：每行一个提醒，格式为 <span class="kbd">时间|标题|备注</span>，例如：</p>
+      <div class="code">2026-09-30 20:00|【宝宝】明天 10:00 打乙肝疫苗第2针|💉疫苗 · 10月1日 10:00 · 前一天 20:00提醒 · 备注：带疫苗本 · &lt;宝宝#mg3k2x9a1b2c3&gt;
+2026-10-01 08:00|【宝宝】今天 10:00 打乙肝疫苗第2针|💉疫苗 · 10月1日 10:00 · 当天 08:00提醒 · 备注：带疫苗本 · &lt;宝宝#mg3k2x9a1b2c3&gt;</div>
+      <p class="small">同一事项的每条提醒都带有相同的 <b>事项编号</b> <span class="kbd">&lt;宝宝#…&gt;</span>。改期时可在「提醒事项」里用它核对原条目。</p>
+
+      <h3 style="font-size:16px;margin:12px 0 4px">测试</h3>
+      <ol class="steps">
+        <li>到本App「设置」→ 点 <b>「测试闹钟（2分钟后响）」</b>。请从这里测试，不要在「快捷指令」里直接点它运行（直接运行没有输入内容）。</li>
+        <li>第一次运行会询问是否允许输出提醒事项，选 <b>「始终允许」</b>。</li>
+        <li>锁屏等待 2 分钟，应全屏响铃。测试成功后可在「提醒事项」的「宝宝」列表里删除这条。</li>
+      </ol>
+      <p>想自动确认时，点「设置 → 测试闹钟回传」。快捷指令完成后回到主屏幕上的「家有朝朝」，看到「回传已验证」即可使用。</p>
+      <p>如果测试收到回执但提示检查输出，请在「${createName}」末尾的「结束重复」之后加一个「文本」动作，写入 <b>BABY_ALARM_OK</b>。让最后的「停止并输出」输出这个文本，再测试一次。</p>
+      <h3 style="font-size:16px;margin:16px 0 4px" id="h-replace">改时间后核对旧闹钟</h3>
+      <ol class="steps">
+        <li>在 App 保存修改后，打开「核对旧闹钟」，对照原响铃时间和当前计划的响铃时间。</li>
+        <li>在苹果「提醒事项」的「宝宝」列表里，按名称、旧响铃时间和备注里的事项编号找到原条目。确认对应后，点详情修改这条提醒的日期与时间，确认「紧急」仍打开。</li>
+        <li>回到本 App 点「我已在提醒事项改好」。如果确认原条目已移除，可以点「我已确认没有旧提醒」，再按当前计划创建。</li>
+      </ol>
+      <p class="note">找不到对应条目时先核对，尤其是没有编号的老提醒。事项删除后，App 会列出需核对的旧提醒。</p>
+      <p>已核对且有事项编号的闹钟，可以从「定向替换这项闹钟」发起。iPhone 快捷指令只操作编号、旧时间和列表都吻合的提醒，先验证新提醒，再移除旧提醒。</p>
+      <p><a href="https://github.com/lj-lioo/baby-record/blob/main/docs/alarm-batch-pilot.md" target="_blank" rel="noopener">定向替换配置与测试说明</a></p>
+    </section>
+
+    <section class="card" id="h-push">
+      <h2>🔔 可选：网页推送通知（备用）</h2>
+      <ol class="steps">
+        <li>需要 <b>iOS 16.4 或更高</b>，并且<b>必须先完成第一步“添加到主屏幕”</b>，从主屏幕图标打开本App（在 Safari 网页里无法开启推送，这是苹果的限制）。</li>
+        <li>进入「设置」→ 点「开启推送提醒」→ 系统弹窗选「允许」。</li>
+        <li>点「1分钟后测试」，锁屏等待，确认能收到「宝宝提醒：…」通知；点通知会打开全屏提醒页。</li>
+      </ol>
+      <p class="note">推送通知只是普通通知（不会像闹钟一样响），而且依赖推送服务在线，目前的推送服务是临时的，可能中断。<b>重要事项请以「⏰ 设为闹钟提醒」为主。</b>如误点了「不允许」：设置 → 通知 → 宝宝记录 → 允许通知。</p>
+    </section>
+
+    <section class="card" id="h-cal">
+      <h2>📅 备用：添加到苹果日历（旧版 iOS 也能用）</h2>
+      <ol class="steps">
+        <li>在日程里点事项的 <b>「📅 苹果日历」</b>。</li>
+        <li>iPhone 会显示日历事件预览，点 <b>「添加到日历」</b>（或右上角「添加」）。</li>
+        <li>日历事件会带上你在App里设置的全部提醒时间（普通通知，不会像闹钟一样响）。</li>
+      </ol>
+      <p class="small muted">如果在主屏幕App里点了没反应，请用 Safari 打开本网址再点一次。</p>
+    </section>
+
+    <section class="card" id="h-window">
+      <h2>🪟 接种窗口与计划日</h2>
+      <ul class="steps">
+        <li>日历下面会列出<b>当前月份的全部事项</b>，按日期分组；左右翻月份就能看每个月。点某一天会跳到那天的事项。之前没完成的会在最上面用红色列出。</li>
+        <li>每剂疫苗/体检卡片上有 <b>「🪟 窗口」</b>：<b>最早</b>哪天可以打、<b>最迟</b>哪天前要完成，以及状态（未到窗口 / 窗口中·还剩N天 / <span class="bad">已过最迟</span> / 已完成）。免费疫苗按《国家免疫规划疫苗儿童免疫程序及说明（2026年版）》；自费疫苗按说明书；体检是参考范围。</li>
+        <li>点「🪟 窗口」，日历上会显示这个事项的窗口：<b>淡色底</b>=窗口，<b>虚线圈</b>=最早日，<b>实心</b>=计划日，<b>「止」</b>=最迟日。日历上的 ● 实心点是计划日，○ 空心点是最早可接种日。</li>
+        <li>那天去不了？点 <b>「📆 改计划日」</b> 选别的日期和时间（不能早于最早日；晚于最迟日会提醒）。提醒、闹钟和苹果日历都按<b>计划日</b>。</li>
+        <li>已设闹钟的事项改期后，打开 <a href="#/help?section=h-replace" data-jump="h-replace">「核对旧闹钟」说明</a>，查看怎么处理苹果「提醒事项」里的旧闹钟。</li>
+      </ul>
+      <p class="small muted">具体接种时间以接种门诊/社区医院的安排为准。</p>
+    </section>
+
+    <section class="card" id="h-paid">
+      <h2>💰 自费疫苗（待定）</h2>
+      <ul class="steps">
+        <li>自费疫苗<b>默认不排进日程</b>。首页月列表下方（或「设置 → 一键生成日程」）的 <b>「💰 自费疫苗（待定）」</b> 里可以看每种疫苗预防什么、几剂、<b>推荐指数</b>、<b>襄阳参考价</b>（每剂+全程）、最早/最迟日期、能替代哪些免费剂次。</li>
+        <li><b>怎么看推荐：</b>★★★★★ 强烈推荐 / ★★★★☆ 推荐 / ★★★☆☆ 可考虑 / ★★☆☆☆ 一般——综合疾病负担、保护效力、能否少跑门诊（如五联）、湖北本地情况。参考价来自湖北挂网与附近门诊常见价，另收约20元/剂次服务费；<b>非医疗建议，以当地接种门诊公示和医生为准</b>。</li>
+        <li>决定要打时点 <b>「➕ 加入计划」</b>，选第1剂的日期和时间（默认最早日期，可点周末；不能早于最早日期），确认前会预览全部剂次；后面的剂次按说明书的最短间隔和月龄自动排好。</li>
+        <li>前面某剂 <b>改计划日</b> 或 <b>实际接种日</b> 不同时，会提示 <b>「后续剂次一起顺延」</b>；已设过闹钟的剂次顺延后显示「需重设闹钟」。已完成的剂次不会改动。</li>
+        <li>不想打了：在目录里点 <b>「🗑 移出计划」</b>，未完成的剂次删除，回到「待定」。计划了五联等，免费的百白破/脊灰卡片上会提示「可不打此剂」（以门诊为准，不会自动删除）。</li>
+      </ul>
+    </section>
+
+
+    <section class="card" id="h-growth">
+      <h2>📏 生长记录（v1.9.0）</h2>
+      <ul class="steps">
+        <li>底部「📏 生长」记录宝宝不同时期的<strong>身高、体重、头围</strong>；点右上角 <b>「添加」</b>。</li>
+        <li>列表按日期倒序，显示日龄/月龄（需在设置里填宝宝生日）；点某条可编辑或删除。</li>
+        <li>上方可切换 <b>身高曲线 / 体重曲线 / 头围曲线</b>（按测量日期折线）。</li>
+        <li>列表里「相对上次」增减只是算术对比，<b>非医疗建议</b>；生长发育请以儿保医生为准。</li>
+        <li>记录走云同步（与疫苗、相册同一把密钥），家人打开 App 或点「立即同步」即可对齐。</li>
+      </ul>
+    </section>
+
+    <section class="card" id="h-album">
+      <h2>📷 相册（v1.8.0）</h2>
+      <ul class="steps">
+        <li>底部「📷 相册」按拍摄/上传时间看宝宝照片；点右上角 <b>「＋ 上传」</b>，再选 <b>「从相册选择」</b>（可多选）或 <b>「拍照」</b>。</li>
+        <li>可以写一句话说明；点照片看大图，也可以删除（删了会同步到其他家人）。</li>
+        <li>说明和图片引用走 <b>云同步</b>（和疫苗事项同一把密钥）；缩略图保存在本机，缩略图、中图及新原图以普通文件存到极空间；旧加密文件继续解密读取。</li>
+        <li>还没填照片服务地址时：本机仍可选图预览，元数据可先同步；提示「填极空间照片服务地址后才能全家看到原图」。</li>
+      </ul>
+    </section>
+
+    <section class="card" id="h-video">
+      <h2>🎬 视频与流量（v1.10.0）</h2>
+      <ul class="steps">
+        <li>「＋ 上传 → 从相册选择」可以选照片或视频；也可以「录视频」。新视频以普通文件分块存到极空间。</li>
+        <li><b>省流量</b>：网格只显示封面和 ▶ 时长。点开全屏后静音自动播放；明文视频边下边播，可拖动进度或横屏观看；旧加密视频仍需先下载解密。</li>
+        <li>旧加密视频解密后缓存在本机，缓存超过上限（默认 500MB）自动删最早的；新视频按需播放，不整段写入本机缓存。</li>
+        <li>单个视频默认上限 <b>200MB</b>（设置里可改）。超过会提示，请在 iPhone 相册里「编辑」剪短再传。</li>
+        <li>iPhone 从相册选视频时，Safari 一般会导出一份兼容格式（H.264），分辨率基本不变，<b>大小和原视频差不多</b>，不等于压缩。约 1 分钟 1080p 视频大约 100MB 左右；4K 更大。想省流量，拍摄前可在「设置 → 相机 → 录制视频」选 1080p 30fps。</li>
+        <li>用手机流量时请留意大小；在家 Wi‑Fi 下看最省心。</li>
+      </ul>
+    </section>
+
+    <section class="card" id="h-nas">
+      <h2>🗄️ 接极空间（照片服务）</h2>
+      <ol class="steps">
+        <li>在极空间 Docker 里运行仓库里的 <b>sync/photo-server</b>（把一个文件夹挂到容器的 <span class="kbd">/data</span>，端口 <span class="kbd">8789</span>）。详见该目录 README。</li>
+        <li>手机连家里 Wi‑Fi，浏览器先打开 <span class="kbd">http://极空间局域网IP:8789/health</span> 确认能通。</li>
+        <li>本 App「设置 → 📷 照片服务」填 https://photo.jiayouzhaozhao.cn，点「测试连接」。</li>
+        <li><b>v1.15.0</b>：照片服务支持原生视频播放鉴权，更新步骤见 sync/photo-server/README.md；/health 应显示 version 1.15.0。</li>
+        <li>App 通过 HTTPS 照片地址看图和播放视频；NAS 必须保持开机联网。</li>
+        <li>云同步已绑自定义域名 <span class="kbd">https://sync.jiayouzhaozhao.cn</span>，国内一般可直连（关 VPN 试一下「立即同步」）。照片需 <span class="kbd">https://photo.jiayouzhaozhao.cn</span>（Tunnel 就绪后）。</li>
+      </ol>
+      <p class="note">新照片和视频在 NAS 上是普通文件；旧加密原图保留。不要把同步密钥发给不信任的人，也不要写进 Docker 环境变量提交到公开地方。</p>
+    </section>
+
+    <section class="card" id="h-limit">
+      <h2>ℹ️ 小贴士与限制</h2>
+      <ul class="steps">
+        <li>网页App不能直接在 iPhone 上设置闹钟，所以通过「快捷指令」创建紧急提醒事项来实现闹钟效果；日历和推送是备用方式。</li>
+        <li>在本 App 修改或删除事项后，请按 <a href="#/help?section=h-replace" data-jump="h-replace">「核对旧闹钟」说明</a> 处理原来的提醒。批量更新需要先配置 iPhone 快捷指令。</li>
+        <li>App打开时到了提醒时间，会直接弹出全屏提醒页并播放铃声（需要先点过屏幕任意处，iPhone 才允许播放声音）。</li>
+        <li>日程数据存在本机并可选云同步；新照片原图以普通文件存极空间，旧加密原图保留。请定期「导出备份」。</li>
+      </ul>
+    </section>
+    </div>`;
+}
+
+export function openHelpSheet(sectionId = null, trigger = document.activeElement) {
+  const app = document.getElementById('app');
+  let wasInert;
+  let dialog;
+  let keydown;
+  openSheet(`<div class="help-window">
+    <header class="help-window-header">
+      <h2 id="helpWindowTitle">使用帮助</h2>
+      <button class="help-window-close" type="button" aria-label="关闭帮助">×</button>
+    </header>
+    <div class="help-window-body"></div>
+  </div>`, (sheet) => {
+    dialog = sheet;
+    wasInert = app.inert;
+    app.inert = true;
+    sheet.setAttribute('aria-labelledby', 'helpWindowTitle');
+    sheet.ontouchstart = null;
+    sheet.ontouchend = null;
+
+    const body = sheet.querySelector('.help-window-body');
+    const close = sheet.querySelector('.help-window-close');
+    const jumpTo = (id) => {
+      const section = id && document.getElementById(id);
+      if (section && body.contains(section)) {
+        body.scrollTop += section.getBoundingClientRect().top - body.getBoundingClientRect().top - 12;
+      }
+    };
+    renderHelp(body);
+    body.querySelectorAll('[data-jump]').forEach((link) => {
+      link.onclick = (event) => {
+        event.preventDefault();
+        jumpTo(link.dataset.jump);
+      };
+    });
+    close.onclick = closeSheet;
+    keydown = (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); closeSheet(); return; }
+      if (event.key !== 'Tab') return;
+      const controls = sheet.querySelectorAll('button, a[href]');
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      const boundary = event.shiftKey ? first : last;
+      if (document.activeElement === boundary) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      }
+    };
+    sheet.addEventListener('keydown', keydown);
+    close.focus({ preventScroll: true });
+    jumpTo(sectionId);
+  }, () => {
+    app.inert = wasInert;
+    dialog.removeAttribute('aria-labelledby');
+    dialog.removeEventListener('keydown', keydown);
+    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+  });
+}

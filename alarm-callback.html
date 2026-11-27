@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>闹钟回传 · 家有朝朝</title>
+  <link rel="stylesheet" href="css/app.css">
+  <script src="config.js"></script>
+</head>
+<body>
+  <main class="card" style="margin:24px 16px">
+    <h1>闹钟回传</h1>
+    <p id="callback-status" role="status">正在回传快捷指令结果…</p>
+    <a id="callback-home" href="./#/home" hidden>在浏览器中打开「家有朝朝」</a>
+  </main>
+  <script type="module">
+    import { deliverAlarmCallback } from './js/alarm-callback.js';
+    const url = new URL(location.href);
+    history.replaceState(null, '', url.pathname);
+    const status = document.querySelector('#callback-status');
+    const home = document.querySelector('#callback-home');
+    try {
+      const { test } = await deliverAlarmCallback(url);
+      home.href = test ? './#/settings' : './#/home';
+      if (navigator.standalone || matchMedia('(display-mode: standalone)').matches) {
+        location.replace(home.href);
+      } else {
+        status.textContent = '回执已送达。请切回主屏幕上的「家有朝朝」。';
+        home.hidden = false;
+      }
+    } catch {
+      status.textContent = '回执未送达。请切回「家有朝朝」，可以重新测试或手动核对。';
+    }
+  </script>
+</body>
+</html>
