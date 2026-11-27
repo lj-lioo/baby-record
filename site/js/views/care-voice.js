@@ -1,4 +1,4 @@
-import { CARE_LABELS, careDetail } from '../care.js';
+import { CARE_LABELS, careDay, careDetail } from '../care.js';
 import { interpretCareSpeech } from '../care-voice.js';
 import { cnDate } from '../dates.js';
 import { isIOS } from '../push.js';
@@ -125,7 +125,9 @@ export function openCareVoice({ day, onSaved }) {
       undo.hidden = false;
       const lines = lastSaved.map((record) => {
         const title = record.kind === 'dose' ? record.name : CARE_LABELS[record.kind];
-        return [cnDate(record.date), record.time, title, careDetail(record)].filter(Boolean).join(' · ');
+        const day = careDay(record);
+        const time = day === record.date ? record.time : '次日 ' + record.time;
+        return [(cnDate(day) + '周期'), time, title, careDetail(record)].filter(Boolean).join(' · ');
       });
       message(`已记录 ${lines.length} 条\n${lines.join('\n')}`);
       mic.textContent = '🎙️ 再记一条';
