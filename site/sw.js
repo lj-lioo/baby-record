@@ -1,7 +1,7 @@
 // Service Worker：离线缓存 + Web Push + 通知点击 + 生成 .ics（真实 URL，text/calendar）
 // 安装时直接从网络取齐同一版本的页面和静态文件，再启用该版本的缓存。
 // 已安装的 App 直接从版本缓存启动，Service Worker 更新独立进行。
-const VERSION = 'v1.16.22';
+const VERSION = 'v1.16.23';
 // 发布时写入 site 目录的 Git 树哈希，确保只改静态资源的发布也能触发更新。
 const REVISION = '';
 const CACHE = 'baby-record-' + VERSION + (REVISION ? '-' + REVISION : '');

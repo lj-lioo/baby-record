@@ -113,13 +113,15 @@ export function openAlarmSheet(ev) {
   const snapshot = alarmSnapshot(ev);
   const state = alarmState(ev);
   const canCreate = state === 'none' && list.length > 0;
+  const isPending = state === 'pending';
+  const shortcut = esc(createShortcutName());
   const batchIds = state === 'changed' ? store.state.events.filter(eligibleForBatch).map((item) => item.id) : [];
   const canBatch = batchIds.includes(ev.id);
   openSheet(`
     <h3>⏰ iPhone 闹钟提醒</h3>
     <p style="margin:0 0 8px;font-weight:700">${esc(ev.title)}</p>
     ${state === 'changed' ? `<p class="note">日程已改，苹果「提醒事项」里的旧闹钟仍可能响。先核对旧提醒，再对照下面的新时间修改原条目。</p>`
-      : state === 'pending' ? '<p class="note">已发起快捷指令，等你在「提醒事项」确认是否创建成功。</p>'
+      : isPending ? '<p class="note">已打开快捷指令，请在「提醒事项」核对结果。若手机提示找不到快捷指令，请先配置，再确认没有创建并重试。</p>'
       : state === 'added' ? '<p class="note">本事项有已标记的闹钟。可以在「提醒事项」核对时间。</p>' : ''}
     ${snapshot ? `<h4>已设或待核对的提醒</h4>${snapshotHtml(ev, snapshot)}
       <p class="small muted">${FIND_REMINDER} 如果同一事项原本有多个提醒，逐条核对。找不到或无法确认时，先保留现有提醒。</p>` : ''}
@@ -128,11 +130,11 @@ export function openAlarmSheet(ev) {
       : '<p class="note">当前计划没有未来的响铃时间。若还有旧提醒，请在「提醒事项」核对并按需关闭或移除那一条。</p>'}
     ${canBatch ? '<button type="button" class="btn block" id="al-batch-this" style="margin-top:8px">批量更新这个事项的闹钟</button>' : ''}
     ${canBatch && batchIds.length > 1 ? `<button type="button" class="btn secondary block" id="al-batch-all">核对全部 ${batchIds.length} 个已改期事项的闹钟</button>` : ''}
-    ${canCreate ? `<button type="button" class="btn block" id="al-go" style="margin-top:8px">打开「${esc(createShortcutName())}」</button>
-      <p class="small muted">首次使用请按帮助配置仅创建快捷指令。返回后核对是否创建成功。</p>` : ''}
+    <p class="small"><a href="#/help?section=h-shortcut" id="al-help">${canCreate || isPending
+      ? `找不到「${shortcut}」？查看配置步骤` : '闹钟设置帮助'}</a></p>
+    ${canCreate ? `<button type="button" class="btn block" id="al-go" style="margin-top:8px">打开「${shortcut}」</button>` : ''}
     ${list.length && state !== 'added' ? `<button type="button" class="btn secondary block" id="al-confirm" style="margin-top:8px">${state === 'changed' ? '我已在提醒事项改好' : '我已确认提醒已设好'}</button>` : ''}
-    ${snapshot ? '<button type="button" class="btn ghost block" id="al-cleared" style="margin-top:8px">我已确认没有旧提醒</button>' : ''}
-    <p class="small"><a href="#/help?section=h-shortcut" id="al-help">闹钟设置帮助</a></p>
+    ${snapshot ? `<button type="button" class="btn ghost block" id="al-cleared" style="margin-top:8px">${isPending ? '确认未创建，返回重试' : '我已确认没有旧提醒'}</button>` : ''}
     <button class="btn ghost block" id="al-close">关闭</button>`, (s) => {
     s.dataset.kind = 'alarm';
     const currentEvent = () => {

@@ -141,7 +141,21 @@ assert.match(sheet.html, /旧响铃时间未记录/);
 assert.equal(sheet.querySelector('#al-go'), undefined);
 assert.equal(new URL(shortcuts.testAlarmUrl()).searchParams.get('name'), '宝宝闹钟仅创建');
 assert.equal(Object.hasOwn(shortcuts, 'deleteAlarmUrl'), false);
-console.log('Alarm regressions passed: creation, pending, exact locator, edit, reschedule, cleanup.');
+// A missing shortcut leaves the item pending. Resetting lets the same item launch again.
+const pentavalent = store.upsertEvent({ ...other, id: 'pentavalent', title: '五联疫苗', category: 'paidvax' });
+actions.openAlarmSheet(pentavalent);
+assert.match(sheet.html, /找不到「宝宝闹钟仅创建」/);
+click('#al-go');
+assert.equal(actions.alarmState(pentavalent), 'pending');
+assert.match(sheet.html, /确认未创建，返回重试/);
+click('#al-cleared');
+assert.equal(actions.alarmState(pentavalent), 'none');
+assert.equal(pentavalent.alarmAdded, undefined);
+click('#al-go');
+assert.equal(actions.alarmState(pentavalent), 'pending');
+assert.equal(new URL(launched.at(-1)).searchParams.get('name'), '宝宝闹钟仅创建');
+assert.equal(store.getEvent(other.id).alarmAdded, undefined);
+console.log('Alarm regressions passed: creation, retry, exact locator, edit, reschedule, cleanup.');
 
 // Batch handoff with seven preset reminders for one event.
 const batch = await main('js/alarm-batch.js');
