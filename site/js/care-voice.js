@@ -1,4 +1,4 @@
-import { validateCare } from './care.js';
+import { FEEDING_DAY_START, careCalendarDate, feedingCycleDate, validateCare } from './care.js';
 import { addDays, pad, parseYmd, toLocalInput, ymd } from './dates.js';
 
 const DIGITS = '零〇一二两三四五六七八九';
@@ -184,7 +184,7 @@ function updateDraft(record, info, reply, asking, latest) {
   const next = {
     ...record,
     kind: info.kind || (nursingAnswer ? 'nursing' : record.kind),
-    date: info.date || record.date,
+    date: info.date || (record.cycle && info.time ? careCalendarDate(record.cycle, info.time) : record.date),
     time: info.time || record.time,
     ml: info.ambiguousMl ? undefined : info.ml ?? record.ml,
     milk: info.milk || record.milk,
@@ -193,6 +193,7 @@ function updateDraft(record, info, reply, asking, latest) {
     name: info.name || record.name,
     dose: info.dose || record.dose,
   };
+  if (info.date) delete next.cycle;
   const amountAnswer = asking === 'ml' && info.ml == null && AMOUNT_ANSWER.exec(reply);
   if (amountAnswer) next.ml = numberFromSpeech(amountAnswer[1]);
   if (asking === 'name' && !info.name && /^[\p{L}\p{N}·\-]{1,32}$/u.test(reply) &&
@@ -233,16 +234,19 @@ export function interpretCareSpeech(raw, { now, day, medicines = [], pending = [
         return wait('请说这次已经服用的药品，例如「刚才吃了维生素AD」。');
       }
       const previous = drafts.at(-1);
-      const date = info.date || previous?.date || day || today;
       const currentTime = latest.slice(11);
+      const cycle = !info.date && (previous ? previous.cycle :
+        day || (info.time && currentTime < FEEDING_DAY_START ? feedingCycleDate(today, currentTime) : ''));
+      const date = info.date || (cycle ? careCalendarDate(cycle, info.time) : previous?.date || today);
       const defaultTime = date === today && !info.vague && (!previous || info.date || previous.time === currentTime) ? currentTime : '';
       drafts.push({
         kind: info.kind, date, time: info.time || defaultTime,
+        ...(cycle && { cycle }),
         ml: info.ml, milk: info.milk, minutes: info.minutes, stool: info.stool, name: info.name, dose: info.dose,
       });
     }
   }
   const missing = drafts.map((record) => fieldToAsk(record, latest)).find(Boolean);
   if (missing) return wait(missing[1], drafts);
-  return { question: '', pending: [], records: drafts };
+  return { question: '', pending: [], records: drafts.map(({ cycle, ...entry }) => entry) };
 }

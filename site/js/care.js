@@ -60,10 +60,11 @@ export function feedingCycleDate(date, time) {
 }
 
 export function careDay(record) {
-  if (record.paper || record.kind === 'nursing' || record.kind === 'bottle') {
-    return feedingCycleDate(record.date, record.time);
-  }
-  return record.date;
+  return feedingCycleDate(record.date, record.time);
+}
+
+export function careCalendarDate(cycle, time) {
+  return time && time < FEEDING_DAY_START ? addDays(cycle, 1) : cycle;
 }
 
 export function careNewest(a, b) {
