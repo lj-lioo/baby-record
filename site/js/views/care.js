@@ -75,14 +75,15 @@ function quickActions(today, canUndo) {
   </section>`;
 }
 
-function sleepCard(minutes, active, editable) {
+function sleepCard(minutes, active, editable, onCurrentCycle) {
   return `<section class="card care-sleep">
     <div class="care-heading"><h2>睡眠</h2><strong>${minutes ? formatSleepMinutes(minutes) : '暂无时长'}</strong></div>
     ${active ? `<p class="small muted">睡眠中 · ${cnDate(active.date)} ${active.time} 入睡</p>` : ''}
-    ${editable ? `<div class="care-sleep-actions">
+    ${editable && onCurrentCycle ? `<div class="care-sleep-actions">
       <button type="button" class="btn" id="care-sleep-start" ${active ? 'disabled' : ''}>睡觉</button>
-      <button type="button" class="btn" id="care-sleep-end" ${active ? '' : 'disabled'}>醒来</button>
+      <button type="button" class="btn" id="care-sleep-end">醒来</button>
     </div>` : ''}
+    ${editable ? '<button type="button" class="care-link care-import-link" id="care-sleep-add">补记睡眠</button>' : ''}
   </section>`;
 }
 
@@ -180,7 +181,7 @@ export function renderCare(root) {
     </div>
     <p class="small muted">${isStats ? `每天 ${FEEDING_DAY_START} 纳入刚结束的喂养周期` : `${cnDate(date)} ${FEEDING_DAY_START} 至次日 ${FEEDING_DAY_START}（次日凌晨归入本周期）`}</p>
     ${section === 'log' ? `${editable ? quickActions(onCurrentCycle, canUndo()) : ''}
-      ${sleepCard(report.totals.sleepMinutes, onCurrentCycle ? activeSleep(records) : null, editable && onCurrentCycle)}
+      ${sleepCard(report.totals.sleepMinutes, onCurrentCycle ? activeSleep(records) : null, editable, onCurrentCycle)}
       <section class="card"><h2>${date === today ? '今天' : cnDate(date)}汇总</h2>${summaryTiles(report.totals)}</section>
       ${dailyLog(date, records, historical, editable)}` : renderStats(report, trend.html)}
   </div>`;
@@ -214,22 +215,16 @@ export function renderCare(root) {
   root.querySelectorAll('[data-care-metric]').forEach((button) => {
     button.onclick = () => { metric = button.dataset.careMetric; renderCare(root); };
   });
+  const showSleep = (saved) => {
+    undoRecords = [];
+    setDate(sleepOnDay(saved[0], date) ? date : careDay(saved[0]));
+  };
   const sleepStart = root.querySelector('#care-sleep-start');
-  if (sleepStart) sleepStart.onclick = () => {
-    if (!requireEditEvents()) return;
-    const [date, time] = toLocalInput(Date.now()).split('T');
-    try {
-      if (store.startSleep(date, time)) toast('已记录入睡');
-    } catch { toast('入睡时间未保存，请重试'); }
-  };
+  if (sleepStart) sleepStart.onclick = () => openEditor('sleep', date, null, showSleep, 'start');
   const sleepEnd = root.querySelector('#care-sleep-end');
-  if (sleepEnd) sleepEnd.onclick = () => {
-    if (!requireEditEvents()) return;
-    const [date, time] = toLocalInput(Date.now()).split('T');
-    try {
-      if (store.finishSleep(date, time).length) toast('已记录醒来');
-    } catch { toast('无法保存醒来时间，请检查入睡时间'); }
-  };
+  if (sleepEnd) sleepEnd.onclick = () => openEditor('sleep', date, activeSleep(store.care()), showSleep, 'wake');
+  const sleepAdd = root.querySelector('#care-sleep-add');
+  if (sleepAdd) sleepAdd.onclick = () => openEditor('sleep', date, null, showSleep);
   const voice = root.querySelector('#care-voice');
   if (voice) voice.onclick = () => openCareVoice({ day: selectedDate, onSaved: (records) => {
     undoRecords = [];
@@ -260,17 +255,23 @@ export function renderCare(root) {
   };
 }
 
-function openEditor(kind, cycle, existing, onSaved) {
+function openEditor(kind, cycle, existing, onSaved, sleepAction = '') {
   if (!requireEditEvents('当前身份可以查看喂养记录')) return;
-  const feeding = kind === 'feed' || Object.hasOwn(FEED_CHOICES, kind);
+  const pickingFeed = kind === 'feed';
+  const feeding = pickingFeed || Object.hasOwn(FEED_CHOICES, kind);
   const pickingToilet = kind === 'toilet';
   const sleeping = kind === 'sleep';
-  const initialFeed = feeding ? existing?.kind || 'nursing' : '';
+  const starting = sleepAction === 'start';
+  const waking = sleepAction === 'wake';
+  const showWake = sleeping && !starting;
+  const requireWake = showWake && (waking || !existing || !!existing.endDate);
+  const initialFeed = feeding ? existing?.kind || '' : '';
   const [today, now] = toLocalInput(Date.now()).split('T');
   const currentCycle = feedingCycleDate(today, now);
   const date = existing?.date ?? (cycle === currentCycle ? today : cycle);
-  const time = existing?.time ?? (cycle === currentCycle ? now : '');
-  const title = feeding ? '喂奶' : pickingToilet ? '大小便' : LABEL[kind];
+  const time = existing?.time ?? (cycle === currentCycle && (!sleeping || starting) ? now : '');
+  const title = starting ? '记录入睡' : waking ? '记录醒来' : sleeping && !existing ? '补记睡眠'
+    : (existing ? '编辑' : '记录') + (feeding ? '喂奶' : pickingToilet ? '大小便' : LABEL[kind]);
   const field = (name, label, attrs) => `<div class="field"><label for="care-${name}">${label}</label>
     <input class="input" id="care-${name}" name="${name}" ${attrs}></div>`;
   const select = (name, label, choices, value) => `<div class="field"><label for="care-${name}">${label}</label>
@@ -278,16 +279,16 @@ function openEditor(kind, cycle, existing, onSaved) {
       `<option value="${id}" ${id === value ? 'selected' : ''}>${option}</option>`).join('')}</select></div>`;
   const options = (name, legend, choices, checked = '') => `<fieldset class="care-options" aria-label="${legend}">
     ${Object.entries(choices).map(([id, label]) => `<label>
-      <input type="${name === 'feed' ? 'radio' : 'checkbox'}" name="${name}" value="${id}" ${id === checked ? 'checked' : ''}>
+      <input type="${name === 'feed' && !pickingFeed ? 'radio' : 'checkbox'}" name="${name}" value="${id}" ${id === checked ? 'checked' : ''}>
       <span>${label}</span></label>`).join('')}
     </fieldset>`;
-  openSheet(`<h3>${existing ? '编辑' : '记录'}${title}</h3>
+  openSheet(`<h3>${title}</h3>
     <form id="care-form" novalidate>
       <div class="care-form-date">${field('date', sleeping ? '入睡日期' : '实际日期', `type="date" value="${esc(date)}" max="${today}"`)}
         ${field('time', sleeping ? '入睡时间' : kind === 'dose' ? '时间（可选）' : '时间', `type="time" value="${esc(time)}"`)}</div>
-      ${sleeping ? `<div class="care-form-date">
-        ${field('endDate', '醒来日期', `type="date" value="${esc(existing?.endDate)}" max="${today}"`)}
-        ${field('endTime', '醒来时间', `type="time" value="${esc(existing?.endTime)}"`)}
+      ${showWake ? `<div class="care-form-date">
+        ${field('endDate', '醒来日期', `type="date" value="${esc(existing?.endDate ?? (waking ? today : ''))}" max="${today}"`)}
+        ${field('endTime', '醒来时间', `type="time" value="${esc(existing?.endTime ?? (waking ? now : ''))}"`)}
       </div>` : ''}
       <p class="small muted" id="care-cycle-preview" aria-live="polite"></p>
       ${feeding ? `${options('feed', '喂奶方式', FEED_CHOICES, initialFeed)}
@@ -306,7 +307,7 @@ function openEditor(kind, cycle, existing, onSaved) {
       <p class="care-error small" role="alert" id="care-error" hidden></p>
       <div class="btn-row"><button type="button" class="btn ghost" id="care-cancel">取消</button>
         <button type="submit" class="btn">${pickingToilet ? '确认记录' : '保存'}</button></div>
-      ${existing ? '<button type="button" class="btn danger block care-delete" id="care-delete">删除这条记录</button>' : ''}
+      ${existing && !waking ? '<button type="button" class="btn danger block care-delete" id="care-delete">删除这条记录</button>' : ''}
     </form>`, (sheet) => {
     const form = sheet.querySelector('#care-form');
     const dateInput = form.elements.namedItem('date');
@@ -329,6 +330,20 @@ function openEditor(kind, cycle, existing, onSaved) {
       updateCycle();
     };
     updateCycle();
+    if (showWake && !existing && !waking) {
+      const endDate = form.elements.namedItem('endDate');
+      const endTime = form.elements.namedItem('endTime');
+      let endDateEdited = false;
+      const suggestEndDate = () => {
+        if (endDateEdited || !dateInput.value || !timeInput.value || !endTime.value) return;
+        endDate.value = endTime.value < timeInput.value ? addDays(dateInput.value, 1) : dateInput.value;
+      };
+      endDate.oninput = () => { endDateEdited = !!endDate.value; };
+      endTime.oninput = suggestEndDate;
+      form.addEventListener('input', (event) => {
+        if (event.target === dateInput || event.target === timeInput) suggestEndDate();
+      });
+    }
     const showError = (message) => {
       const error = sheet.querySelector('#care-error');
       error.textContent = message;
@@ -342,12 +357,13 @@ function openEditor(kind, cycle, existing, onSaved) {
     if (feeding) {
       const bottle = sheet.querySelector('#care-bottle-fields');
       const nursing = sheet.querySelector('#care-nursing-fields');
-      form.elements.namedItem('feed').forEach((radio) => {
-        radio.onchange = () => {
-          bottle.hidden = radio.value !== 'bottle';
-          nursing.hidden = radio.value !== 'nursing';
-        };
-      });
+      const bottleChoice = form.querySelector('[name="feed"][value="bottle"]');
+      const nursingChoice = form.querySelector('[name="feed"][value="nursing"]');
+      const updateFeedFields = () => {
+        bottle.hidden = !bottleChoice.checked;
+        nursing.hidden = !nursingChoice.checked || bottleChoice.checked;
+      };
+      bottleChoice.onchange = nursingChoice.onchange = updateFeedFields;
     }
     if (pickingToilet) {
       const stool = form.querySelector('[name="toilet"][value="stool"]');
@@ -358,16 +374,19 @@ function openEditor(kind, cycle, existing, onSaved) {
       if (!requireEditEvents()) return;
       if (outdated()) { showError('这条记录已更新，请关闭后重新打开'); return; }
       const data = new FormData(form);
-      if (sleeping && existing?.endDate && (!data.get('endDate') || !data.get('endTime'))) {
+      if (requireWake && (!data.get('endDate') || !data.get('endTime'))) {
         showError('请填写醒来的日期和时间');
         return;
       }
-      const kinds = pickingToilet ? data.getAll('toilet') : [feeding ? data.get('feed') : kind];
-      if (!kinds.length) { showError('至少选择大便或小便'); return; }
+      const kinds = pickingToilet ? data.getAll('toilet') : feeding ? data.getAll('feed') : [kind];
+      if (!kinds.length) {
+        showError(feeding ? '至少选择母乳或瓶喂' : '至少选择大便或小便');
+        return;
+      }
       const inputs = kinds.map((selected) => ({
         id: existing?.id, kind: selected, date: data.get('date'), time: data.get('time'), note: data.get('note'),
         ml: selected === 'bottle' ? data.get('ml') : existing?.kind === 'nursing' ? existing.ml : null,
-        milk: existing?.milk, minutes: data.get('minutes'),
+        milk: existing?.milk, minutes: kinds.includes('bottle') ? null : data.get('minutes'),
         stool: data.get('stool'), name: data.get('name'), dose: data.get('dose'),
         paper: existing?.paper, endDate: data.get('endDate'), endTime: data.get('endTime'),
       }));
@@ -376,8 +395,23 @@ function openEditor(kind, cycle, existing, onSaved) {
       if (error) { showError(error); return; }
       let saved;
       try {
-        saved = existing ? [store.upsertCare(inputs[0])] : store.addCare(inputs);
-      } catch { showError('本机保存失败，请重试'); return; }
+        if (starting) {
+          const { date, time, note } = inputs[0];
+          const started = store.startSleep(date, time, note);
+          if (!started) { showError('已有一段睡眠正在记录，请先记录醒来'); return; }
+          saved = [started];
+        } else if (waking && existing) {
+          const input = inputs[0];
+          saved = store.finishSleep(input.endDate, input.endTime, input);
+          if (!saved.length) { showError('这段睡眠已结束'); return; }
+        } else {
+          saved = existing ? [store.upsertCare(inputs[0])] : store.addCare(inputs);
+        }
+      } catch (error) {
+        showError(waking && existing && error.message === '醒来时间不能早于入睡时间'
+          ? error.message : '本机保存失败，请重试');
+        return;
+      }
       closeSheet();
       onSaved(saved);
       toast('已保存');

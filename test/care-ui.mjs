@@ -63,19 +63,27 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   const quick = (kind) => page.locator(`.care-quick-grid [data-care-kind="${kind}"]`);
   const save = () => page.locator('#care-form').getByRole('button', { name: '保存' }).click();
   const confirmToilet = () => page.getByRole('button', { name: '确认记录' }).click();
-  const feed = (label) => page.getByRole('radio', { name: label, exact: true });
+  const feed = (label) => page.getByRole('group', { name: '喂奶方式' }).getByLabel(label, { exact: true });
   const toilet = (label) => page.getByRole('checkbox', { name: label, exact: true });
 
   assert.equal(await page.locator('.care-quick-grid button').count(), 3);
   await quick('feed').click();
   assert.equal(await page.locator('#care-date').inputValue(), '2024-03-01');
   assert.equal(await page.locator('#care-time').inputValue(), '09:10');
-  assert.equal(await feed('母乳').isChecked(), true);
+  assert.equal(await feed('母乳').isChecked(), false);
+  assert.equal(await feed('瓶喂').isChecked(), false);
   assert.equal(await page.locator('#care-ml').isHidden(), true);
+  assert.equal(await page.locator('#care-minutes').isHidden(), true);
+  await save();
+  await page.getByRole('alert').filter({ hasText: '至少选择母乳或瓶喂' }).waitFor();
   assert.equal(await page.locator('#care-milk').count(), 0);
   await feed('瓶喂').check();
   await page.locator('#care-ml').fill('200');
   await feed('母乳').check();
+  assert.equal(await page.locator('#care-ml').isVisible(), true);
+  assert.equal(await page.locator('#care-minutes').isHidden(), true);
+  await feed('瓶喂').uncheck();
+  assert.equal(await page.locator('#care-ml').isHidden(), true);
   await page.locator('#care-minutes').fill('13');
   await save();
   assert.match(await timeline.innerText(), /13 分钟/);
@@ -89,6 +97,21 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   await page.locator('#care-ml').fill('90.5');
   await save();
   assert.match(await timeline.innerText(), /瓶喂\s+90.5 mL/);
+
+  await quick('feed').click();
+  await page.locator('#care-time').fill('09:09');
+  await feed('母乳').check();
+  await feed('瓶喂').check();
+  assert.equal(await page.locator('#care-minutes').isHidden(), true);
+  await save();
+  await page.getByRole('alert').filter({ hasText: '请填写有效的奶量' }).waitFor();
+  assert.equal(await timeline.getByRole('button', { name: /09:09/ }).count(), 0);
+  await page.locator('#care-ml').fill('45');
+  await save();
+  await timeline.getByRole('button', { name: /09:09.*母乳亲喂/ }).waitFor();
+  await timeline.getByRole('button', { name: /09:09.*瓶喂.*45 mL/ }).waitFor();
+  await page.getByRole('button', { name: '撤销刚才记录' }).click();
+  assert.equal(await timeline.getByRole('button', { name: /09:09/ }).count(), 0);
 
   await quick('toilet').click();
   assert.equal(await page.locator('#care-time').inputValue(), '09:10');
@@ -414,7 +437,7 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);
   assert.deepEqual(errors, []);
 
-  await t.test('点击睡觉和醒来，重开后仍能结束跨周期睡眠', async () => {
+  await t.test('可补选入睡和醒来时间，也能按历史日期补记完整睡眠', async () => {
     const sleepContext = await browser.newContext({ timezoneId: 'Asia/Shanghai' });
     try {
       await sleepContext.addInitScript(() => {
@@ -429,29 +452,53 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
       const start = sleepPage.getByRole('button', { name: '睡觉', exact: true });
       const end = sleepPage.getByRole('button', { name: '醒来', exact: true });
       const sleepCard = sleepPage.locator('.care-sleep');
-      await start.waitFor();
-      assert.equal(await end.isDisabled(), true);
+      const saveSleep = () => sleepPage.locator('#care-form').getByRole('button', { name: '保存' }).click();
       await start.click();
+      assert.equal(await sleepPage.locator('#care-time').inputValue(), '07:30');
+      await sleepPage.locator('#care-time').fill('07:25');
+      await saveSleep();
       assert.equal(await start.isDisabled(), true);
-      assert.match(await sleepCard.innerText(), /睡眠中.*07:30 入睡/);
+      assert.match(await sleepCard.innerText(), /睡眠中.*07:25 入睡/);
       assert.match(await sleepCard.innerText(), /暂无时长/);
       await sleepPage.clock.fastForward(60 * 60 * 1000);
       await sleepPage.reload();
       await end.click();
-      assert.equal(await end.isDisabled(), true);
-      assert.match(await sleepCard.innerText(), /30 分钟/);
-      const row = sleepPage.locator('.care-timeline').getByRole('button', { name: /续睡.*睡眠.*08:30/ });
-      await row.click();
+      assert.equal(await sleepPage.locator('#care-time').inputValue(), '07:25');
+      assert.equal(await sleepPage.locator('#care-endTime').inputValue(), '08:30');
+      await sleepPage.locator('#care-endTime').fill('08:31');
+      await saveSleep();
+      await sleepPage.getByRole('alert').filter({ hasText: '醒来时间不能在未来' }).waitFor();
       await sleepPage.locator('#care-endTime').fill('08:25');
-      await sleepPage.locator('#care-form').getByRole('button', { name: '保存' }).click();
-      assert.equal(await sleepPage.locator('#care-day').inputValue(), '2026-01-31');
-      assert.match(await sleepCard.innerText(), /30 分钟/);
-      await sleepPage.getByRole('button', { name: '后一天' }).click();
+      await saveSleep();
+      assert.equal(await start.isDisabled(), false);
       assert.match(await sleepCard.innerText(), /25 分钟/);
+
+      const row = sleepPage.locator('.care-timeline').getByRole('button', { name: /续睡.*睡眠.*08:25/ });
+      await row.click();
+      await sleepPage.locator('#care-endTime').fill('08:20');
+      await saveSleep();
+      assert.equal(await sleepPage.locator('#care-day').inputValue(), '2026-01-31');
+      assert.match(await sleepCard.innerText(), /35 分钟/);
+
+      await sleepPage.getByRole('button', { name: '补记睡眠' }).click();
+      await sleepPage.locator('#care-time').fill('23:00');
+      await sleepPage.locator('#care-endTime').fill('01:00');
+      assert.equal(await sleepPage.locator('#care-endDate').inputValue(), '2026-02-01');
+      await saveSleep();
+      assert.match(await sleepCard.innerText(), /2 小时 35 分钟/);
+
+      await sleepPage.getByRole('button', { name: '后一天' }).click();
+      assert.match(await sleepCard.innerText(), /20 分钟/);
+      await end.click();
+      assert.equal(await sleepPage.locator('#care-time').inputValue(), '');
+      await sleepPage.locator('#care-time').fill('08:26');
+      await saveSleep();
+      assert.match(await sleepCard.innerText(), /24 分钟/);
+
       await sleepPage.getByRole('button', { name: '统计', exact: true }).click();
-      assert.match(await sleepPage.locator('.care-sleep-average').innerText(), /30 分钟/);
+      assert.match(await sleepPage.locator('.care-sleep-average').innerText(), /2 小时 35 分钟/);
       await sleepPage.getByRole('button', { name: '睡眠时长' }).click();
-      assert.match(await sleepPage.locator('#care-chart-readout').innerText(), /1月31日 · 30 分钟/);
+      assert.match(await sleepPage.locator('#care-chart-readout').innerText(), /1月31日 · 2 小时 35 分钟/);
     } finally {
       await sleepContext.close();
     }
@@ -493,6 +540,7 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
       await night.locator('[data-care-kind="feed"]').click();
       assert.equal(await night.locator('#care-date').inputValue(), '2026-02-01');
       assert.equal(await night.locator('#care-time').inputValue(), '06:11');
+      await night.getByRole('checkbox', { name: '母乳', exact: true }).check();
       await night.getByRole('button', { name: '保存', exact: true }).click();
       assert.equal(await nightDay.inputValue(), '2026-01-31');
       await nightLog.getByRole('button', { name: /次日.*06:11.*母乳亲喂/ }).waitFor();
@@ -515,6 +563,7 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
 
       await night.locator('[data-care-kind="feed"]').click();
       assert.equal(await night.locator('#care-time').inputValue(), '08:00');
+      await night.getByRole('checkbox', { name: '母乳', exact: true }).check();
       await night.getByRole('button', { name: '保存', exact: true }).click();
       assert.equal(await nightDay.inputValue(), '2026-02-01');
       await nightLog.getByRole('button', { name: /08:00.*母乳亲喂/ }).waitFor();
@@ -523,6 +572,7 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
       await night.locator('#care-time').fill('03:00');
       assert.equal(await night.locator('#care-date').inputValue(), '2026-02-01');
       assert.equal(await night.locator('#care-cycle-preview').innerText(), '计入 1月31日周期 · 次日 03:00');
+      await night.getByRole('checkbox', { name: '母乳', exact: true }).check();
       await night.getByRole('button', { name: '保存', exact: true }).click();
       assert.equal(await nightDay.inputValue(), '2026-01-31');
       await nightLog.getByRole('button', { name: /次日.*03:00.*母乳亲喂/ }).waitFor();
@@ -532,6 +582,7 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
       await night.locator('#care-time').fill('03:15');
       assert.equal(await night.locator('#care-date').inputValue(), '2026-02-01');
       assert.equal(await night.locator('#care-cycle-preview').innerText(), '计入 1月31日周期 · 次日 03:15');
+      await night.getByRole('checkbox', { name: '母乳', exact: true }).check();
       await night.getByRole('button', { name: '保存', exact: true }).click();
       await nightLog.getByRole('button', { name: /次日.*03:15.*母乳亲喂/ }).waitFor();
 
