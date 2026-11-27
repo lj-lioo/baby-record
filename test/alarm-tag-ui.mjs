@@ -28,6 +28,8 @@ const store = {
 };
 const context = createContext({
   Date: TestDate,
+  TextEncoder,
+  TextDecoder,
   localStorage: {
     getItem: (key) => pieces.get(key) ?? null,
     setItem: (key, value) => pieces.set(key, value),
@@ -35,12 +37,13 @@ const context = createContext({
   },
   location: { set href(value) { launched.push(value); } },
   CustomEvent: class {},
+  document: { querySelector: () => sheet },
   window: { dispatchEvent() {} },
 });
 const esc = (x) => String(x ?? '').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 const mock = new Map([
   ['js/store.js', { store, uid: () => String(++idCounter) }],
-  ['js/roles.js', { requireAlarm: () => true, requireEditEvents: () => true }],
+  ['js/roles.js', { canSetAlarm: () => true, requireAlarm: () => true, requireEditEvents: () => true }],
   ['js/ics.js', { openICS() {} }],
   ['js/windows.js', { windowOf: () => null, planOutside: () => '' }],
   ['js/views/paidcat.js', { maybeCascade: () => false }],
@@ -155,7 +158,15 @@ click('#al-go');
 assert.equal(actions.alarmState(pentavalent), 'pending');
 assert.equal(new URL(launched.at(-1)).searchParams.get('name'), '宝宝闹钟仅创建');
 assert.equal(store.getEvent(other.id).alarmAdded, undefined);
-console.log('Alarm regressions passed: creation, retry, exact locator, edit, reschedule, cleanup.');
+assert.equal(actions.applyAlarmCallback({ id: pentavalent.id, sig: shortcuts.alarmSig(pentavalent), nonce: 'wrong' }), false);
+const callbackSig = shortcuts.alarmSig(pentavalent);
+pieces.set('babyrecord.alarmPending.' + pentavalent.id, JSON.stringify({ sig: callbackSig, receipt: 'valid' }));
+assert.equal(actions.applyAlarmCallback({ id: pentavalent.id, sig: 'old plan', nonce: 'valid' }), false);
+assert.equal(actions.alarmState(pentavalent), 'pending');
+assert.equal(actions.applyAlarmCallback({ id: pentavalent.id, sig: callbackSig, nonce: 'valid' }), true);
+assert.equal(actions.alarmState(pentavalent), 'added');
+assert.equal(actions.applyAlarmCallback({ id: pentavalent.id, sig: callbackSig, nonce: 'valid' }), false);
+console.log('Alarm regressions passed: creation, retry, success callback, exact locator, edit, reschedule, cleanup.');
 
 // Batch handoff with seven preset reminders for one event.
 const batch = await main('js/alarm-batch.js');

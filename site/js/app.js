@@ -14,6 +14,10 @@ import { initSync, syncAvailable, takePendingPairKey } from './sync.js';
 import { openPairSheet } from './views/settings.js';
 import { applyInviteFromParams, hasRole, openRolePicker, roleLabel } from './roles.js';
 
+import { createShortcutName } from './shortcuts.js';
+import { listenForAlarmCallbacks } from './alarm-callback.js';
+import { applyAlarmCallback } from './views/actions.js';
+
 const view = document.getElementById('view');
 const routes = { home: renderHome, care: renderCare, album: renderAlbum, growth: renderGrowth, settings: renderSettings };
 
@@ -121,6 +125,17 @@ if ('serviceWorker' in navigator) {
 }
 
 initSync(); // 仅当 config.js 配置了 syncApi 时启用
+listenForAlarmCallbacks((attempt, safeOutput) => {
+  if (attempt.name !== createShortcutName()) return;
+  if (attempt.test) {
+    toast(safeOutput ? '测试回传成功，已启用自动确认' : '已收到测试回传，请按帮助设置快捷指令输出', 4500);
+    if (parseHash().path === 'settings') render();
+  } else if (!safeOutput) {
+    toast('请核对这次提醒，并按帮助调整快捷指令输出', 4500);
+  } else if (applyAlarmCallback(attempt)) {
+    toast('闹钟已设置');
+  }
+});
 
 // 先消化邀请，再首屏渲染，避免与「选身份」引导抢弹层
 const bootedWithJoin = !!pendingJoinParams;

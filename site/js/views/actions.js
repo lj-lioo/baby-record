@@ -1,11 +1,13 @@
 // iPhone 闹钟由苹果「提醒事项」管理。网页只生成创建指令和供家人核对的时间。
 import { esc, openSheet, closeSheet, toast } from '../ui.js';
-import { requireAlarm } from '../roles.js';
+import { canSetAlarm, requireAlarm } from '../roles.js';
 import { toLocalInput, weekday } from '../dates.js';
 import { futureAlarms, alarmTitle, alarmUrl, alarmSig, alarmTag, createShortcutName } from '../shortcuts.js';
 import { store } from '../store.js';
 import { openHelpSheet } from './help.js';
 import { alarmBatchShortcutName, alarmBatchUrl, buildAlarmBatch } from '../alarm-batch.js';
+
+import { alarmCallbackReady, startAlarmCallback } from '../alarm-callback.js';
 
 const PENDING = 'babyrecord.alarmPending.';
 const FIND_REMINDER = '在「提醒事项」的「宝宝」列表中，按名称、旧的响铃时间和备注里的事项编号核对。';
@@ -106,6 +108,18 @@ export function openAlarmBatchSheet(eventIds) {
   return true;
 }
 
+export function applyAlarmCallback({ id, sig, nonce }) {
+  if (!nonce || !canSetAlarm()) return false;
+  const ev = store.getEvent(id);
+  const pending = pendingAlarm(id);
+  if (!ev || ev.done || alarmSig(ev) !== sig || pending?.sig !== sig || pending?.receipt !== nonce) return false;
+  store.setAlarmAdded(id, true, sig, true);
+  localStorage.removeItem(PENDING + id);
+  if (document.querySelector('#sheet')?.dataset.alarmId === id) closeSheet();
+  window.dispatchEvent(new CustomEvent('rerender'));
+  return true;
+}
+
 export function openAlarmSheet(ev) {
   if (!ev || !requireAlarm()) return;
   const list = futureAlarms(ev);
@@ -137,6 +151,7 @@ export function openAlarmSheet(ev) {
     ${snapshot ? `<button type="button" class="btn ghost block" id="al-cleared" style="margin-top:8px">${isPending ? '确认未创建，返回重试' : '我已确认没有旧提醒'}</button>` : ''}
     <button class="btn ghost block" id="al-close">关闭</button>`, (s) => {
     s.dataset.kind = 'alarm';
+    s.dataset.alarmId = ev.id;
     const currentEvent = () => {
       const current = store.getEvent(ev.id);
       if (!current) { closeSheet(); return null; }
@@ -156,8 +171,12 @@ export function openAlarmSheet(ev) {
       const current = currentEvent();
       if (!current || alarmSnapshot(current)) return;
       if (!futureAlarms(current).length) { openAlarmSheet(current); return; }
-      const target = alarmUrl(current);
-      try { localStorage.setItem(PENDING + ev.id, JSON.stringify({ sig: signature, tagged: true })); }
+      const name = createShortcutName();
+      const callback = alarmCallbackReady(name) ? startAlarmCallback({ name, id: ev.id, sig: signature }) : null;
+      const target = alarmUrl(current, callback?.url);
+      try {
+        localStorage.setItem(PENDING + ev.id, JSON.stringify({ sig: signature, tagged: true, receipt: callback?.nonce }));
+      }
       catch { toast('无法保存本次闹钟状态，请在提醒事项里手动设置'); return; }
       openAlarmSheet(current);
       window.dispatchEvent(new CustomEvent('rerender'));

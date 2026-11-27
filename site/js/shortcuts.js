@@ -59,12 +59,15 @@ export function alarmSig(ev) { return futureAlarms(ev, 0).map((x) => x.fireAt).j
 
 export function shortcutName() { return store.state.settings.shortcutName || '宝宝闹钟'; }
 export function createShortcutName() { return shortcutName() + '仅创建'; }
-export function runShortcutUrl(text) {
-  return `shortcuts://run-shortcut?name=${encodeURIComponent(createShortcutName())}&input=text&text=${encodeURIComponent(text)}`;
+export function runShortcutUrl(text, successUrl) {
+  const path = successUrl ? 'x-callback-url/run-shortcut' : 'run-shortcut';
+  const result = successUrl ? '&x-success=' + encodeURIComponent(successUrl) : '';
+  return `shortcuts://${path}?name=${encodeURIComponent(createShortcutName())}&input=text&text=${encodeURIComponent(text)}${result}`;
 }
-export function alarmUrl(ev) { return runShortcutUrl(alarmLines(ev).join('\n')); }
-export function testAlarmUrl() {
+export function alarmUrl(ev, successUrl) { return runShortcutUrl(alarmLines(ev).join('\n'), successUrl); }
+export function testAlarmUrl(successUrl) {
   const t = Date.now() + 2 * 60000;
   // The fixed marker makes individual test reminders easy to find.
-  return runShortcutUrl(`${stamp(t)}|【宝宝】测试闹钟（2分钟后响）|宝宝记录 · 测试紧急提醒是否会像闹钟一样响 · <宝宝#test>`);
+  const title = successUrl ? '回传测试' : '测试闹钟';
+  return runShortcutUrl(`${stamp(t)}|【宝宝】${title}（2分钟后响）|宝宝记录 · 测试用 · <宝宝#test>`, successUrl);
 }

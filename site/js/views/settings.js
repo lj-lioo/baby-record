@@ -7,6 +7,7 @@ import { openHelpSheet } from './help.js';
 import { unlockAudio } from '../sound.js';
 import { todayStr, cnDate } from '../dates.js';
 import { createShortcutName, testAlarmUrl } from '../shortcuts.js';
+import { alarmCallbackStatus, startAlarmCallback } from '../alarm-callback.js';
 import { openVaxPlan, openCheckupPlan, planCounts } from './vaxplan.js';
 import { openPaidCatalog, catalogCounts } from './paidcat.js';
 import { syncAvailable, syncStatus, enableSync, disableSync, syncNow } from '../sync.js';
@@ -17,7 +18,7 @@ import {
   ROLES, ADMIN_ROLES, ELDER_ROLES, roleCapabilityText, openRolePicker, copyInviteFor,
 } from '../roles.js';
 // 本组 JS 文件的版本（每次发布与 config.js 的 appVersion、sw.js 的 VERSION 一起改）；两者不一致说明 JS 还是旧缓存
-export const APP_BUILD = '1.16.23';
+export const APP_BUILD = '1.16.24';
 
 const HELP_ENTRY = `<button class="card settings-help-entry" type="button" id="openSettingsHelp" aria-haspopup="dialog">
   <span class="settings-help-icon" aria-hidden="true">📖</span>
@@ -115,6 +116,8 @@ export function renderSettings(root) {
       <button class="btn block" id="btnTestAlarm">测试闹钟（2分钟后响）</button>
       <p class="small muted">会在「宝宝」列表新建一条「【宝宝】测试闹钟」紧急提醒，2 分钟后响铃。测试后可在「提醒事项」里删除它。</p>
       <p class="small muted">实际调用「<b>${esc(createShortcutName())}</b>」。首次请按<a href="#/help?section=h-shortcut" data-settings-help="h-shortcut">帮助</a>配置仅创建的副本。改时间时，App 会显示旧时间和新时间供你在「提醒事项」里核对。</p>
+      <button class="btn secondary block" id="btnTestAlarmCallback">测试闹钟回传</button>
+      <p class="small muted" role="status" id="alarmCallbackStatus">${esc(alarmCallbackStatus(createShortcutName()))}</p>
       <button class="btn secondary block" id="btnPreview">预览App内全屏提醒页（含铃声）</button>
     </section>
 
@@ -229,6 +232,12 @@ export function renderSettings(root) {
   q('#btnChk').onclick = () => openCheckupPlan();
   q('#btnPaid').onclick = () => openPaidCatalog();
   q('#btnTestAlarm').onclick = () => { location.href = testAlarmUrl(); };
+  q('#btnTestAlarmCallback').onclick = () => {
+    const callback = startAlarmCallback({ name: createShortcutName() });
+    if (!callback) { toast('无法开始测试，请重开 App 后再试'); return; }
+    q('#alarmCallbackStatus').textContent = '等待测试回执';
+    location.href = testAlarmUrl(callback.url);
+  };
   q('#btnPreview').onclick = () => {
     unlockAudio();
     const now = new Date(); now.setHours(now.getHours() + 2, 0, 0, 0);
