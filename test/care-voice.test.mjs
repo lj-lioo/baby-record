@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { interpretCareSpeech } from '../site/js/care-voice.js';
+import { careDay } from '../site/js/care.js';
 
 const now = new Date(2026, 10, 23, 16, 10).getTime();
 const say = (text, options = {}) => interpretCareSpeech(text, { now, ...options });
@@ -27,6 +28,19 @@ test('自然语言识别时间、奶量、亲喂时长和用药用量', () => {
     ['stool', '2026-11-22', '08:00'],
     ['urine', '2026-11-22', '09:00'],
   ]);
+});
+
+test('语音补记凌晨时按所选周期换算实际日期', () => {
+  const when = (result) => result.records.map((record) => [record.date, record.time, careDay(record)]);
+  const day = '2026-11-22';
+  assert.deepEqual(when(say('凌晨三点瓶喂了五十毫升', { day })), [['2026-11-23', '03:00', day]]);
+  assert.deepEqual(when(say('早上八点瓶喂了五十毫升', { day })), [[day, '08:00', day]]);
+  assert.deepEqual(when(say('昨天凌晨三点瓶喂了五十毫升', { day })), [[day, '03:00', '2026-11-21']]);
+  const { pending } = say('瓶喂了五十毫升', { day });
+  assert.deepEqual(when(say('凌晨三点', { day, pending })), [['2026-11-23', '03:00', day]]);
+  const overnight = new Date(2026, 10, 23, 3, 15).getTime();
+  assert.deepEqual(when(say('晚上十点亲喂了', { now: overnight })), [[day, '22:00', day]]);
+  assert.deepEqual(when(say('凌晨三点拉了软便', { now: overnight })), [['2026-11-23', '03:00', day]]);
 });
 
 test('对话补充瓶喂奶量、喂养方式和补记时间', () => {
