@@ -84,7 +84,6 @@ function sleepCard(minutes, active, editable, onCurrentCycle) {
       <button type="button" class="btn" id="care-sleep-start" ${active ? 'disabled' : ''}>睡觉</button>
       <button type="button" class="btn" id="care-sleep-end" ${active ? '' : 'disabled'}>醒来</button>
     </div>` : ''}
-    ${editable ? '<button type="button" class="care-link care-import-link" id="care-sleep-add">补记睡眠</button>' : ''}
   </section>`;
 }
 
@@ -221,30 +220,13 @@ export function renderCare(root) {
     undoRecords = [];
     setDate(sleepOnDay(saved[0], date) ? date : careDay(saved[0]));
   };
-  const recordSleepStart = () => openEditor('sleep', date, null, showSleep, 'start');
-  const recordWake = () => {
+  const sleepStart = root.querySelector('#care-sleep-start');
+  if (sleepStart) sleepStart.onclick = () => openEditor('sleep', date, null, showSleep, 'start');
+  const sleepEnd = root.querySelector('#care-sleep-end');
+  if (sleepEnd) sleepEnd.onclick = () => {
     const active = activeSleep(store.care());
     if (active) openEditor('sleep', date, active, showSleep, 'wake');
     else toast('请先记录入睡');
-  };
-  const sleepStart = root.querySelector('#care-sleep-start');
-  if (sleepStart) sleepStart.onclick = recordSleepStart;
-  const sleepEnd = root.querySelector('#care-sleep-end');
-  if (sleepEnd) sleepEnd.onclick = recordWake;
-  const sleepAdd = root.querySelector('#care-sleep-add');
-  if (sleepAdd) sleepAdd.onclick = () => {
-    if (!requireEditEvents()) return;
-    const active = activeSleep(store.care());
-    openSheet(`<h3>补记睡眠</h3>
-      <div class="care-sleep-actions">
-        <button type="button" class="btn" id="care-sleep-add-start" ${active ? 'disabled' : ''}>补记睡觉</button>
-        <button type="button" class="btn" id="care-sleep-add-end" ${active ? '' : 'disabled'}>补记醒来</button>
-      </div>
-      <div class="btn-row"><button type="button" class="btn ghost" id="care-sleep-add-cancel">取消</button></div>`, (sheet) => {
-      sheet.querySelector('#care-sleep-add-start').onclick = recordSleepStart;
-      sheet.querySelector('#care-sleep-add-end').onclick = recordWake;
-      sheet.querySelector('#care-sleep-add-cancel').onclick = closeSheet;
-    });
   };
   const voice = root.querySelector('#care-voice');
   if (voice) voice.onclick = () => openCareVoice({ day: selectedDate, onSaved: (records) => {
