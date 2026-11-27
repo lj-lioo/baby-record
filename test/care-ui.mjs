@@ -437,7 +437,7 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);
   assert.deepEqual(errors, []);
 
-  await t.test('可补选入睡和醒来时间，也能按历史日期补记完整睡眠', async () => {
+  await t.test('睡觉和醒来各填一个日期时间，补记按步骤完成', async () => {
     const sleepContext = await browser.newContext({ timezoneId: 'Asia/Shanghai' });
     try {
       await sleepContext.addInitScript(() => {
@@ -453,7 +453,11 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
       const end = sleepPage.getByRole('button', { name: '醒来', exact: true });
       const sleepCard = sleepPage.locator('.care-sleep');
       const saveSleep = () => sleepPage.locator('#care-form').getByRole('button', { name: '保存' }).click();
+      assert.equal(await start.isEnabled(), true);
+      assert.equal(await end.isDisabled(), true);
       await start.click();
+      assert.equal(await sleepPage.locator('#care-form input').count(), 2);
+      assert.equal(await sleepPage.locator('#care-date').inputValue(), '2026-02-01');
       assert.equal(await sleepPage.locator('#care-time').inputValue(), '07:30');
       await sleepPage.locator('#care-time').fill('07:25');
       await saveSleep();
@@ -463,14 +467,18 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
       await sleepPage.clock.fastForward(60 * 60 * 1000);
       await sleepPage.reload();
       await end.click();
-      assert.equal(await sleepPage.locator('#care-time').inputValue(), '07:25');
+      assert.equal(await sleepPage.locator('#care-form input').count(), 2);
+      assert.equal(await sleepPage.locator('#care-time').count(), 0);
+      assert.equal(await sleepPage.locator('#care-endDate').inputValue(), '2026-02-01');
       assert.equal(await sleepPage.locator('#care-endTime').inputValue(), '08:30');
       await sleepPage.locator('#care-endTime').fill('08:31');
       await saveSleep();
       await sleepPage.getByRole('alert').filter({ hasText: '醒来时间不能在未来' }).waitFor();
       await sleepPage.locator('#care-endTime').fill('08:25');
       await saveSleep();
-      assert.equal(await start.isDisabled(), false);
+      assert.equal(await start.isEnabled(), true);
+      assert.equal(await end.isDisabled(), true);
+      assert.match(await sleepCard.innerText(), /清醒/);
       assert.match(await sleepCard.innerText(), /25 分钟/);
 
       const row = sleepPage.locator('.care-timeline').getByRole('button', { name: /续睡.*睡眠.*08:25/ });
@@ -480,8 +488,24 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
       assert.equal(await sleepPage.locator('#care-day').inputValue(), '2026-01-31');
       assert.match(await sleepCard.innerText(), /35 分钟/);
 
-      await sleepPage.getByRole('button', { name: '补记睡眠' }).click();
+      const backfill = sleepPage.getByRole('button', { name: '补记睡眠', exact: true });
+      const backfillStart = sleepPage.getByRole('button', { name: '补记睡觉', exact: true });
+      const backfillWake = sleepPage.getByRole('button', { name: '补记醒来', exact: true });
+      await backfill.click();
+      assert.equal(await backfillWake.isDisabled(), true);
+      await backfillStart.click();
+      assert.equal(await sleepPage.locator('#care-form input').count(), 2);
+      assert.equal(await sleepPage.locator('#care-date').inputValue(), '2026-01-31');
       await sleepPage.locator('#care-time').fill('23:00');
+      await saveSleep();
+      assert.match(await sleepCard.innerText(), /睡眠中.*23:00/);
+      await backfill.click();
+      assert.equal(await backfillStart.isDisabled(), true);
+      await backfillWake.click();
+      assert.equal(await sleepPage.locator('#care-form input').count(), 2);
+      await sleepPage.locator('#care-endTime').fill('22:50');
+      await saveSleep();
+      await sleepPage.getByRole('alert').filter({ hasText: '醒来时间不能早于入睡时间' }).waitFor();
       await sleepPage.locator('#care-endTime').fill('01:00');
       assert.equal(await sleepPage.locator('#care-endDate').inputValue(), '2026-02-01');
       await saveSleep();
@@ -489,9 +513,13 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
 
       await sleepPage.getByRole('button', { name: '后一天' }).click();
       assert.match(await sleepCard.innerText(), /20 分钟/);
-      await end.click();
-      assert.equal(await sleepPage.locator('#care-time').inputValue(), '');
+      await start.click();
+      assert.equal(await sleepPage.locator('#care-time').inputValue(), '08:30');
       await sleepPage.locator('#care-time').fill('08:26');
+      await saveSleep();
+      await end.click();
+      assert.equal(await sleepPage.locator('#care-time').count(), 0);
+      assert.equal(await sleepPage.locator('#care-endTime').inputValue(), '08:30');
       await saveSleep();
       assert.match(await sleepCard.innerText(), /24 分钟/);
 

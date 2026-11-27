@@ -78,10 +78,11 @@ function quickActions(today, canUndo) {
 function sleepCard(minutes, active, editable, onCurrentCycle) {
   return `<section class="card care-sleep">
     <div class="care-heading"><h2>睡眠</h2><strong>${minutes ? formatSleepMinutes(minutes) : '暂无时长'}</strong></div>
-    ${active ? `<p class="small muted">睡眠中 · ${cnDate(active.date)} ${active.time} 入睡</p>` : ''}
+    ${active ? `<p class="small muted">睡眠中 · ${cnDate(active.date)} ${active.time} 入睡</p>`
+      : onCurrentCycle ? '<p class="small muted">清醒</p>' : ''}
     ${editable && onCurrentCycle ? `<div class="care-sleep-actions">
       <button type="button" class="btn" id="care-sleep-start" ${active ? 'disabled' : ''}>睡觉</button>
-      <button type="button" class="btn" id="care-sleep-end">醒来</button>
+      <button type="button" class="btn" id="care-sleep-end" ${active ? '' : 'disabled'}>醒来</button>
     </div>` : ''}
     ${editable ? '<button type="button" class="care-link care-import-link" id="care-sleep-add">补记睡眠</button>' : ''}
   </section>`;
@@ -159,6 +160,7 @@ export function renderCare(root) {
   const records = store.care();
   const historical = oldDoseEntries();
   const onCurrentCycle = date === currentCycle;
+  const sleepingNow = isStats ? null : activeSleep(records);
   const canUndo = () => undoRecords.length > 0 &&
     undoRecords.every((record) => careDay(record) === date && store.getCare(record.id)?.updatedAt === record.updatedAt);
   const report = summarizeCare(records, historical, date, isStats ? period : 1);
@@ -181,7 +183,7 @@ export function renderCare(root) {
     </div>
     <p class="small muted">${isStats ? `每天 ${FEEDING_DAY_START} 纳入刚结束的喂养周期` : `${cnDate(date)} ${FEEDING_DAY_START} 至次日 ${FEEDING_DAY_START}（次日凌晨归入本周期）`}</p>
     ${section === 'log' ? `${editable ? quickActions(onCurrentCycle, canUndo()) : ''}
-      ${sleepCard(report.totals.sleepMinutes, onCurrentCycle ? activeSleep(records) : null, editable, onCurrentCycle)}
+      ${sleepCard(report.totals.sleepMinutes, sleepingNow && (onCurrentCycle || careDay(sleepingNow) === date) ? sleepingNow : null, editable, onCurrentCycle)}
       <section class="card"><h2>${date === today ? '今天' : cnDate(date)}汇总</h2>${summaryTiles(report.totals)}</section>
       ${dailyLog(date, records, historical, editable)}` : renderStats(report, trend.html)}
   </div>`;
@@ -219,12 +221,31 @@ export function renderCare(root) {
     undoRecords = [];
     setDate(sleepOnDay(saved[0], date) ? date : careDay(saved[0]));
   };
+  const recordSleepStart = () => openEditor('sleep', date, null, showSleep, 'start');
+  const recordWake = () => {
+    const active = activeSleep(store.care());
+    if (active) openEditor('sleep', date, active, showSleep, 'wake');
+    else toast('请先记录入睡');
+  };
   const sleepStart = root.querySelector('#care-sleep-start');
-  if (sleepStart) sleepStart.onclick = () => openEditor('sleep', date, null, showSleep, 'start');
+  if (sleepStart) sleepStart.onclick = recordSleepStart;
   const sleepEnd = root.querySelector('#care-sleep-end');
-  if (sleepEnd) sleepEnd.onclick = () => openEditor('sleep', date, activeSleep(store.care()), showSleep, 'wake');
+  if (sleepEnd) sleepEnd.onclick = recordWake;
   const sleepAdd = root.querySelector('#care-sleep-add');
-  if (sleepAdd) sleepAdd.onclick = () => openEditor('sleep', date, null, showSleep);
+  if (sleepAdd) sleepAdd.onclick = () => {
+    if (!requireEditEvents()) return;
+    const active = activeSleep(store.care());
+    openSheet(`<h3>补记睡眠</h3>
+      <div class="care-sleep-actions">
+        <button type="button" class="btn" id="care-sleep-add-start" ${active ? 'disabled' : ''}>补记睡觉</button>
+        <button type="button" class="btn" id="care-sleep-add-end" ${active ? '' : 'disabled'}>补记醒来</button>
+      </div>
+      <div class="btn-row"><button type="button" class="btn ghost" id="care-sleep-add-cancel">取消</button></div>`, (sheet) => {
+      sheet.querySelector('#care-sleep-add-start').onclick = recordSleepStart;
+      sheet.querySelector('#care-sleep-add-end').onclick = recordWake;
+      sheet.querySelector('#care-sleep-add-cancel').onclick = closeSheet;
+    });
+  };
   const voice = root.querySelector('#care-voice');
   if (voice) voice.onclick = () => openCareVoice({ day: selectedDate, onSaved: (records) => {
     undoRecords = [];
@@ -264,13 +285,15 @@ function openEditor(kind, cycle, existing, onSaved, sleepAction = '') {
   const starting = sleepAction === 'start';
   const waking = sleepAction === 'wake';
   const showWake = sleeping && !starting;
-  const requireWake = showWake && (waking || !existing || !!existing.endDate);
+  const requireWake = waking || showWake && !!existing?.endDate;
   const initialFeed = feeding ? existing?.kind || '' : '';
   const [today, now] = toLocalInput(Date.now()).split('T');
   const currentCycle = feedingCycleDate(today, now);
   const date = existing?.date ?? (cycle === currentCycle ? today : cycle);
   const time = existing?.time ?? (cycle === currentCycle && (!sleeping || starting) ? now : '');
-  const title = starting ? '记录入睡' : waking ? '记录醒来' : sleeping && !existing ? '补记睡眠'
+  const endDate = existing?.endDate ?? (waking ? cycle === currentCycle ? today : cycle : '');
+  const endTime = existing?.endTime ?? (waking && cycle === currentCycle ? now : '');
+  const title = starting ? '记录入睡' : waking ? '记录醒来'
     : (existing ? '编辑' : '记录') + (feeding ? '喂奶' : pickingToilet ? '大小便' : LABEL[kind]);
   const field = (name, label, attrs) => `<div class="field"><label for="care-${name}">${label}</label>
     <input class="input" id="care-${name}" name="${name}" ${attrs}></div>`;
@@ -284,13 +307,13 @@ function openEditor(kind, cycle, existing, onSaved, sleepAction = '') {
     </fieldset>`;
   openSheet(`<h3>${title}</h3>
     <form id="care-form" novalidate>
-      <div class="care-form-date">${field('date', sleeping ? '入睡日期' : '实际日期', `type="date" value="${esc(date)}" max="${today}"`)}
-        ${field('time', sleeping ? '入睡时间' : kind === 'dose' ? '时间（可选）' : '时间', `type="time" value="${esc(time)}"`)}</div>
+      ${!waking ? `<div class="care-form-date">${field('date', sleeping ? '入睡日期' : '实际日期', `type="date" value="${esc(date)}" max="${today}"`)}
+        ${field('time', sleeping ? '入睡时间' : kind === 'dose' ? '时间（可选）' : '时间', `type="time" value="${esc(time)}"`)}</div>` : ''}
       ${showWake ? `<div class="care-form-date">
-        ${field('endDate', '醒来日期', `type="date" value="${esc(existing?.endDate ?? (waking ? today : ''))}" max="${today}"`)}
-        ${field('endTime', '醒来时间', `type="time" value="${esc(existing?.endTime ?? (waking ? now : ''))}"`)}
+        ${field('endDate', '醒来日期', `type="date" value="${esc(endDate)}" max="${today}"`)}
+        ${field('endTime', '醒来时间', `type="time" value="${esc(endTime)}"`)}
       </div>` : ''}
-      <p class="small muted" id="care-cycle-preview" aria-live="polite"></p>
+      ${!waking ? '<p class="small muted" id="care-cycle-preview" aria-live="polite"></p>' : ''}
       ${feeding ? `${options('feed', '喂奶方式', FEED_CHOICES, initialFeed)}
         <div id="care-bottle-fields" ${initialFeed !== 'bottle' ? 'hidden' : ''}>${field('ml', '实际喝下的奶量（mL）',
           `type="number" inputmode="decimal" min="0.1" step="0.1" value="${esc(existing?.kind === 'bottle' ? existing.ml : '')}"`)}</div>
@@ -303,19 +326,20 @@ function openEditor(kind, cycle, existing, onSaved, sleepAction = '') {
         <div class="care-pills care-dose-options">${[...new Set([...DOSE_SUGGESTIONS, ...store.meds().map((m) => m.name).filter(Boolean)])].slice(0, 8)
           .map((name) => `<button type="button" data-dose-name="${esc(name)}">${esc(name)}</button>`).join('')}</div>
         ${field('dose', '本次实际用量（可选）', `maxlength="80" value="${esc(existing?.dose)}"`)}` : ''}
-      ${field('note', '备注（可选）', `maxlength="160" value="${esc(existing?.note)}"`)}
+      ${!sleepAction ? field('note', '备注（可选）', `maxlength="160" value="${esc(existing?.note)}"`) : ''}
       <p class="care-error small" role="alert" id="care-error" hidden></p>
       <div class="btn-row"><button type="button" class="btn ghost" id="care-cancel">取消</button>
         <button type="submit" class="btn">${pickingToilet ? '确认记录' : '保存'}</button></div>
       ${existing && !waking ? '<button type="button" class="btn danger block care-delete" id="care-delete">删除这条记录</button>' : ''}
     </form>`, (sheet) => {
     const form = sheet.querySelector('#care-form');
-    const dateInput = form.elements.namedItem('date');
-    const timeInput = form.elements.namedItem('time');
+    const dateInput = form.elements.namedItem(waking ? 'endDate' : 'date');
+    const timeInput = form.elements.namedItem(waking ? 'endTime' : 'time');
     const cyclePreview = sheet.querySelector('#care-cycle-preview');
-    const followCycle = !existing && (cycle !== currentCycle || today !== currentCycle);
+    const followCycle = (!existing || waking) && (cycle !== currentCycle || today !== currentCycle);
     let dateEdited = false;
     const updateCycle = () => {
+      if (!cyclePreview) return;
       if (!dateInput.value || !timeInput.value && kind !== 'dose') {
         cyclePreview.textContent = '早上 ' + FEEDING_DAY_START + ' 前的记录归入前一天的周期。';
         return;
@@ -330,20 +354,6 @@ function openEditor(kind, cycle, existing, onSaved, sleepAction = '') {
       updateCycle();
     };
     updateCycle();
-    if (showWake && !existing && !waking) {
-      const endDate = form.elements.namedItem('endDate');
-      const endTime = form.elements.namedItem('endTime');
-      let endDateEdited = false;
-      const suggestEndDate = () => {
-        if (endDateEdited || !dateInput.value || !timeInput.value || !endTime.value) return;
-        endDate.value = endTime.value < timeInput.value ? addDays(dateInput.value, 1) : dateInput.value;
-      };
-      endDate.oninput = () => { endDateEdited = !!endDate.value; };
-      endTime.oninput = suggestEndDate;
-      form.addEventListener('input', (event) => {
-        if (event.target === dateInput || event.target === timeInput) suggestEndDate();
-      });
-    }
     const showError = (message) => {
       const error = sheet.querySelector('#care-error');
       error.textContent = message;
@@ -384,7 +394,8 @@ function openEditor(kind, cycle, existing, onSaved, sleepAction = '') {
         return;
       }
       const inputs = kinds.map((selected) => ({
-        id: existing?.id, kind: selected, date: data.get('date'), time: data.get('time'), note: data.get('note'),
+        id: existing?.id, kind: selected, date: data.get('date') ?? existing?.date,
+        time: data.get('time') ?? existing?.time, note: data.get('note') ?? existing?.note,
         ml: selected === 'bottle' ? data.get('ml') : existing?.kind === 'nursing' ? existing.ml : null,
         milk: existing?.milk, minutes: kinds.includes('bottle') ? null : data.get('minutes'),
         stool: data.get('stool'), name: data.get('name'), dose: data.get('dose'),
@@ -396,19 +407,19 @@ function openEditor(kind, cycle, existing, onSaved, sleepAction = '') {
       let saved;
       try {
         if (starting) {
-          const { date, time, note } = inputs[0];
-          const started = store.startSleep(date, time, note);
+          const { date, time } = inputs[0];
+          const started = store.startSleep(date, time);
           if (!started) { showError('已有一段睡眠正在记录，请先记录醒来'); return; }
           saved = [started];
-        } else if (waking && existing) {
+        } else if (waking) {
           const input = inputs[0];
-          saved = store.finishSleep(input.endDate, input.endTime, input);
+          saved = store.finishSleep(input.endDate, input.endTime);
           if (!saved.length) { showError('这段睡眠已结束'); return; }
         } else {
           saved = existing ? [store.upsertCare(inputs[0])] : store.addCare(inputs);
         }
       } catch (error) {
-        showError(waking && existing && error.message === '醒来时间不能早于入睡时间'
+        showError(waking && error.message === '醒来时间不能早于入睡时间'
           ? error.message : '本机保存失败，请重试');
         return;
       }

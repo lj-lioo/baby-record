@@ -280,17 +280,14 @@ export const store = {
     if (added.length) commitCare(next);
     return added;
   },
-  startSleep(date, time, note) {
+  startSleep(date, time) {
     if (activeSleep(state.care)) return null;
-    return this.addCare([{ kind: 'sleep', date, time, note }])[0];
+    return this.addCare([{ kind: 'sleep', date, time }])[0];
   },
-  finishSleep(endDate, endTime, editedSleep) {
+  finishSleep(endDate, endTime) {
     const now = Date.now();
     const records = this.care().filter((record) => record.kind === 'sleep' && !record.endDate)
-      .map((record) => {
-        const input = record.id === editedSleep?.id ? editedSleep : record;
-        return normalizeCare({ ...input, endDate, endTime, updatedAt: Math.max(now, record.updatedAt + 1) });
-      });
+      .map((record) => normalizeCare({ ...record, endDate, endTime, updatedAt: Math.max(now, record.updatedAt + 1) }));
     if (records.some((record) => !record)) throw new Error('醒来时间不能早于入睡时间');
     if (records.length) commitCare(mergeCare(state.care, records));
     return records;
