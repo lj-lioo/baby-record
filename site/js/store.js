@@ -1,7 +1,7 @@
 // 数据层：元数据保存在本机 localStorage，缩略图在 IndexedDB，无需登录。
 import { fillWindow } from './windows.js';
 import { readThumb, writeThumb, hasStoredThumb, deleteThumb } from './thumbs.js';
-import { normalizeCare } from './care.js';
+import { activeSleep, normalizeCare } from './care.js';
 const KEY = 'babyrecord.v1';
 const SCHEMA_VERSION = 1;
 export const CATEGORY_KEYS = ['vaccine', 'paidvax', 'checkup', 'other'];
@@ -13,7 +13,7 @@ function defaults() {
     photos: [],          // v1.8.0 相册元数据（原图密文在照片服务 / 本机缓存）
     growth: [],          // v1.9.0 生长记录（身高/体重/头围）
     meds: [],            // v1.12.0 用药记录（按时段）
-    care: [],            // 亲喂、瓶喂、排便和实际用药；包含同步删除标记
+    care: [],            // 喂养、排便、实际用药和睡眠；包含同步删除标记
     snoozes: [],         // 稍后提醒记录 {id, eventId, fireAt, label}
     fired: {},           // 已响铃/已确认的提醒 id -> 时间戳
     settings: {
@@ -279,6 +279,18 @@ export const store = {
     }
     if (added.length) commitCare(next);
     return added;
+  },
+  startSleep(date, time) {
+    if (activeSleep(state.care)) return null;
+    return this.addCare([{ kind: 'sleep', date, time }])[0];
+  },
+  finishSleep(endDate, endTime) {
+    const now = Date.now();
+    const records = this.care().filter((record) => record.kind === 'sleep' && !record.endDate)
+      .map((record) => normalizeCare({ ...record, endDate, endTime, updatedAt: Math.max(now, record.updatedAt + 1) }));
+    if (records.some((record) => !record)) throw new Error('醒来时间不能早于入睡时间');
+    if (records.length) commitCare(mergeCare(state.care, records));
+    return records;
   },
   upsertCare(input) {
     if (!input.id) return this.addCare([input])[0];

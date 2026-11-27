@@ -20,6 +20,12 @@
 .care-date-nav button[disabled] { opacity: .42; cursor: default; }
 .care-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 10px; }
 .care-heading h2 { margin: 0; }
+.care-sleep .care-heading { margin-bottom: 0; }
+.care-sleep .care-heading strong { color: #4e382f; font-variant-numeric: tabular-nums; }
+.care-sleep p { margin: 8px 0 0; }
+.care-sleep-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.care-sleep-actions button:disabled { opacity: .5; cursor: default; }
+.care-sleep-average { color: #694a3f; }
 .care-link { display: inline-flex; align-items: center; background: transparent; padding-left: 0; color: #85503e; font-weight: 700; }
 .care-quick-grid, .care-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .care-quick-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

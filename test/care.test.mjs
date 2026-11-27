@@ -5,7 +5,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { summarizeCare, validateCare } from '../site/js/care.js';
+import { normalizeCare, sleepOnDay, summarizeCare, validateCare } from '../site/js/care.js';
 import { newSyncKey } from '../site/js/sync-core.js';
 import worker from '../sync/worker/src/index.js';
 
@@ -82,6 +82,29 @@ test('有时间的照护记录以早上八点换日', () => {
   ], [{ date: '2024-03-01' }], '2024-03-01', 2);
   assert.deepEqual(report.daily.map((day) => [day.nursing, day.bottle, day.bottleMl, day.stool, day.urine, day.dose, day.legacyDose]),
     [[1, 2, 100, 1, 1, 1, 0], [0, 2, 80, 0, 1, 1, 1]]);
+});
+
+test('睡眠跨 08:00 分段统计，重叠记录只计一次', () => {
+  const overnight = { id: 'test-sleep', updatedAt: 1, kind: 'sleep', date: '2024-02-29', time: '22:00',
+    endDate: '2024-03-01', endTime: '08:30' };
+  assert.equal(validateCare(overnight), '');
+  assert.match(validateCare({ ...overnight, endDate: '', endTime: '08:30' }), /日期和时间/);
+  assert.match(validateCare({ ...overnight, endDate: '2024-02-29', endTime: '21:59' }), /早于/);
+  assert.match(validateCare(overnight, '2024-03-01T08:29'), /未来/);
+  assert.equal(normalizeCare(overnight).endTime, '08:30');
+  const report = summarizeCare([
+    overnight,
+    { ...overnight, date: '2024-03-01', time: '07:00', endTime: '08:10' },
+    { ...overnight, date: '2024-03-01', time: '13:00', endTime: '14:00' },
+    { ...overnight, date: '2024-03-01', time: '16:00', endDate: '', endTime: '' },
+    { ...overnight, date: '2024-03-01', time: '18:00', endTime: '20:00', deleted: true },
+  ], [], '2024-03-01', 3);
+  assert.deepEqual(report.daily.map((day) => day.sleepMinutes), [0, 600, 90]);
+  assert.equal(report.totals.sleepMinutes, 690);
+  assert.equal(report.daysWithValues.sleepMinutes, 2);
+  assert.equal(report.recordedDays, 2);
+  assert.ok(sleepOnDay(overnight, '2024-03-01'));
+  assert.ok(!sleepOnDay({ ...overnight, endTime: '08:00' }, '2024-03-01'));
 });
 
 test('原 Worker 可用原配对协议同步照护记录，重复拉取和旧备份保留历史', async (t) => {
@@ -202,4 +225,17 @@ test('原 Worker 可用原配对协议同步照护记录，重复拉取和旧备
   assert.equal(a.store.events()[0].id, 'history-event');
   assert.equal(a.store.meds()[0].id, 'history-med');
   assert.equal(a.sync.syncStatus().key, key);
+
+  const sleep = a.store.startSleep('2024-03-01', '23:30');
+  assert.equal(a.store.startSleep('2024-03-01', '23:31'), null);
+  await a.run();
+  await b.run();
+  assert.deepEqual(b.store.getCare(sleep.id), sleep);
+  const [complete] = b.store.finishSleep('2024-03-02', '08:20');
+  assert.deepEqual(b.store.finishSleep('2024-03-02', '08:21'), []);
+  await b.run();
+  await a.run();
+  assert.deepEqual(a.store.getCare(sleep.id), complete);
+  assert.equal(complete.time, '23:30');
+  assert.equal(complete.endTime, '08:20');
 });

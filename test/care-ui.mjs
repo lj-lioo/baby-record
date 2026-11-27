@@ -201,7 +201,7 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   assert.equal(await page.locator('.care-breakdown tbody tr').count(), 90);
   assert.match(await page.locator('.care-breakdown thead').innerText(), /大便.*小便/s);
   assert.deepEqual(await page.locator('.care-breakdown thead th').allTextContents(),
-    ['日期', '母乳次数', '瓶喂 mL', '大便', '小便', '用药']);
+    ['日期', '母乳次数', '瓶喂 mL', '大便', '小便', '用药', '睡眠']);
 
   await page.locator('#care-day').fill('2023-01-01');
   assert.match(await stats.innerText(), /这段时间还没有记录/);
@@ -414,6 +414,49 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);
   assert.deepEqual(errors, []);
 
+  await t.test('点击睡觉和醒来，重开后仍能结束跨周期睡眠', async () => {
+    const sleepContext = await browser.newContext({ timezoneId: 'Asia/Shanghai' });
+    try {
+      await sleepContext.addInitScript(() => {
+        if (!localStorage.getItem('babyrecord.v1')) {
+          localStorage.setItem('babyrecord.v1', JSON.stringify({ settings: { memberRole: '爸爸' } }));
+        }
+      });
+      const sleepPage = await sleepContext.newPage();
+      await sleepPage.clock.install({ time: new Date('2026-02-01T07:29:00+08:00') });
+      await sleepPage.clock.pauseAt(new Date('2026-02-01T07:30:00+08:00'));
+      await sleepPage.goto(base + '/#/care');
+      const start = sleepPage.getByRole('button', { name: '睡觉', exact: true });
+      const end = sleepPage.getByRole('button', { name: '醒来', exact: true });
+      const sleepCard = sleepPage.locator('.care-sleep');
+      await start.waitFor();
+      assert.equal(await end.isDisabled(), true);
+      await start.click();
+      assert.equal(await start.isDisabled(), true);
+      assert.match(await sleepCard.innerText(), /睡眠中.*07:30 入睡/);
+      assert.match(await sleepCard.innerText(), /暂无时长/);
+      await sleepPage.clock.fastForward(60 * 60 * 1000);
+      await sleepPage.reload();
+      await end.click();
+      assert.equal(await end.isDisabled(), true);
+      assert.match(await sleepCard.innerText(), /30 分钟/);
+      const row = sleepPage.locator('.care-timeline').getByRole('button', { name: /续睡.*睡眠.*08:30/ });
+      await row.click();
+      await sleepPage.locator('#care-endTime').fill('08:25');
+      await sleepPage.locator('#care-form').getByRole('button', { name: '保存' }).click();
+      assert.equal(await sleepPage.locator('#care-day').inputValue(), '2026-01-31');
+      assert.match(await sleepCard.innerText(), /30 分钟/);
+      await sleepPage.getByRole('button', { name: '后一天' }).click();
+      assert.match(await sleepCard.innerText(), /25 分钟/);
+      await sleepPage.getByRole('button', { name: '统计', exact: true }).click();
+      assert.match(await sleepPage.locator('.care-sleep-average').innerText(), /30 分钟/);
+      await sleepPage.getByRole('button', { name: '睡眠时长' }).click();
+      assert.match(await sleepPage.locator('#care-chart-readout').innerText(), /1月31日 · 30 分钟/);
+    } finally {
+      await sleepContext.close();
+    }
+  });
+
   await t.test('凌晨记录归到前一周期，08:00 自动切换并支持次日补记', async () => {
     const nightContext = await browser.newContext({ timezoneId: 'Asia/Shanghai' });
     try {
@@ -464,7 +507,7 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
       assert.equal(await nightDay.inputValue(), '2026-01-31');
       assert.equal(await nightDay.getAttribute('max'), '2026-01-31');
       await night.locator('.care-breakdown summary').click();
-      assert.deepEqual(await cycleRow.getByRole('cell').allTextContents(), ['3', '110', '1', '1', '1']);
+      assert.deepEqual(await cycleRow.getByRole('cell').allTextContents(), ['3', '110', '1', '1', '1', '—']);
 
       await night.getByRole('button', { name: '记录', exact: true }).click();
       assert.equal(await nightDay.inputValue(), '2026-02-01');
@@ -499,7 +542,7 @@ test('手机喂养页支持喂奶切换、大小便多选和补记，以及语�
       assert.equal(await nightDay.inputValue(), '2026-02-01');
       await night.locator('.care-breakdown summary').click();
       const nextCycle = night.getByRole('row').filter({ has: night.getByRole('rowheader', { name: '2月1日', exact: true }) });
-      assert.deepEqual(await nextCycle.getByRole('cell').allTextContents(), ['1', '0', '0', '0', '0']);
+      assert.deepEqual(await nextCycle.getByRole('cell').allTextContents(), ['1', '0', '0', '0', '0', '—']);
     } finally {
       await nightContext.close();
     }

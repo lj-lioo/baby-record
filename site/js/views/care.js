@@ -1,4 +1,4 @@
-import { CARE_LABELS as LABEL, FEEDING_DAY_START, STOOL_TYPES, careCalendarDate, careDay, careDetail, careNewest, feedingCycleDate, summarizeCare, validateCare } from '../care.js';
+import { CARE_LABELS as LABEL, FEEDING_DAY_START, STOOL_TYPES, activeSleep, careCalendarDate, careDay, careDetail, careNewest, feedingCycleDate, formatSleepMinutes, sleepOnDay, summarizeCare, validateCare } from '../care.js';
 import { addDays, atLocal, cnDate, toLocalInput } from '../dates.js';
 import { medDoses } from '../growth.js';
 import { canEditGrowth, requireEditEvents } from '../roles.js';
@@ -9,7 +9,7 @@ import { openCareImport } from './care-import.js';
 import { careTrend } from './care-trend.js';
 
 const DOSE_SUGGESTIONS = ['维生素AD', '维生素K1'];
-const TREND = { bottleMl: '瓶喂奶量', nursing: '母乳次数', stool: '大便次数', urine: '小便次数', dose: '用药次数' };
+const TREND = { bottleMl: '瓶喂奶量', nursing: '母乳次数', stool: '大便次数', urine: '小便次数', dose: '用药次数', sleepMinutes: '睡眠时长' };
 const DAILY_COUNT = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 });
 const DAILY_VOLUME = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 });
 const FEED_CHOICES = { nursing: '母乳', bottle: '瓶喂' };
@@ -75,12 +75,24 @@ function quickActions(today, canUndo) {
   </section>`;
 }
 
+function sleepCard(minutes, active, editable) {
+  return `<section class="card care-sleep">
+    <div class="care-heading"><h2>睡眠</h2><strong>${minutes ? formatSleepMinutes(minutes) : '暂无时长'}</strong></div>
+    ${active ? `<p class="small muted">睡眠中 · ${cnDate(active.date)} ${active.time} 入睡</p>` : ''}
+    ${editable ? `<div class="care-sleep-actions">
+      <button type="button" class="btn" id="care-sleep-start" ${active ? 'disabled' : ''}>睡觉</button>
+      <button type="button" class="btn" id="care-sleep-end" ${active ? '' : 'disabled'}>醒来</button>
+    </div>` : ''}
+  </section>`;
+}
+
 function dailyLog(date, records, historical, editable) {
-  const rows = [...records, ...historical].filter((record) => careDay(record) === date).sort(careNewest);
+  const rows = [...records, ...historical].filter((record) => record.kind === 'sleep' ? sleepOnDay(record, date) : careDay(record) === date).sort(careNewest);
   const paper = rows.filter((record) => record.paper);
   const renderRow = (record) => {
-    const time = record.time || (record.kind === 'dose' ? '时间未记' : '—');
-    const content = `<span class="care-time">${record.date !== date ? '次日<br>' : ''}${esc(time)}</span><span class="care-row-content">
+    const continued = record.kind === 'sleep' && careDay(record) !== date;
+    const time = continued ? '续睡' : record.time || (record.kind === 'dose' ? '时间未记' : '—');
+    const content = `<span class="care-time">${record.date > date ? '次日<br>' : ''}${esc(time)}</span><span class="care-row-content">
       <strong>${esc(record.title || (record.kind === 'dose' ? record.name : LABEL[record.kind]))}</strong>
       <small>${[record.legacy, record.legacy ? record.detail : careDetail(record), record.note].filter(Boolean).map(esc).join(' · ')}</small></span>`;
     return `<li>${editable && !record.legacy
@@ -109,6 +121,9 @@ function renderStats({ daily, totals, daysWithValues, recordedDays, dosesByName,
       <p class="small muted">${cnDate(daily[0].date, true)} — ${cnDate(daily.at(-1).date, true)} · ${recordedDays
         ? '各项日均只计该项大于 0 的日期' : '这段时间还没有记录'}</p>
       ${summaryTiles(totals, daysWithValues)}
+      <p class="small care-sleep-average"><strong>日均睡眠</strong> · ${daysWithValues.sleepMinutes
+        ? formatSleepMinutes(totals.sleepMinutes / daysWithValues.sleepMinutes) + ' · ' + daysWithValues.sleepMinutes + ' 天有记录'
+        : '暂无时长'}</p>
       ${milkByType.length ? `<p class="small muted care-average">各奶类日均 · ${milkByType.map(([label, ml, days]) => `${label} ${dailyVolume(ml, days)} mL/天`).join(' · ')}</p>` : ''}
       ${daysWithValues.nursingMl ? `<p class="small muted care-average">亲喂实测日均 ${dailyVolume(totals.nursingMl, daysWithValues.nursingMl)} mL/天 · ${dailyCount(totals.nursingMeasured, daysWithValues.nursingMeasured)} 次测量/天</p>` : ''}
       ${dosesByName.length ? `<ul class="care-dose-totals" aria-label="按药品统计">${dosesByName.map(([name, n, days]) =>
@@ -121,9 +136,9 @@ function renderStats({ daily, totals, daysWithValues, recordedDays, dosesByName,
       <details class="care-breakdown">
         <summary>查看每日明细</summary>
         <table>
-          <thead><tr><th>日期</th><th>母乳次数</th><th>瓶喂 mL</th><th>大便</th><th>小便</th><th>用药</th></tr></thead>
+          <thead><tr><th>日期</th><th>母乳次数</th><th>瓶喂 mL</th><th>大便</th><th>小便</th><th>用药</th><th>睡眠</th></tr></thead>
           <tbody>${[...daily].reverse().map((d) => `<tr><th scope="row">${cnDate(d.date)}</th>
-            <td>${d.nursing}</td><td>${d.bottleMl}</td><td>${d.stool}</td><td>${d.urine}</td><td>${d.dose}</td></tr>`).join('')}</tbody>
+            <td>${d.nursing}</td><td>${d.bottleMl}</td><td>${d.stool}</td><td>${d.urine}</td><td>${d.dose}</td><td>${d.sleepMinutes ? formatSleepMinutes(d.sleepMinutes) : '—'}</td></tr>`).join('')}</tbody>
         </table>
       </details>
       <p class="small muted care-caption">按实际录入汇总。无记录的日期不代表未喂养或未用药。</p>
@@ -142,6 +157,7 @@ export function renderCare(root) {
   const editable = canEditGrowth();
   const records = store.care();
   const historical = oldDoseEntries();
+  const onCurrentCycle = date === currentCycle;
   const canUndo = () => undoRecords.length > 0 &&
     undoRecords.every((record) => careDay(record) === date && store.getCare(record.id)?.updatedAt === record.updatedAt);
   const report = summarizeCare(records, historical, date, isStats ? period : 1);
@@ -163,7 +179,8 @@ export function renderCare(root) {
       ${date !== defaultDate ? `<button type="button" class="care-link" id="care-today">${isStats ? '最近一期' : currentCycle === today ? '今天' : '当前周期'}</button>` : ''}
     </div>
     <p class="small muted">${isStats ? `每天 ${FEEDING_DAY_START} 纳入刚结束的喂养周期` : `${cnDate(date)} ${FEEDING_DAY_START} 至次日 ${FEEDING_DAY_START}（次日凌晨归入本周期）`}</p>
-    ${section === 'log' ? `${editable ? quickActions(date === currentCycle, canUndo()) : ''}
+    ${section === 'log' ? `${editable ? quickActions(onCurrentCycle, canUndo()) : ''}
+      ${sleepCard(report.totals.sleepMinutes, onCurrentCycle ? activeSleep(records) : null, editable && onCurrentCycle)}
       <section class="card"><h2>${date === today ? '今天' : cnDate(date)}汇总</h2>${summaryTiles(report.totals)}</section>
       ${dailyLog(date, records, historical, editable)}` : renderStats(report, trend.html)}
   </div>`;
@@ -197,6 +214,22 @@ export function renderCare(root) {
   root.querySelectorAll('[data-care-metric]').forEach((button) => {
     button.onclick = () => { metric = button.dataset.careMetric; renderCare(root); };
   });
+  const sleepStart = root.querySelector('#care-sleep-start');
+  if (sleepStart) sleepStart.onclick = () => {
+    if (!requireEditEvents()) return;
+    const [date, time] = toLocalInput(Date.now()).split('T');
+    try {
+      if (store.startSleep(date, time)) toast('已记录入睡');
+    } catch { toast('入睡时间未保存，请重试'); }
+  };
+  const sleepEnd = root.querySelector('#care-sleep-end');
+  if (sleepEnd) sleepEnd.onclick = () => {
+    if (!requireEditEvents()) return;
+    const [date, time] = toLocalInput(Date.now()).split('T');
+    try {
+      if (store.finishSleep(date, time).length) toast('已记录醒来');
+    } catch { toast('无法保存醒来时间，请检查入睡时间'); }
+  };
   const voice = root.querySelector('#care-voice');
   if (voice) voice.onclick = () => openCareVoice({ day: selectedDate, onSaved: (records) => {
     undoRecords = [];
@@ -231,6 +264,7 @@ function openEditor(kind, cycle, existing, onSaved) {
   if (!requireEditEvents('当前身份可以查看喂养记录')) return;
   const feeding = kind === 'feed' || Object.hasOwn(FEED_CHOICES, kind);
   const pickingToilet = kind === 'toilet';
+  const sleeping = kind === 'sleep';
   const initialFeed = feeding ? existing?.kind || 'nursing' : '';
   const [today, now] = toLocalInput(Date.now()).split('T');
   const currentCycle = feedingCycleDate(today, now);
@@ -249,8 +283,12 @@ function openEditor(kind, cycle, existing, onSaved) {
     </fieldset>`;
   openSheet(`<h3>${existing ? '编辑' : '记录'}${title}</h3>
     <form id="care-form" novalidate>
-      <div class="care-form-date">${field('date', '实际日期', `type="date" value="${esc(date)}" max="${today}"`)}
-        ${field('time', kind === 'dose' ? '时间（可选）' : '时间', `type="time" value="${esc(time)}"`)}</div>
+      <div class="care-form-date">${field('date', sleeping ? '入睡日期' : '实际日期', `type="date" value="${esc(date)}" max="${today}"`)}
+        ${field('time', sleeping ? '入睡时间' : kind === 'dose' ? '时间（可选）' : '时间', `type="time" value="${esc(time)}"`)}</div>
+      ${sleeping ? `<div class="care-form-date">
+        ${field('endDate', '醒来日期', `type="date" value="${esc(existing?.endDate)}" max="${today}"`)}
+        ${field('endTime', '醒来时间', `type="time" value="${esc(existing?.endTime)}"`)}
+      </div>` : ''}
       <p class="small muted" id="care-cycle-preview" aria-live="polite"></p>
       ${feeding ? `${options('feed', '喂奶方式', FEED_CHOICES, initialFeed)}
         <div id="care-bottle-fields" ${initialFeed !== 'bottle' ? 'hidden' : ''}>${field('ml', '实际喝下的奶量（mL）',
@@ -283,7 +321,7 @@ function openEditor(kind, cycle, existing, onSaved) {
       }
       const day = feedingCycleDate(dateInput.value, timeInput.value);
       const nextMorning = day !== dateInput.value ? ' · 次日 ' + timeInput.value : '';
-      cyclePreview.textContent = '计入 ' + cnDate(day) + '周期' + nextMorning;
+      cyclePreview.textContent = (sleeping ? '入睡于 ' : '计入 ') + cnDate(day) + '周期' + nextMorning;
     };
     dateInput.oninput = () => { dateEdited = true; updateCycle(); };
     timeInput.oninput = () => {
@@ -320,6 +358,10 @@ function openEditor(kind, cycle, existing, onSaved) {
       if (!requireEditEvents()) return;
       if (outdated()) { showError('这条记录已更新，请关闭后重新打开'); return; }
       const data = new FormData(form);
+      if (sleeping && existing?.endDate && (!data.get('endDate') || !data.get('endTime'))) {
+        showError('请填写醒来的日期和时间');
+        return;
+      }
       const kinds = pickingToilet ? data.getAll('toilet') : [feeding ? data.get('feed') : kind];
       if (!kinds.length) { showError('至少选择大便或小便'); return; }
       const inputs = kinds.map((selected) => ({
@@ -327,7 +369,7 @@ function openEditor(kind, cycle, existing, onSaved) {
         ml: selected === 'bottle' ? data.get('ml') : existing?.kind === 'nursing' ? existing.ml : null,
         milk: existing?.milk, minutes: data.get('minutes'),
         stool: data.get('stool'), name: data.get('name'), dose: data.get('dose'),
-        paper: existing?.paper,
+        paper: existing?.paper, endDate: data.get('endDate'), endTime: data.get('endTime'),
       }));
       const latest = toLocalInput(Date.now());
       const error = inputs.map((input) => validateCare(input, latest)).find(Boolean);

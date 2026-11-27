@@ -1,4 +1,4 @@
-import { hasCareRecords } from '../care.js';
+import { formatSleepMinutes, hasCareRecords } from '../care.js';
 import { cnDate } from '../dates.js';
 import { esc } from '../ui.js';
 
@@ -10,7 +10,8 @@ const BOTTOM = 94;
 export function careTrend(daily, metric, title) {
   const unit = metric === 'bottleMl' ? 'mL' : '次';
   const last = daily.length - 1;
-  const values = daily.map((day) => hasCareRecords(day) ? day[metric] : null);
+  const sleep = metric === 'sleepMinutes';
+  const values = daily.map((day) => sleep ? day.sleepMinutes || null : hasCareRecords(day) ? day[metric] : null);
   const max = Math.max(1, ...values);
   const points = daily.map((day, i) => ({
     date: cnDate(day.date),
@@ -46,7 +47,8 @@ export function careTrend(daily, metric, title) {
     const guide = chart.querySelector('.care-chart-guide');
     const select = (index) => {
       const { date, value, x, y } = points[index];
-      const label = `${date} · ${value === null ? '无记录' : `${value} ${unit}`}`;
+      const formatted = sleep ? formatSleepMinutes(value) : `${value} ${unit}`;
+      const label = `${date} · ${value === null ? '无记录' : formatted}`;
       input.value = index;
       input.setAttribute('aria-valuetext', label);
       readout.textContent = label;
