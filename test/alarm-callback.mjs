@@ -47,6 +47,22 @@ test('test receipt travels between browser and home-screen storage without event
   assert.equal(alarmCallbackReady(name), true);
   assert.equal(alarmCallbackReady('另一条指令'), false);
 
+  const replacement = [{ id: 'private-id', previous: 'private-old', next: 'private-new' }];
+  for (const [output, expected] of [['', false], ['BABY_ALARM_OK', false], ['BABY_ALARM_REPLACED', true]]) {
+    const batch = startAlarmCallback({ name: '宝宝闹钟批量更新', batch: replacement });
+    assert.doesNotMatch(batch.url, /private-id|private-old|private-new/);
+    use(isolated);
+    const batchUrl = new URL(batch.url);
+    batchUrl.searchParams.set('result', output);
+    assert.deepEqual(await deliverAlarmCallback(batchUrl), { test: false });
+    use(local);
+    const received = await new Promise((resolve) => listenForAlarmCallbacks((attempt, safe) => resolve({ attempt, safe })));
+    assert.deepEqual(received.attempt.batch, replacement);
+    assert.equal(received.safe, expected);
+    assert.equal(alarmCallbackReady(name), true);
+  }
+  assert.doesNotMatch(JSON.stringify(requests), /private-id|private-old|private-new/);
+
   const arm = startAlarmCallback({ name, id: 'local-item', sig: 'local-signature' });
   assert.doesNotMatch(arm.url, /local-item|local-signature/);
   use(isolated);

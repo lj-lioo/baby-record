@@ -99,7 +99,8 @@ function renderHelp(root) {
         <li>回到本 App 点「我已在提醒事项改好」。如果确认原条目已移除，可以点「我已确认没有旧提醒」，再按当前计划创建。</li>
       </ol>
       <p class="note">找不到对应条目时先核对，尤其是没有编号的老提醒。事项删除后，App 会列出需核对的旧提醒。</p>
-      <p><a href="https://github.com/lj-lioo/baby-record/blob/main/docs/alarm-batch-pilot.md" target="_blank" rel="noopener">批量快捷指令配置说明</a></p>
+      <p>已核对且有事项编号的闹钟，可以从「定向替换这项闹钟」发起。iPhone 快捷指令只操作编号、旧时间和列表都吻合的提醒，先验证新提醒，再移除旧提醒。</p>
+      <p><a href="https://github.com/lj-lioo/baby-record/blob/main/docs/alarm-batch-pilot.md" target="_blank" rel="noopener">定向替换配置与测试说明</a></p>
     </section>
 
     <section class="card" id="h-push">

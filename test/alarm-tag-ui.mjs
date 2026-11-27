@@ -30,15 +30,19 @@ const context = createContext({
   Date: TestDate,
   TextEncoder,
   TextDecoder,
+  URL,
+  URLSearchParams,
   localStorage: {
     getItem: (key) => pieces.get(key) ?? null,
     setItem: (key, value) => pieces.set(key, value),
     removeItem: (key) => pieces.delete(key),
   },
-  location: { set href(value) { launched.push(value); } },
+  crypto: globalThis.crypto,
+  btoa,
+  location: { get href() { return 'https://example.test/baby-record/'; }, set href(value) { launched.push(value); } },
   CustomEvent: class {},
   document: { querySelector: () => sheet },
-  window: { dispatchEvent() {} },
+  window: { BABY_CONFIG: { syncApi: 'https://relay.example' }, dispatchEvent() {} },
 });
 const esc = (x) => String(x ?? '').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 const mock = new Map([
@@ -189,6 +193,10 @@ click('#al-batch-go');
 assert.equal(actions.alarmState(tuesday), 'changed');
 const url = new URL(launched.at(-1));
 assert.equal(url.searchParams.get('name'), '宝宝闹钟批量更新');
+assert.equal(url.hostname, 'x-callback-url');
+const callbackUrl = new URL(url.searchParams.get('x-success'));
+assert.match(callbackUrl.hash, /batch=1/);
+assert.doesNotMatch(callbackUrl.href, /k1batch|K1/);
 const job = JSON.parse(url.searchParams.get('text'));
 assert.equal(job.protocol, batch.ALARM_BATCH_PROTOCOL);
 assert.equal(job.list, '宝宝');
@@ -236,7 +244,12 @@ assert.equal(simulateNative(duplicate), duplicate);
 const conflict = [...populated, { ...original[0], id: 'conflict', minute: group.create[0].minute }];
 assert.equal(simulateNative(conflict), conflict);
 assert.deepEqual(simulateNative(populated, true), [...populated, ...group.create.slice(0, 2)]);
-click('#al-batch-done');
+const result = JSON.parse(pieces.get('babyrecord.alarmCallbackAttempt'));
+assert.equal(result.batch.length, 1);
+assert.equal(result.batch[0].id, tuesday.id);
+assert.equal(actions.confirmAlarmBatch([{ ...result.batch[0], next: 'an outdated plan' }]), false);
+assert.equal(actions.alarmState(tuesday), 'changed');
+assert.equal(actions.confirmAlarmBatch(result.batch), true);
 assert.equal(actions.alarmState(tuesday), 'added');
 assert.equal(store.getEvent(other.id).alarmAdded, undefined);
 

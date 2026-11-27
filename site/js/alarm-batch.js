@@ -55,13 +55,15 @@ export function buildAlarmBatch(events, allEvents, now = Date.now()) {
 
 export function alarmBatchShortcutName() { return shortcutName() + '批量更新'; }
 
-export function alarmBatchUrl(plan) {
+export function alarmBatchUrl(plan, successUrl) {
   if (!plan.groups.length || plan.issues.length) return '';
   const data = JSON.stringify({
     protocol: ALARM_BATCH_PROTOCOL,
     list: '宝宝',
     groups: plan.groups.map(({ title, tag, remove, keep, create }) => ({ title, tag, remove, keep, create })),
   });
-  return 'shortcuts://run-shortcut?name=' + encodeURIComponent(alarmBatchShortcutName()) +
-    '&input=text&text=' + encodeURIComponent(data);
+  const path = successUrl ? 'x-callback-url/run-shortcut' : 'run-shortcut';
+  const callback = successUrl ? '&x-success=' + encodeURIComponent(successUrl) : '';
+  return 'shortcuts://' + path + '?name=' + encodeURIComponent(alarmBatchShortcutName()) +
+    '&input=text&text=' + encodeURIComponent(data) + callback;
 }

@@ -3,11 +3,13 @@ import { b64u, syncRequest } from './sync-core.js';
 const DEVICE = 'babyrecord.alarmCallbackDevice';
 const ATTEMPT = 'babyrecord.alarmCallbackAttempt';
 const READY = 'babyrecord.alarmCallbackReady';
+const LAST = 'babyrecord.alarmCallbackLastStart';
 const RECEIPT = 'alarm-callback';
 const TTL = 10 * 60 * 1000;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const NONCE = /^[A-Za-z0-9_-]{22}$/;
 const SUCCESS_TEXT = 'BABY_ALARM_OK';
+const REPLACED_TEXT = 'BABY_ALARM_REPLACED';
 const base = () => window.BABY_CONFIG?.syncApi || '';
 
 function currentAttempt() {
@@ -36,7 +38,7 @@ export function alarmCallbackStatus(name) {
   return alarmCallbackReady(name) ? '回传已验证，可自动标记成功' : '自动回传尚未验证';
 }
 
-export function startAlarmCallback({ name, id, sig }) {
+export function startAlarmCallback({ name, id, sig, batch }) {
   if (!base()) return null;
   try {
     // One isolated receipt slot per device, with no family key or event data sent to it.
@@ -46,11 +48,18 @@ export function startAlarmCallback({ name, id, sig }) {
       localStorage.setItem(DEVICE, token);
     }
     const nonce = b64u(crypto.getRandomValues(new Uint8Array(16)));
-    const at = Math.max(Date.now(), (currentAttempt()?.at || 0) + 1);
-    const test = !id;
+    const previous = Number(localStorage.getItem(LAST));
+    const at = Math.max(Date.now(), (Number.isSafeInteger(previous) ? previous : 0) + 1);
+    const test = !id && !batch;
     const url = new URL('alarm-callback.html', location.href);
     url.hash = new URLSearchParams({ token, nonce, at, test: test ? '1' : '0' }).toString();
-    localStorage.setItem(ATTEMPT, JSON.stringify({ nonce, at, name, id, sig, test }));
+    if (batch) {
+      const fragment = new URLSearchParams(url.hash.slice(1));
+      fragment.set('batch', '1');
+      url.hash = fragment.toString();
+    }
+    localStorage.setItem(LAST, String(at));
+    localStorage.setItem(ATTEMPT, JSON.stringify({ nonce, at, name, id, sig, test, batch }));
     return { url: url.href, nonce };
   } catch { return null; }
 }
@@ -62,8 +71,11 @@ export async function deliverAlarmCallback(url) {
   if (!TOKEN.test(token || '') || !NONCE.test(nonce || '') || !Number.isSafeInteger(at)
     || at < Date.now() - TTL || at > Date.now() + 60000 || !base()) throw new Error('回执链接已过期或无效');
   const output = url.searchParams.get('result') ?? input.get('result') ?? new URLSearchParams(suffix).get('result') ?? '';
-  const safeOutput = output === '' || output.trim() === SUCCESS_TEXT;
-  const data = JSON.stringify({ nonce, safeOutput });
+  const batch = input.get('batch') === '1';
+  const safeOutput = batch
+    ? output.trim() === REPLACED_TEXT
+    : output === '' || output.trim() === SUCCESS_TEXT;
+  const data = JSON.stringify(batch ? { nonce, safeOutput, batch } : { nonce, safeOutput });
   const res = await syncRequest(base(), token, {
     since: 0, changes: [{ id: RECEIPT, updatedAt: at, deleted: false, data }],
   });
@@ -90,8 +102,8 @@ export function listenForAlarmCallbacks(onResult) {
       const row = result.changes?.find((item) => item.id === RECEIPT && item.updatedAt === attempt.at);
       const receipt = row?.data && JSON.parse(row.data);
       if (receipt?.nonce === attempt.nonce && currentAttempt()?.nonce === attempt.nonce) {
-        const safeOutput = receipt.safeOutput === true;
-        if (attempt.test || !safeOutput) localStorage.setItem(READY, JSON.stringify({ name: attempt.name, safeOutput }));
+        const safeOutput = receipt.safeOutput === true && !!receipt.batch === !!attempt.batch;
+        if (!attempt.batch && (attempt.test || !safeOutput)) localStorage.setItem(READY, JSON.stringify({ name: attempt.name, safeOutput }));
         localStorage.removeItem(ATTEMPT);
         onResult(attempt, safeOutput);
         return;

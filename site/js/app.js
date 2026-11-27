@@ -16,7 +16,8 @@ import { applyInviteFromParams, hasRole, openRolePicker, roleLabel } from './rol
 
 import { createShortcutName } from './shortcuts.js';
 import { listenForAlarmCallbacks } from './alarm-callback.js';
-import { applyAlarmCallback } from './views/actions.js';
+import { applyAlarmCallback, confirmAlarmBatch } from './views/actions.js';
+import { alarmBatchShortcutName } from './alarm-batch.js';
 
 const view = document.getElementById('view');
 const routes = { home: renderHome, care: renderCare, album: renderAlbum, growth: renderGrowth, settings: renderSettings };
@@ -126,6 +127,14 @@ if ('serviceWorker' in navigator) {
 
 initSync(); // 仅当 config.js 配置了 syncApi 时启用
 listenForAlarmCallbacks((attempt, safeOutput) => {
+  if (attempt.batch) {
+    if (attempt.name !== alarmBatchShortcutName()) return;
+    if (!safeOutput) { toast('未收到替换成功回执，请核对提醒事项'); return; }
+    if (!confirmAlarmBatch(attempt.batch)) { toast('日程已有变化，请核对当前闹钟'); return; }
+    if (document.querySelector('#sheet')?.dataset.kind === 'alarmbatch') closeSheet();
+    toast('对应闹钟已替换');
+    return;
+  }
   if (attempt.name !== createShortcutName()) return;
   if (attempt.test) {
     toast(safeOutput ? '测试回传成功，已启用自动确认' : '已收到测试回传，请按帮助设置快捷指令输出', 4500);
